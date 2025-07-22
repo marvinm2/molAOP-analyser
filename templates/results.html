@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>KE Enrichment Results</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- DataTables CSS and JS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
+    <!-- Cytoscape core -->
+    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+
+    <!-- Dagre layout extension -->
+    <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
+    <script>
+    cytoscape.use(window.cytoscapeDagre);
+    </script>
+
+
+
+    <style>
+        .content-box {
+            width: 95%;
+            max-width: none;
+            margin: 30px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #307BBF;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .explanation {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-container">
+    <header>
+        <h1>Molecular Adverse Outcome Pathway Analyser</h1>
+    </header>
+    <div class="content-box">
+        <h1>KE Enrichment Results</h1>
+
+        <div class="explanation">
+            <p><strong>Gene Identifier Type:</strong> {{ id_type }}</p>
+            <p>This table presents enrichment results for Key Events (KEs) based on your transcriptomic dataset.</p>
+            <p>Each row corresponds to a KE, showing the degree of overlap between its associated gene set and your differentially expressed genes.</p>
+
+            <ul>
+                <li><strong>Overlap Genes:</strong> Genes shared between the KE set and your dataset.</li>
+                <li><strong># Overlap:</strong> Number of overlapping genes.</li>
+                <li><strong>p-value:</strong> Statistical significance (Fisher's exact test).</li>
+                <li><strong>FDR:</strong> Adjusted p-value using the Benjamini-Hochberg procedure.</li>
+            </ul>
+
+            <p>The enrichment was calculated using all genes in your uploaded dataset as the background universe.</p>
+            <p><strong>Background gene set size:</strong> {{ background_size }}</p>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table id="resultsTable" class="display">
+                <thead>
+                    <tr>
+                        {% for col in table[0].keys() %}
+                        <th>{{ col }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table %}
+                    <tr>
+                        {% for val in row.values() %}
+                        <td>{{ val }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <script>
+        $(document).ready(function() {
+            $('#resultsTable').DataTable({
+                dom: 'Bfrtip',
+                autoWidth: true,
+                buttons: ['copy', 'csv', 'excel', 'print']
+            });
+        });
+        </script>
+
+        
+    
+<h2>AOP Network</h2>
+<p style="font-size: 15px; color: #444; max-width: 800px; text-align: left;">
+    This network diagram shows how the Key Events (KEs) are connected within the selected Adverse Outcome Pathway (AOP).
+    <br><br>
+    <strong>Color coding:</strong><br>
+    – Node color reflects gene-level log<sub>2</sub> fold change.<br>
+    – KE nodes with a <span style="color:red;">red border</span> are statistically significant (FDR &lt; 0.05).<br>
+    – Gene nodes with a <span style="color:green;">green border</span> are also significantly affected.
+    <br><br>
+    Use the buttons below the network to add gene nodes, toggle their visibility, reset the view, or download the network.
+</p>
+
+
+
+<div id="cy" style="width: 100%; height: 800px; border: 2px solid #ccc; border-radius: 8px; background: white;"></div>
+
+<div style="display: flex; justify-content: center; gap: 10px; margin: 10px;">
+  <button onclick="addGeneNodes()">+ Add Gene Nodes</button>
+  <button onclick="toggleGenes()">Toggle Gene Visibility</button>
+  <button onclick="cy.reset(); cy.fit();">Reset View</button>
+  <button onclick="downloadPNG()">Download PNG</button>
+  <button onclick="downloadJSON()">Download Network</button>
+</div>
+</div>
+
+<script>
+const network = {{ network_json | safe }};
+const keToGenes = {{ ke_gene_json | safe }};
+
+// --- Gradient function used for gene node background and fallback KE nodes ---
+function defaultLogFCColor(logfc) {
+    const fc = parseFloat(logfc) || 0;
+    const fcClamped = Math.max(-1, Math.min(1, fc));
+    const norm = (fcClamped + 1) / 2;
+    const interpolate = (start, end, t) => Math.round(start + (end - start) * t);
+
+    let r, g, b;
+    if (norm < 0.5) {
+        const t = norm * 2;
+        r = interpolate(44, 255, t);
+        g = interpolate(123, 255, t);
+        b = interpolate(182, 255, t);
+    } else {
+        const t = (norm - 0.5) * 2;
+        r = interpolate(255, 215, t);
+        g = interpolate(255, 25, t);
+        b = interpolate(255, 28, t);
+    }
+    if (fc === 0) return '#ccc';  // fallback grey
+
+    return `rgb(${r},${g},${b})`;
+}
+
+const cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: [...network.nodes, ...network.edges],
+    wheelSensitivity: 0.1,
+    style: [
+    {
+        selector: 'node',
+        style: {
+            'label': 'data(label)',
+            'color': '#000',
+            'font-size': 12,
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'width': 45,
+            'height': 45
+        }
+    },
+    {
+        selector: 'node[ke_type = "MIE"]',
+        style: {
+            'background-color': '#b3e6b3'
+        }
+    },
+    {
+        selector: 'node[ke_type = "AO"]',
+        style: {
+            'background-color': '#f4b3b3'
+        }
+    },
+    {
+        selector: 'node[ke_type = "intermediate"]',
+        style: {
+            'background-color': '#ffd9b3'
+        }
+    },
+    {
+        selector: 'node.significant',
+        style: {
+            'border-width': 3,
+            'border-color': 'red'
+        }
+    },
+    {
+        selector: 'node.gene.significant',
+        style: {
+            'border-color': 'green'
+        }
+    },
+    {
+        selector: 'node.gene',
+        style: {
+            'shape': 'ellipse',
+            'label': 'data(label)',
+            'width': 20,
+            'height': 20,
+            'font-size': 8,
+            'color': '#000',
+            'background-color': ele => defaultLogFCColor(ele.data('logfc'))
+        }
+    },
+    {
+        selector: 'edge',
+        style: {
+            'width': 2,
+            'line-color': '#999',
+            'target-arrow-color': '#999',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier'
+        }
+    },
+    {
+        selector: 'edge.gene-link',
+        style: {
+            'line-color': '#999',
+            'width': 2,
+            'target-arrow-shape': 'none',
+            'curve-style': 'bezier'
+        }
+    }
+],
+    layout: {
+        name: 'dagre',
+        rankDir: 'TB'
+    }
+});
+</script>
+
+<script>
+let genesVisible = true;
+
+function addGeneNodes() {
+    const addedGenes = new Set();
+
+    Object.entries(keToGenes).forEach(([ke, geneList]) => {
+        geneList.forEach(geneObj => {
+            const gene = geneObj.id;
+            const logfc = geneObj.log2FC || 0;
+            const isSignificant = geneObj.significant === true;
+
+            const nodeClasses = isSignificant ? 'gene significant' : 'gene';
+
+            if (!addedGenes.has(gene)) {
+                cy.add({
+                    group: 'nodes',
+                    data: {
+                        id: gene,
+                        label: gene,
+                        logfc: logfc
+                    },
+                    classes: nodeClasses
+                });
+                addedGenes.add(gene);
+            }
+
+            cy.add({
+                group: 'edges',
+                data: {
+                    id: ke + '_' + gene,
+                    source: gene,
+                    target: ke
+                },
+                classes: 'gene-link'
+            });
+        });
+    });
+
+    cy.layout({ name: 'cose', animate: true }).run();
+}
+
+
+function toggleGenes() {
+    const geneNodes = cy.nodes('.gene');
+    const geneEdges = cy.edges('.gene-link');
+
+    if (genesVisible) {
+        geneNodes.hide();
+        geneEdges.hide();
+    } else {
+        geneNodes.show();
+        geneEdges.show();
+    }
+
+    genesVisible = !genesVisible;
+}
+
+function downloadPNG() {
+  const png = cy.png({ full: true, scale: 2 });
+  const link = document.createElement('a');
+  link.href = png;
+  link.download = 'aop_network.png';
+  link.click();
+}
+function downloadJSON() {
+  const json = cy.json();
+  const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'aop_network.cyjs';
+  link.click();
+}
+
+</script>
+
+
+<footer>
+        <div class="footer-content">
+            &copy; 2025 Molecular AOP Analyser
+        </div>
+    </footer>
+</div>
+</body>
+
+</html>

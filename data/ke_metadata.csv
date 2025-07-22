@@ -1,0 +1,13 @@
+KE_ID,Type,Title
+KE:89,intermediate,"Synthesis, De Novo FA"
+KE:115,intermediate,"Increase, FA Influx"
+KE:245,MIE,"Activation, PXR/SXR"
+KE:471,intermediate,"Inhibition, FoxA2"
+KE:474,intermediate,"Down Regulation, HMGCS2"
+KE:860,intermediate,"Decreased, Mitochondrial Fatty Acid Beta Oxidation"
+KE:54,intermediate,"Up Regulation, CD36"
+KE:291,intermediate,"Accumulation, Triglyceride"
+KE:10106,intermediate,"Fatty Acid Lysis"
+KE:258,intermediate,"Activation, SCD-1"
+KE:472,intermediate,"Down Regulation, CPT1A"
+KE:345,AO,"Liver steatosis"

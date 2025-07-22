@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Molecular Adverse Outcome Pathway Analyser</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+
+</head>
+<body>
+    <img src="/static/img/logo.png" alt="VHP4Safety Logo" class="center">
+    <h2 class="subheader">This tool is under development, results and interface are subject to change</h2>
+    <div class="page-container">
+    <header>
+        <h1>Molecular Adverse Outcome Pathway Analyser</h1>
+    </header>
+
+    <div class="container">
+        <!--<form action="{{ url_for('preview') }}#centered-container" method="post" enctype="multipart/form-data">
+            <h2>Upload Differential Expression Results</h2>
+
+            <div class="dropdown-container">
+                <label for="gene_file"><strong>Upload CSV or TSV file</strong></label>
+                <p style="font-size: 13px; color: #444;">
+                    The file should contain gene-level results from a differential expression analysis.<br>
+                    Make sure it includes:
+                    <ul style="font-size: 13px; color: #444; margin-top: 5px;">
+                        <li>A column with gene identifiers (e.g. HGNC symbols, Ensembl IDs)</li>
+                        <li>A column with log<sub>2</sub> fold change values</li>
+                        <li>A column with p-values</li>
+                    </ul>
+                    After upload, you can select which columns to use.
+                </p>
+                <input type="file" id="gene_file" name="gene_file" required>
+            </div>
+
+            <button type="submit">Preview Dataset</button>
+        </form>-->
+        <!-- Tutorial-style explanation -->
+    <div style="margin-bottom: 20px; padding: 15px; background-color: #f1f9ff; border-left: 5px solid #307BBF;">
+    <h2 style="margin-top: 0;">Molecular AOP Analyser Demo</h2>
+    <p style="font-size: 15px; color: #333;">
+        To get started quickly, choose one of the demo gene expression datasets below. These represent experiments where cells were exposed to chemicals, and the resulting gene expression changes can be analyzed in the context of molecular AOPs. The datasets have been pre-processed.
+    </p>
+    <p style="font-size: 15px; color: #333;">
+        <em>(In a real case, you'd upload your own data instead.)</em>
+    </p>
+    <ul style="font-size: 15px; color: #333;">
+        <li><strong>PXR agonist 1</strong> (GSE90122_TO90137): A reference dataset simulating exposure to a prototypical PXR activator.</li>
+        <li><strong>PXR agonist 2</strong> (GSE90122_SR12813): A second compound activating the same nuclear receptor, with a distinct gene profile.</li>
+    </ul>
+    <p style="font-size: 15px; color: #333;">
+        After selecting a dataset, the tool will guide you through:
+    </p>
+    <ul style="font-size: 15px; color: #333;">
+        <li>Choosing the correct data columns</li>
+        <li>Visualizing gene expression changes (volcano plot)</li>
+        <li>Running KE enrichment analysis and explore the molecular AOP network</li>
+    </ul>
+    </div>
+
+    <!-- Fixed form -->
+    <form action="{{ url_for('preview') }}#centered-container" method="post">
+    <h2>Select Demo Dataset</h2>
+
+    <label>
+        <input type="radio" name="demo_file" value="GSE90122_TO90137.tsv" required>
+        PXR agonist 1 – GSE90122_TO90137
+    </label><br>
+
+    <label>
+        <input type="radio" name="demo_file" value="GSE90122_SR12813.tsv">
+        PXR agonist 2 – GSE90122_SR12813
+    </label><br><br>
+
+    <button type="submit">Load Demo Dataset</button>
+    </form>
+
+
+    </div>
+
+{% if preview and columns %}
+<div class="container" id="centered-container">
+    <h2>Preview top 5 rows</h2>
+    <p style="font-size: 15px; color: #444;">
+        Below is a preview of the uploaded data. Please select the columns that contain:
+    </p>
+    <ul style="font-size: 14px; color: #444;">
+        <li>Gene symbols or IDs</li>
+        <li>log<sub>2</sub> fold change values</li>
+        <li>p-values</li>
+    </ul>
+    <div class="preview-table-wrapper">
+        <table class="dataframe">
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                        <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in preview %}
+                    <tr>
+                        {% for col in columns %}
+                            <td>{{ row[col] }}</td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Column selection form -->
+<form action="{{ url_for('preview') }}#volcano-section" method="post">
+    <input type="hidden" name="filename" value="{{ filename }}">
+
+    <div class="column-selectors">
+        <div>
+            <label for="id_column" title="Select the column containing gene symbols or IDs.">
+                Gene Symbol / ID column:
+            </label>
+            <select id="id_column" name="id_column" required>
+                <option value="" disabled {% if not selected_columns.id %}selected{% endif %}>-- Select --</option>
+                {% for col in columns %}
+                    <option value="{{ col }}" {% if selected_columns.id == col %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label for="fc_column" title="Select the column containing log2FC values.">
+                log2FC column:
+            </label>
+            <select id="fc_column" name="fc_column" required>
+                <option value="" disabled {% if not selected_columns.fc %}selected{% endif %}>-- Select --</option>
+                {% for col in columns %}
+                    <option value="{{ col }}" {% if selected_columns.fc == col %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div>
+            <label for="pval_column">p-value column:</label>
+            <select id="pval_column" name="pval_column" required>
+                <option value="" disabled {% if not selected_columns.pval %}selected{% endif %}>-- Select --</option>
+                {% for col in columns %}
+                    <option value="{{ col }}" {% if selected_columns.pval == col %}selected{% endif %}>{{ col }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div style="text-align: center;">
+        <button type="submit">Confirm Column Selection</button>
+    </div>
+</form>
+
+</div>
+{% endif %}
+
+
+
+{% if volcano_data %}
+<div class="container" id="volcano-section">
+    <h2>Volcano Plot</h2>
+    <p style="font-size: 15px; color: #444; max-width: 800px; margin: 0 auto;">
+        The volcano plot visualizes gene expression changes:
+        <br><br>
+        <strong>X-axis:</strong> log<sub>2</sub> fold change<br>
+        <strong>Y-axis:</strong> -log<sub>10</sub>(p-value)
+        <br><br>
+        <span style="color: red;"><strong>Red</strong></span>: significantly upregulated genes<br>
+        <span style="color: blue;"><strong>Blue</strong></span>: significantly downregulated genes<br>
+        <span style="color: green;"><strong>Green</strong></span>: statistically significant, but moderate fold change
+        <br><br>
+        Adjust the log<sub>2</sub>FC threshold below to refine the selection.
+    </p>
+
+    <div id="volcano" style="width:100%; height:500px;"></div>
+    <script>
+        const volcanoData = {{ volcano_data | tojson }};
+        const threshold = {{ logfc_threshold or 'null' }};
+        const pvalThreshold = {{ pval_cutoff }};  // from Flask
+        const pvalY = {{ pval_y | default(1.3) | float }};
+
+
+
+        const trace = {
+            x: volcanoData.map(d => d.log2FC),
+            y: volcanoData.map(d => -Math.log10(d.pval)),
+            text: volcanoData.map(d => d.ID),
+            mode: 'markers',
+            type: 'scatter',
+            marker: {
+                size: 6,
+                opacity: 0.7,
+                color: volcanoData.map(d => {
+                    const fc = parseFloat(d.log2FC);
+                    const pval = parseFloat(d.pval);
+                    if (isNaN(fc) || isNaN(pval)) return 'gray';
+
+                    const sigPval = pval < pvalThreshold;
+                    const sigLeft = sigPval && fc <= -threshold;
+                    const sigRight = sigPval && fc >= threshold;
+                    const absFC = Math.abs(fc);
+
+                    if (sigLeft) return 'blue';
+                    if (sigRight) return 'red';
+                    if (sigPval && absFC < threshold) return 'green';
+                    return 'lightgray';
+                })
+
+            },
+            hovertemplate: 'Gene: %{text}<br>log2FC: %{x}<br>-log10(p): %{y}<extra></extra>'
+        };
+        const minX = Math.min(...volcanoData.map(d => parseFloat(d.log2FC)).filter(x => !isNaN(x)));
+        const maxX = Math.max(...volcanoData.map(d => parseFloat(d.log2FC)).filter(x => !isNaN(x)));
+
+        const shapes = [
+            // Horizontal line at p = 0.05
+            {
+                type: 'line',
+                x0: minX,
+                x1: maxX,
+                y0: pvalY,
+                y1: pvalY,
+                line: {
+                color: 'black',
+                width: 1,
+                dash: 'dash'
+                }
+            }
+            ];
+
+            if (threshold !== null && !isNaN(threshold)) {
+            shapes.push(
+                {
+                type: 'line',  // vertical +log2FC
+                x0: threshold,
+                x1: threshold,
+                y0: 0,
+                y1: Math.max(...volcanoData.map(d => -Math.log10(parseFloat(d.pval))).filter(y => !isNaN(y))),
+                line: {
+                    color: 'black',
+                    width: 1,
+                    dash: 'dot'
+                }
+                },
+                {
+                type: 'line',  // vertical -log2FC
+                x0: -threshold,
+                x1: -threshold,
+                y0: 0,
+                y1: Math.max(...volcanoData.map(d => -Math.log10(parseFloat(d.pval))).filter(y => !isNaN(y))),
+                line: {
+                    color: 'black',
+                    width: 1,
+                    dash: 'dot'
+                }
+                }
+            );
+            }
+
+            const layout = {
+            xaxis: { title: 'log2 Fold Change' },
+            yaxis: { title: '-log10(p-value)' },
+            margin: { t: 30 },
+            shapes: shapes
+            };
+
+
+        Plotly.newPlot('volcano', [trace], layout);
+    </script>
+
+
+    <form action="{{ url_for('preview') }}#volcano-section" method="post" class="volcano-form">
+        <input type="hidden" name="filename" value="{{ filename }}">
+        <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
+        <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
+        <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
+
+        <label for="logfc_threshold" title="Threshold for log2 fold change to define significance.">
+            Log2FC threshold for enrichment:
+        </label>
+
+        <input type="number" step="0.01" name="logfc_threshold" id="logfc_threshold"
+               value="{{ logfc_threshold or '' }}">
+        <button type="submit" title="Click to update the volcano plot using the selected threshold.">
+            Confirm Log2FC Threshold
+        </button>
+
+    </form>
+
+
+    <form id="enrichmentForm" action="{{ url_for('analyze') }}" method="post" class="volcano-form">
+        <input type="hidden" name="filename" value="{{ filename }}">
+        <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
+        <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
+        <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
+        <input type="hidden" name="logfc_threshold" value="{{ logfc_threshold or '' }}">
+        <div style="margin-bottom: 20px; text-align: center;">
+            
+       
+    <label for="aop_selection" style="font-size: 15px; color: #333;"><strong>Select a molecular AOP for enrichment analysis:</strong></label>
+        <p style="font-size: 15px; color: #555; max-width: 600px; margin: 10px auto;">
+            This step links the most affected genes in your dataset to key events in a specific Adverse Outcome Pathway.
+        </p>
+   
+            <select id="aop_selection" name="aop_selection" class="wide-dropdown" required>
+                <option value="" disabled selected>-- Choose an AOP --</option>
+                {% for key, aop in case_study_aops.items() %}
+                    {% if aop.get("enabled", True) %}
+                        <option value="{{ aop.id }}">{{ aop.label }}</option>
+                    {% else %}
+                        <option value="{{ aop.id }}" disabled> {{ aop.label }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" title="Run enrichment analysis based on selected threshold and genes.">
+            Run Enrichment Analysis
+        </button>
+        
+
+
+    </form>
+    <!-- Spinner shown during enrichment -->
+<div id="loadingSpinner" style="display: none; text-align: center; margin-top: 20px;">
+    <div class="spinner"></div>
+    <p style="color: #333; font-weight: bold;">Running enrichment, please wait...</p>
+</div>
+
+<style>
+.spinner {
+  border: 6px solid #eee;
+  border-top: 6px solid #307BBF; /* blue top */
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+</style>
+
+</div>
+{% endif %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const form = document.getElementById("enrichmentForm");
+    const spinner = document.getElementById("loadingSpinner");
+
+    if (form && spinner) {
+        form.addEventListener("submit", function () {
+            spinner.style.display = "block";
+        });
+    }
+});
+</script>
+
+
+
+    <footer>
+        <div class="footer-content">
+            &copy; 2025 Molecular AOP Analyser
+        </div>
+    </footer>
+    </div>
+</body>
+</html>
