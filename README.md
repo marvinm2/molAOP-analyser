@@ -20,8 +20,8 @@ This web application allows users to upload or select gene expression datasets a
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/aop-ke-enrichment.git
-cd aop-ke-enrichment
+git clone https://github.com/marvinm2/molAOP-analyser.git
+cd molAOP-analyser
 ```
 
 ### 2. Build and run the app
