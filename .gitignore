@@ -1,0 +1,33 @@
+# Database files
+molAOP_analyser.db
+*.db
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment files
+.env
+.venv
+env/
+venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.log
+cookies.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Upload directory (keep structure but ignore contents)
+uploads/*
+!uploads/.gitkeep
