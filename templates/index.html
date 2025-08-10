@@ -61,6 +61,7 @@
 
     <!-- Fixed form -->
     <form action="{{ url_for('preview') }}#centered-container" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
     <h2>Select Demo Dataset</h2>
 
     <label>
@@ -76,6 +77,66 @@
     <button type="submit">Load Demo Dataset</button>
     </form>
 
+    <!-- Metadata Collection Section -->
+    <div style="margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-left: 5px solid #307BBF;">
+        <h3 style="margin-top: 0; color: #29235C;">📋 Experiment Information (Optional)</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 15px;">
+            Providing experiment details helps generate comprehensive reports and enables better data organization.
+        </p>
+        
+        <form id="metadataForm" style="display: grid; gap: 15px; max-width: 600px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <label for="dataset_id" style="display: block; font-weight: bold; margin-bottom: 5px; color: #29235C;">
+                        Dataset ID:
+                    </label>
+                    <input type="text" id="dataset_id" name="dataset_id" 
+                           placeholder="e.g., EXP001, GSE123456"
+                           style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+                
+                <div>
+                    <label for="owner" style="display: block; font-weight: bold; margin-bottom: 5px; color: #29235C;">
+                        Owner/Contact:
+                    </label>
+                    <input type="text" id="owner" name="owner" 
+                           placeholder="e.g., Dr. Smith, Lab Team"
+                           style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+            </div>
+            
+            <div>
+                <label for="stressor" style="display: block; font-weight: bold; margin-bottom: 5px; color: #29235C;">
+                    Stressor/Treatment:
+                </label>
+                <input type="text" id="stressor" name="stressor" 
+                       placeholder="e.g., PFOA, Rotenone, Vehicle control"
+                       style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            </div>
+            
+            <div>
+                <label for="dosing" style="display: block; font-weight: bold; margin-bottom: 5px; color: #29235C;">
+                    Dosing Information:
+                </label>
+                <input type="text" id="dosing" name="dosing" 
+                       placeholder="e.g., 10 µM for 24h, 50 mg/kg/day for 7 days"
+                       style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            </div>
+            
+            <div>
+                <label for="description" style="display: block; font-weight: bold; margin-bottom: 5px; color: #29235C;">
+                    Description (Optional):
+                </label>
+                <textarea id="description" name="description" rows="3"
+                          placeholder="Additional notes about the experiment..."
+                          style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;"></textarea>
+            </div>
+        </form>
+        
+        <p style="font-size: 12px; color: #666; margin-top: 10px; font-style: italic;">
+            💡 This information will be included in generated reports for better documentation.
+        </p>
+    </div>
 
     </div>
 
@@ -112,42 +173,116 @@
     </div>
 
     <!-- Column selection form -->
-<form action="{{ url_for('preview') }}#volcano-section" method="post">
+<form action="{{ url_for('preview') }}#volcano-section" method="post" id="columnForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
     <input type="hidden" name="filename" value="{{ filename }}">
+    
+    <!-- Hidden metadata fields -->
+    <input type="hidden" name="dataset_id" id="hidden_dataset_id">
+    <input type="hidden" name="owner" id="hidden_owner">
+    <input type="hidden" name="stressor" id="hidden_stressor">
+    <input type="hidden" name="dosing" id="hidden_dosing">
+    <input type="hidden" name="description" id="hidden_description">
 
     <div class="column-selectors">
-        <div>
+        <div class="column-selector-group">
             <label for="id_column" title="Select the column containing gene symbols or IDs.">
                 Gene Symbol / ID column:
+                {% if column_suggestions and column_suggestions.best_gene_id %}
+                    <span class="auto-suggestion" title="Auto-detected with {{ (column_suggestions.best_gene_id.confidence * 100) | round(0) }}% confidence">
+                        🤖 Auto-detected
+                    </span>
+                {% endif %}
             </label>
             <select id="id_column" name="id_column" required>
                 <option value="" disabled {% if not selected_columns.id %}selected{% endif %}>-- Select --</option>
                 {% for col in columns %}
-                    <option value="{{ col }}" {% if selected_columns.id == col %}selected{% endif %}>{{ col }}</option>
+                    {% set is_suggested = column_suggestions and column_suggestions.best_gene_id and col == column_suggestions.best_gene_id.column_name %}
+                    <option value="{{ col }}" 
+                            {% if selected_columns.id == col %}selected{% endif %}
+                            {% if is_suggested %}data-suggested="true"{% endif %}>
+                        {{ col }}
+                        {% if is_suggested %}
+                            ⭐ ({{ (column_suggestions.best_gene_id.confidence * 100) | round(0) }}% confidence)
+                        {% endif %}
+                    </option>
                 {% endfor %}
             </select>
+            {% if column_suggestions and column_suggestions.best_gene_id %}
+                <div class="column-hint">
+                    <small>
+                        {% if column_suggestions.best_gene_id.data_analysis and column_suggestions.best_gene_id.data_analysis.gene_id_analysis %}
+                            {% set analysis = column_suggestions.best_gene_id.data_analysis.gene_id_analysis %}
+                            Detected: {{ analysis.primary_type }} identifiers ({{ (analysis.confidence * 100) | round(0) }}% valid)
+                        {% endif %}
+                    </small>
+                </div>
+            {% endif %}
         </div>
 
-        <div>
+        <div class="column-selector-group">
             <label for="fc_column" title="Select the column containing log2FC values.">
                 log2FC column:
+                {% if column_suggestions and column_suggestions.best_log2fc %}
+                    <span class="auto-suggestion" title="Auto-detected with {{ (column_suggestions.best_log2fc.confidence * 100) | round(0) }}% confidence">
+                        🤖 Auto-detected
+                    </span>
+                {% endif %}
             </label>
             <select id="fc_column" name="fc_column" required>
                 <option value="" disabled {% if not selected_columns.fc %}selected{% endif %}>-- Select --</option>
                 {% for col in columns %}
-                    <option value="{{ col }}" {% if selected_columns.fc == col %}selected{% endif %}>{{ col }}</option>
+                    {% set is_suggested = column_suggestions and column_suggestions.best_log2fc and col == column_suggestions.best_log2fc.column_name %}
+                    <option value="{{ col }}" 
+                            {% if selected_columns.fc == col %}selected{% endif %}
+                            {% if is_suggested %}data-suggested="true"{% endif %}>
+                        {{ col }}
+                        {% if is_suggested %}
+                            ⭐ ({{ (column_suggestions.best_log2fc.confidence * 100) | round(0) }}% confidence)
+                        {% endif %}
+                    </option>
                 {% endfor %}
             </select>
+            {% if column_suggestions and column_suggestions.best_log2fc and column_suggestions.best_log2fc.data_analysis %}
+                <div class="column-hint">
+                    <small>
+                        {% set stats = column_suggestions.best_log2fc.data_analysis.numeric_stats %}
+                        Range: {{ stats.min | round(2) }} to {{ stats.max | round(2) }}, Mean: {{ stats.mean | round(2) }}
+                    </small>
+                </div>
+            {% endif %}
         </div>
 
-        <div>
-            <label for="pval_column">p-value column:</label>
+        <div class="column-selector-group">
+            <label for="pval_column">p-value column:
+                {% if column_suggestions and column_suggestions.best_pvalue %}
+                    <span class="auto-suggestion" title="Auto-detected with {{ (column_suggestions.best_pvalue.confidence * 100) | round(0) }}% confidence">
+                        🤖 Auto-detected
+                    </span>
+                {% endif %}
+            </label>
             <select id="pval_column" name="pval_column" required>
                 <option value="" disabled {% if not selected_columns.pval %}selected{% endif %}>-- Select --</option>
                 {% for col in columns %}
-                    <option value="{{ col }}" {% if selected_columns.pval == col %}selected{% endif %}>{{ col }}</option>
+                    {% set is_suggested = column_suggestions and column_suggestions.best_pvalue and col == column_suggestions.best_pvalue.column_name %}
+                    <option value="{{ col }}" 
+                            {% if selected_columns.pval == col %}selected{% endif %}
+                            {% if is_suggested %}data-suggested="true"{% endif %}>
+                        {{ col }}
+                        {% if is_suggested %}
+                            ⭐ ({{ (column_suggestions.best_pvalue.confidence * 100) | round(0) }}% confidence)
+                        {% endif %}
+                    </option>
                 {% endfor %}
             </select>
+            {% if column_suggestions and column_suggestions.best_pvalue and column_suggestions.best_pvalue.data_analysis %}
+                <div class="column-hint">
+                    <small>
+                        {% set stats = column_suggestions.best_pvalue.data_analysis.pvalue_stats %}
+                        {{ stats.significant_count }}/{{ stats.total_count }} values < 0.05
+                    </small>
+                </div>
+            {% endif %}
         </div>
     </div>
 
@@ -179,106 +314,124 @@
 
     <div id="volcano" style="width:100%; height:500px;"></div>
     <script>
+        // Volcano plot data and configuration from Flask backend
         const volcanoData = {{ volcano_data | tojson }};
         const threshold = {{ logfc_threshold or 'null' }};
-        const pvalThreshold = {{ pval_cutoff }};  // from Flask
+        const pvalThreshold = {{ pval_cutoff }};
         const pvalY = {{ pval_y | default(1.3) | float }};
 
 
 
+        // Configure Plotly scatter plot trace for volcano visualization
         const trace = {
-            x: volcanoData.map(d => d.log2FC),
-            y: volcanoData.map(d => -Math.log10(d.pval)),
-            text: volcanoData.map(d => d.ID),
+            x: volcanoData.map(d => d.log2FC),  // X-axis: log2 fold change values
+            y: volcanoData.map(d => -Math.log10(d.pval)),  // Y-axis: -log10 p-values
+            text: volcanoData.map(d => d.ID),  // Gene identifiers for hover labels
             mode: 'markers',
             type: 'scatter',
             marker: {
                 size: 6,
                 opacity: 0.7,
+                // Color-code points based on statistical significance and fold change
                 color: volcanoData.map(d => {
                     const fc = parseFloat(d.log2FC);
                     const pval = parseFloat(d.pval);
-                    if (isNaN(fc) || isNaN(pval)) return 'gray';
+                    if (isNaN(fc) || isNaN(pval)) return 'gray';  // Invalid data
 
-                    const sigPval = pval < pvalThreshold;
-                    const sigLeft = sigPval && fc <= -threshold;
-                    const sigRight = sigPval && fc >= threshold;
+                    const sigPval = pval < pvalThreshold;  // Statistically significant p-value
+                    const sigLeft = sigPval && fc <= -threshold;  // Significantly downregulated
+                    const sigRight = sigPval && fc >= threshold;  // Significantly upregulated
                     const absFC = Math.abs(fc);
 
-                    if (sigLeft) return 'blue';
-                    if (sigRight) return 'red';
-                    if (sigPval && absFC < threshold) return 'green';
-                    return 'lightgray';
+                    if (sigLeft) return 'blue';      // Downregulated genes
+                    if (sigRight) return 'red';      // Upregulated genes
+                    if (sigPval && absFC < threshold) return 'green';  // Significant but low fold change
+                    return 'lightgray';  // Not statistically significant
                 })
 
             },
             hovertemplate: 'Gene: %{text}<br>log2FC: %{x}<br>-log10(p): %{y}<extra></extra>'
         };
+        // Calculate data range for drawing significance threshold lines
         const minX = Math.min(...volcanoData.map(d => parseFloat(d.log2FC)).filter(x => !isNaN(x)));
         const maxX = Math.max(...volcanoData.map(d => parseFloat(d.log2FC)).filter(x => !isNaN(x)));
 
+        // Define significance threshold lines for the plot
         const shapes = [
-            // Horizontal line at p = 0.05
+            // Horizontal line marking p-value significance threshold (typically p = 0.05)
             {
                 type: 'line',
-                x0: minX,
+                x0: minX,  // Extend across full x-axis range
                 x1: maxX,
-                y0: pvalY,
+                y0: pvalY,  // Y position: -log10(0.05) ≈ 1.3
                 y1: pvalY,
                 line: {
                 color: 'black',
                 width: 1,
-                dash: 'dash'
+                dash: 'dash'  // Dashed line style
                 }
             }
             ];
 
+            // Add vertical fold change threshold lines if threshold is set
             if (threshold !== null && !isNaN(threshold)) {
+            const maxY = Math.max(...volcanoData.map(d => -Math.log10(parseFloat(d.pval))).filter(y => !isNaN(y)));
+            
             shapes.push(
                 {
-                type: 'line',  // vertical +log2FC
+                type: 'line',  // Positive fold change threshold line
                 x0: threshold,
                 x1: threshold,
                 y0: 0,
-                y1: Math.max(...volcanoData.map(d => -Math.log10(parseFloat(d.pval))).filter(y => !isNaN(y))),
+                y1: maxY,  // Extend to maximum y-value
                 line: {
                     color: 'black',
                     width: 1,
-                    dash: 'dot'
+                    dash: 'dot'  // Dotted line style
                 }
                 },
                 {
-                type: 'line',  // vertical -log2FC
+                type: 'line',  // Negative fold change threshold line
                 x0: -threshold,
                 x1: -threshold,
                 y0: 0,
-                y1: Math.max(...volcanoData.map(d => -Math.log10(parseFloat(d.pval))).filter(y => !isNaN(y))),
+                y1: maxY,  // Extend to maximum y-value
                 line: {
                     color: 'black',
                     width: 1,
-                    dash: 'dot'
+                    dash: 'dot'  // Dotted line style
                 }
                 }
             );
             }
 
+            // Configure plot layout and styling
             const layout = {
-            xaxis: { title: 'log2 Fold Change' },
-            yaxis: { title: '-log10(p-value)' },
-            margin: { t: 30 },
-            shapes: shapes
+            xaxis: { title: 'log2 Fold Change' },  // X-axis label
+            yaxis: { title: '-log10(p-value)' },   // Y-axis label  
+            margin: { t: 30 },  // Top margin to accommodate title
+            shapes: shapes  // Add significance threshold lines
             };
 
 
+        // Render the volcano plot using Plotly.js
         Plotly.newPlot('volcano', [trace], layout);
     </script>
 
 
-    <form action="{{ url_for('preview') }}#volcano-section" method="post" class="volcano-form">
+    <form action="{{ url_for('preview') }}#volcano-section" method="post" class="volcano-form" id="volcanoForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <input type="hidden" name="filename" value="{{ filename }}">
         <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
         <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
+        
+        <!-- Hidden metadata fields -->
+        <input type="hidden" name="dataset_id" class="metadata-field">
+        <input type="hidden" name="owner" class="metadata-field">
+        <input type="hidden" name="stressor" class="metadata-field">
+        <input type="hidden" name="dosing" class="metadata-field">
+        <input type="hidden" name="description" class="metadata-field">
 
         <label for="logfc_threshold" title="Threshold for log2 fold change to define significance.">
             Log2FC threshold for enrichment:
@@ -294,11 +447,19 @@
 
 
     <form id="enrichmentForm" action="{{ url_for('analyze') }}" method="post" class="volcano-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <input type="hidden" name="filename" value="{{ filename }}">
         <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
         <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
         <input type="hidden" name="logfc_threshold" value="{{ logfc_threshold or '' }}">
+        
+        <!-- Hidden metadata fields -->
+        <input type="hidden" name="dataset_id" class="metadata-field">
+        <input type="hidden" name="owner" class="metadata-field">
+        <input type="hidden" name="stressor" class="metadata-field">
+        <input type="hidden" name="dosing" class="metadata-field">
+        <input type="hidden" name="description" class="metadata-field">
         <div style="margin-bottom: 20px; text-align: center;">
             
        
@@ -351,15 +512,47 @@
 {% endif %}
 
 <script>
+// Show loading spinner during enrichment analysis submission
 document.addEventListener("DOMContentLoaded", function () {
     const form = document.getElementById("enrichmentForm");
     const spinner = document.getElementById("loadingSpinner");
 
+    // Add event listener to show spinner when enrichment analysis starts
     if (form && spinner) {
         form.addEventListener("submit", function () {
-            spinner.style.display = "block";
+            spinner.style.display = "block";  // Make spinner visible during processing
         });
     }
+    
+    // Copy metadata from the main form to all hidden fields in other forms
+    function copyMetadataToForms() {
+        const metadataFields = ['dataset_id', 'owner', 'stressor', 'dosing', 'description'];
+        
+        metadataFields.forEach(fieldName => {
+            const sourceField = document.getElementById(fieldName);
+            if (sourceField) {
+                const hiddenFields = document.querySelectorAll(`input[name="${fieldName}"][type="hidden"]`);
+                hiddenFields.forEach(hiddenField => {
+                    hiddenField.value = sourceField.value;
+                });
+            }
+        });
+    }
+    
+    // Add event listeners to all forms to copy metadata before submission
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+        form.addEventListener('submit', function() {
+            copyMetadataToForms();
+        });
+    });
+    
+    // Also copy metadata when metadata fields change
+    const metadataInputs = document.querySelectorAll('#metadataForm input, #metadataForm textarea');
+    metadataInputs.forEach(input => {
+        input.addEventListener('change', copyMetadataToForms);
+        input.addEventListener('input', copyMetadataToForms);  // For real-time updates
+    });
 });
 </script>
 

@@ -232,7 +232,8 @@ table.dataframe th, table.dataframe td {
 }
 
 table.dataframe th {
-    background-color: #f4f4f4;
+    background-color: #307BBF;
+    color: white;
     text-align: center;
 }
 
@@ -377,3 +378,49 @@ img.center {
     object-fit: contain;
     margin-top: 10px;
 }
+
+/* Column suggestion styling */
+.column-selector-group {
+    margin-bottom: 20px;
+}
+
+.auto-suggestion {
+    background-color: #009FE3;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    margin-left: 8px;
+    border: 1px solid #307BBF;
+}
+
+.column-hint {
+    margin-top: 5px;
+    color: #29235C;
+    font-style: italic;
+    background-color: #93D5F6;
+    padding: 3px 8px;
+    border-radius: 3px;
+    border-left: 3px solid #307BBF;
+}
+
+select option[data-suggested="true"] {
+    background-color: #93D5F6;
+    font-weight: bold;
+}
+
+/* Confidence indicators using house style colors */
+.confidence-high {
+    color: #45A6B2; /* Teal - for high confidence */
+}
+
+.confidence-medium {
+    color: #EB5B25; /* Orange - for medium confidence */
+}
+
+.confidence-low {
+    color: #9A1C57; /* Deep Magenta - for low confidence */
+}
+/* ==========================================================================
+   END OF STYLESHEET
+   ========================================================================== */

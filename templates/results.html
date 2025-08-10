@@ -84,6 +84,51 @@
             <p><strong>Background gene set size:</strong> {{ background_size }}</p>
         </div>
 
+        <!-- Report Generation Section -->
+        <div style="margin: 20px 0; padding: 15px; background-color: #f8f9fa; border-left: 5px solid #307BBF; border-radius: 5px;">
+            <h3 style="margin-top: 0; color: #29235C;">📊 Generate Analysis Report</h3>
+            <p style="font-size: 14px; color: #555; margin-bottom: 15px;">
+                Create a comprehensive report including experiment metadata, analysis settings, and results for documentation or sharing.
+            </p>
+            
+            <form id="reportForm" action="{{ url_for('generate_report') }}" method="post" style="display: inline-flex; gap: 10px; align-items: center;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+                <!-- Hidden fields with analysis data -->
+                <input type="hidden" name="filename" value="{{ metadata.get('filename', 'unknown') }}">
+                <input type="hidden" name="gene_count" value="{{ background_size }}">
+                <input type="hidden" name="significant_genes" value="{{ metadata.get('significant_genes', 0) }}">
+                <input type="hidden" name="aop_id" value="{{ metadata.get('aop_id', '') }}">
+                <input type="hidden" name="aop_label" value="{{ metadata.get('aop_label', '') }}">
+                <input type="hidden" name="logfc_threshold" value="{{ threshold }}">
+                <input type="hidden" name="pval_cutoff" value="0.05">
+                <input type="hidden" name="id_column" value="{{ metadata.get('id_column', '') }}">
+                <input type="hidden" name="fc_column" value="{{ metadata.get('fc_column', '') }}">
+                <input type="hidden" name="pval_column" value="{{ metadata.get('pval_column', '') }}">
+                <input type="hidden" name="id_type" value="{{ id_type }}">
+                <input type="hidden" name="enrichment_results" value="{{ table | tojson | e }}">
+                <!-- Metadata fields for report generation -->
+                <input type="hidden" name="dataset_id" value="{{ metadata.get('dataset_id', '') }}">
+                <input type="hidden" name="stressor" value="{{ metadata.get('stressor', '') }}">
+                <input type="hidden" name="dosing" value="{{ metadata.get('dosing', '') }}">
+                <input type="hidden" name="owner" value="{{ metadata.get('owner', '') }}">
+                <input type="hidden" name="description" value="{{ metadata.get('description', '') }}">
+                
+                <label for="reportFormat" style="font-weight: bold; color: #29235C;">Format:</label>
+                <select name="format" id="reportFormat" style="padding: 5px; border: 1px solid #ccc; border-radius: 3px;">
+                    <option value="pdf">PDF Report</option>
+                    <option value="html">HTML Report</option>
+                </select>
+                
+                <button type="submit" style="background-color: #E6007E; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">
+                    📄 Generate Report
+                </button>
+            </form>
+            
+            <p style="font-size: 12px; color: #666; margin-top: 10px; font-style: italic;">
+                💡 Reports include all experiment metadata, analysis parameters, and enrichment results for comprehensive documentation.
+            </p>
+        </div>
+
         <div style="overflow-x: auto;">
             <table id="resultsTable" class="display">
                 <thead>

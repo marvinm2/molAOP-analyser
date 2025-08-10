@@ -4,3 +4,10 @@ numpy
 scipy
 plotly
 statsmodels
+flask-wtf
+sqlalchemy
+weasyprint
+pytest
+pytest-flask
+pytest-mock
+pytest-cov
