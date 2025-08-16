@@ -3,10 +3,13 @@ pandas
 numpy
 scipy
 plotly
+kaleido==0.2.1
 statsmodels
 flask-wtf
 sqlalchemy
 weasyprint
+reportlab
+svglib
 pytest
 pytest-flask
 pytest-mock

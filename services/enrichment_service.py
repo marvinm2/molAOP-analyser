@@ -98,6 +98,25 @@ def run_enrichment_analysis(
     df_results["FDR"] = multipletests(df_results["p_value"], method="fdr_bh")[1]
     df_results = df_results.sort_values("FDR")
     
+    # Reorder columns to prioritize most important information first
+    column_order = [
+        'Title',               # KE title (most important for user understanding)
+        'p_value',            # Statistical significance 
+        'FDR',                # Multiple testing corrected p-value
+        'num_overlap',        # Number of overlapping genes
+        'pct_sig_in_KE',      # Percentage enrichment
+        'total_KE_genes_in_dataset',  # KE gene set size
+        'odds_ratio',         # Effect size
+        'overlap',            # Specific genes (detailed view)
+        'KE',                 # KE ID (for reference)
+        'sig_in_KE',          # Contingency table details
+        'sig_not_KE',
+        'non_sig_in_KE', 
+        'non_sig_not_KE'
+    ]
+    
+    df_results = df_results[column_order]
+    
     logger.info(f"Enrichment analysis completed: {len(df_results)} results generated")
     
     return df_results

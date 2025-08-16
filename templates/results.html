@@ -91,7 +91,7 @@
                 Create a comprehensive report including experiment metadata, analysis settings, and results for documentation or sharing.
             </p>
             
-            <form id="reportForm" action="{{ url_for('generate_report') }}" method="post" style="display: inline-flex; gap: 10px; align-items: center;">
+            <form id="reportForm" action="{{ url_for('generate_report') }}" method="post" style="display: inline-flex; gap: 10px; align-items: center;" onsubmit="captureNetworkPNG()">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                 <!-- Hidden fields with analysis data -->
                 <input type="hidden" name="filename" value="{{ metadata.get('filename', 'unknown') }}">
@@ -105,7 +105,10 @@
                 <input type="hidden" name="fc_column" value="{{ metadata.get('fc_column', '') }}">
                 <input type="hidden" name="pval_column" value="{{ metadata.get('pval_column', '') }}">
                 <input type="hidden" name="id_type" value="{{ id_type }}">
-                <input type="hidden" name="enrichment_results" value="{{ table | tojson | e }}">
+                <textarea name="enrichment_results" style="display: none;">{{ table_json | safe }}</textarea>
+                <textarea name="volcano_data" style="display: none;">{{ volcano_json | safe }}</textarea>
+                <textarea name="network_data" style="display: none;">{{ network_json | safe }}</textarea>
+                <textarea name="network_png" id="network-png-data" style="display: none;"></textarea>
                 <!-- Metadata fields for report generation -->
                 <input type="hidden" name="dataset_id" value="{{ metadata.get('dataset_id', '') }}">
                 <input type="hidden" name="stressor" value="{{ metadata.get('stressor', '') }}">
@@ -133,16 +136,45 @@
             <table id="resultsTable" class="display">
                 <thead>
                     <tr>
+                        {% set column_names = {
+                            'Title': 'Key Event Title',
+                            'p_value': 'P-value', 
+                            'FDR': 'FDR',
+                            'num_overlap': '# Overlap',
+                            'pct_sig_in_KE': '% Enrichment',
+                            'total_KE_genes_in_dataset': 'KE Gene Count',
+                            'odds_ratio': 'Odds Ratio',
+                            'overlap': 'Overlapping Genes',
+                            'KE': 'KE ID',
+                            'sig_in_KE': 'Sig in KE',
+                            'sig_not_KE': 'Sig not KE',
+                            'non_sig_in_KE': 'Non-sig in KE',
+                            'non_sig_not_KE': 'Non-sig not KE'
+                        } %}
                         {% for col in table[0].keys() %}
-                        <th>{{ col }}</th>
+                        <th>{{ column_names.get(col, col) }}</th>
                         {% endfor %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in table %}
                     <tr>
-                        {% for val in row.values() %}
-                        <td>{{ val }}</td>
+                        {% for col, val in row.items() %}
+                        <td>
+                            {% if col in ['p_value', 'FDR'] %}
+                                {% if val < 0.001 %}
+                                    {{ "%.2e"|format(val) }}
+                                {% else %}
+                                    {{ "%.4f"|format(val) }}
+                                {% endif %}
+                            {% elif col == 'odds_ratio' and val != 'NA' %}
+                                {{ "%.2f"|format(val) }}
+                            {% elif col == 'pct_sig_in_KE' %}
+                                {{ "%.1f"|format(val) }}%
+                            {% else %}
+                                {{ val }}
+                            {% endif %}
+                        </td>
                         {% endfor %}
                     </tr>
                     {% endfor %}
@@ -174,7 +206,63 @@
     Use the buttons below the network to add gene nodes, toggle their visibility, reset the view, or download the network.
 </p>
 
-
+<!-- Network Legend -->
+<div style="display: flex; justify-content: center; margin: 20px 0;">
+    <div style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 15px; max-width: 800px;">
+        <h3 style="margin-top: 0; margin-bottom: 15px; color: #29235C; font-size: 16px;">Network Legend</h3>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; font-size: 13px;">
+            <!-- Node Types -->
+            <div>
+                <strong style="color: #29235C;">Key Event Types:</strong>
+                <div style="margin-top: 8px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                        <div style="width: 20px; height: 20px; background: #b3e6b3; border-radius: 50%; border: 1px solid #999; margin-right: 8px;"></div>
+                        <span>MIE (Molecular Initiating Event)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                        <div style="width: 20px; height: 20px; background: #ffd9b3; border-radius: 50%; border: 1px solid #999; margin-right: 8px;"></div>
+                        <span>Intermediate Key Event</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                        <div style="width: 20px; height: 20px; background: #f4b3b3; border-radius: 50%; border: 1px solid #999; margin-right: 8px;"></div>
+                        <span>AO (Adverse Outcome)</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Significance and Gene Coloring -->
+            <div>
+                <strong style="color: #29235C;">Significance & Expression:</strong>
+                <div style="margin-top: 8px;">
+                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                        <div style="width: 20px; height: 20px; background: #ffd9b3; border-radius: 50%; border: 3px solid red; margin-right: 8px;"></div>
+                        <span>Significant KE (FDR < 0.05)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                        <div style="width: 16px; height: 16px; background: linear-gradient(to right, #2c7bb6, #ffffcc, #d73027); border: 2px solid green; border-radius: 50%; margin-right: 8px;"></div>
+                        <span>Significant Gene (colored by log₂FC)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 5px;">
+                        <div style="width: 2px; height: 15px; background: #ccc; margin-right: 8px; margin-left: 9px;"></div>
+                        <span>KE-gene connections</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Color Scale -->
+        <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #ddd;">
+            <strong style="color: #29235C; font-size: 13px;">Gene Expression Scale (log₂FC):</strong>
+            <div style="display: flex; align-items: center; margin-top: 5px;">
+                <span style="font-size: 11px; margin-right: 5px;">-2</span>
+                <div style="width: 100px; height: 12px; background: linear-gradient(to right, #2c7bb6, #abd9e9, #ffffcc, #fdae61, #d73027); border: 1px solid #999;"></div>
+                <span style="font-size: 11px; margin-left: 5px;">+2</span>
+                <span style="font-size: 11px; margin-left: 10px; color: #666;">Downregulated ← → Upregulated</span>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div id="cy" style="width: 100%; height: 800px; border: 2px solid #ccc; border-radius: 8px; background: white;"></div>
 
@@ -185,11 +273,69 @@
   <button onclick="downloadPNG()">Download PNG</button>
   <button onclick="downloadJSON()">Download Network</button>
 </div>
+
+<!-- Network Statistics Table -->
+<div style="margin: 30px auto; max-width: 600px;">
+    <h3 style="color: #29235C; text-align: center; margin-bottom: 15px;">📊 Network Statistics</h3>
+    <div style="background: #f8f9fa; border: 1px solid #ddd; border-radius: 8px; padding: 20px;">
+        <table id="networkStatsTable" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tbody>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 8px 0; font-weight: bold; color: #29235C;">Total Key Events</td>
+                    <td style="padding: 8px 0; text-align: right;" id="stat-total-kes">-</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 8px 0; font-weight: bold; color: #29235C;">Significant Key Events</td>
+                    <td style="padding: 8px 0; text-align: right;" id="stat-sig-kes">-</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 8px 0; font-weight: bold; color: #29235C;">Total Gene Nodes</td>
+                    <td style="padding: 8px 0; text-align: right;" id="stat-total-genes">0</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 8px 0; font-weight: bold; color: #29235C;">Significant Gene Nodes</td>
+                    <td style="padding: 8px 0; text-align: right;" id="stat-sig-genes">0</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 8px 0; font-weight: bold; color: #29235C;">KE-KE Relationships</td>
+                    <td style="padding: 8px 0; text-align: right;" id="stat-ke-edges">-</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 8px 0; font-weight: bold; color: #29235C;">KE-Gene Connections</td>
+                    <td style="padding: 8px 0; text-align: right;" id="stat-gene-edges">0</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px 0; font-weight: bold; color: #29235C;">Total Network Edges</td>
+                    <td style="padding: 8px 0; text-align: right;" id="stat-total-edges">-</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
 </div>
 
 <script>
 const network = {{ network_json | safe }};
 const keToGenes = {{ ke_gene_json | safe }};
+
+// --- Network Statistics Functions ---
+function updateNetworkStats() {
+    const keNodes = cy.nodes().not('.gene');
+    const geneNodes = cy.nodes('.gene');
+    const sigKeNodes = cy.nodes('.significant').not('.gene');
+    const sigGeneNodes = cy.nodes('.gene.significant');
+    const keEdges = cy.edges().not('.gene-link');
+    const geneEdges = cy.edges('.gene-link');
+    
+    document.getElementById('stat-total-kes').textContent = keNodes.length;
+    document.getElementById('stat-sig-kes').textContent = sigKeNodes.length;
+    document.getElementById('stat-total-genes').textContent = geneNodes.length;
+    document.getElementById('stat-sig-genes').textContent = sigGeneNodes.length;
+    document.getElementById('stat-ke-edges').textContent = keEdges.length;
+    document.getElementById('stat-gene-edges').textContent = geneEdges.length;
+    document.getElementById('stat-total-edges').textContent = cy.edges().length;
+}
 
 // --- Gradient function used for gene node background and fallback KE nodes ---
 function defaultLogFCColor(logfc) {
@@ -288,8 +434,8 @@ const cy = cytoscape({
     {
         selector: 'edge.gene-link',
         style: {
-            'line-color': '#999',
-            'width': 2,
+            'line-color': '#ccc',
+            'width': 1,
             'target-arrow-shape': 'none',
             'curve-style': 'bezier'
         }
@@ -300,6 +446,9 @@ const cy = cytoscape({
         rankDir: 'TB'
     }
 });
+
+// Update network statistics on initial load
+updateNetworkStats();
 </script>
 
 <script>
@@ -342,6 +491,9 @@ function addGeneNodes() {
     });
 
     cy.layout({ name: 'cose', animate: true }).run();
+    
+    // Update network statistics after adding genes
+    updateNetworkStats();
 }
 
 
@@ -358,6 +510,9 @@ function toggleGenes() {
     }
 
     genesVisible = !genesVisible;
+    
+    // Update network statistics after toggling gene visibility
+    updateNetworkStats();
 }
 
 function downloadPNG() {
@@ -374,6 +529,35 @@ function downloadJSON() {
   link.href = URL.createObjectURL(blob);
   link.download = 'aop_network.cyjs';
   link.click();
+}
+
+function captureNetworkPNG() {
+  // First ensure genes are added to the network for complete visualization
+  if (cy.nodes('.gene').length === 0) {
+    console.log('Adding genes to network before capture...');
+    addGeneNodes();
+    // Wait for layout to complete
+    setTimeout(() => captureNetworkImage(), 1000);
+  } else {
+    captureNetworkImage();
+  }
+}
+
+function captureNetworkImage() {
+  // Capture the current network as PNG for PDF report with high quality
+  try {
+    const png = cy.png({ 
+      full: true, 
+      scale: 2, // Higher scale for better quality
+      bg: 'white'
+      // Remove maxWidth/maxHeight constraints to prevent stretching
+    });
+    document.getElementById('network-png-data').value = png;
+    console.log('Network PNG captured for PDF report with genes included');
+  } catch (error) {
+    console.warn('Failed to capture network PNG:', error);
+    document.getElementById('network-png-data').value = '';
+  }
 }
 
 </script>

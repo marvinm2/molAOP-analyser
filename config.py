@@ -9,6 +9,7 @@ from datetime import datetime
 class Config:
     # File upload settings
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB for form data (reports)
     ALLOWED_EXTENSIONS = {'csv', 'tsv', 'txt'}
     UPLOAD_FOLDER = 'uploads'
     

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 app.config['UPLOAD_FOLDER'] = Config.UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = Config.MAX_FILE_SIZE
+app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH  # Use higher limit for form data
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Initialize CSRF protection
@@ -377,6 +377,27 @@ def analyze():
         df_raw = load_and_validate_data(filepath, id_col, fc_col, pval_col)
         df_processed, stats = process_gene_expression(df_raw, logfc_threshold)
         
+        # Generate volcano plot data for PDF reports
+        volcano_data = []
+        try:
+            # Use the processed data which already has standardized column names
+            df_volcano = df_processed[['ID', 'log2FC', 'pval']].copy()
+            
+            # Ensure proper data types for plotting
+            df_volcano['ID'] = df_volcano['ID'].astype(str)
+            df_volcano['log2FC'] = pd.to_numeric(df_volcano['log2FC'], errors='coerce')
+            df_volcano['pval'] = pd.to_numeric(df_volcano['pval'], errors='coerce')
+            
+            # Remove invalid data and limit for performance (first 2000 genes for volcano plot to reduce form size)
+            df_volcano = df_volcano.dropna().head(2000)
+            volcano_data = df_volcano.to_dict(orient="records")
+            logger.info(f"Generated volcano plot data with {len(volcano_data)} genes")
+            if volcano_data:
+                logger.info(f"Volcano data sample: {volcano_data[0]}")
+        except Exception as e:
+            logger.warning(f"Volcano plot data generation failed: {e}")
+            volcano_data = []
+        
         # Load AOP data
         ke_list, edges, ke_type_map, ke_title_map = load_aop_data(aop_id)
         
@@ -458,9 +479,29 @@ def analyze():
             # Don't fail the analysis if database save fails
             logger.warning(f"Failed to save experiment to database: {e}")
         
+        # Convert pandas DataFrame to native Python types for JSON serialization
+        enrichment_table = enrichment_results.to_dict(orient="records")
+        
+        # Convert any numpy/pandas types to native Python types
+        for row in enrichment_table:
+            for key, value in row.items():
+                if pd.isna(value):
+                    row[key] = None
+                elif hasattr(value, 'item'):  # numpy scalar
+                    row[key] = value.item()
+                elif isinstance(value, (pd.Series, pd.DataFrame)):
+                    row[key] = str(value)  # Convert complex pandas objects to strings
+        
+        # Pre-serialize JSON for template
+        table_json_str = json.dumps(enrichment_table)
+        logger.info(f"Template JSON: length={len(table_json_str)}, first 200 chars: {table_json_str[:200]}")
+        
         return render_template(
             "results.html",
-            table=enrichment_results.to_dict(orient="records"),
+            table=enrichment_table,
+            table_json=table_json_str,  # Pre-serialize for template
+            volcano_data=volcano_data,
+            volcano_json=json.dumps(volcano_data),  # Pre-serialize for template
             id_type=id_type,
             background_size=stats['total_genes'],
             threshold=logfc_threshold,
@@ -521,12 +562,36 @@ def generate_report():
         # Extract report data from form/session
         try:
             enrichment_results_str = request.form.get('enrichment_results', '[]')
-            logger.info(f"Enrichment results string (first 100 chars): {enrichment_results_str[:100]}")
-            enrichment_results = json.loads(enrichment_results_str) if enrichment_results_str else []
+            logger.info(f"Enrichment results string (first 200 chars): {enrichment_results_str[:200]}")
+            logger.info(f"Enrichment results string length: {len(enrichment_results_str)}")
+            
+            # Try to decode JSON, handling potential HTML entity issues
+            if enrichment_results_str and enrichment_results_str != '[]':
+                # Handle HTML entities that might have been escaped
+                import html
+                enrichment_results_str = html.unescape(enrichment_results_str)
+                logger.info(f"After HTML unescape: {enrichment_results_str[:200]}")
+                enrichment_results = json.loads(enrichment_results_str)
+                logger.info(f"Successfully parsed {len(enrichment_results)} enrichment results")
+                if enrichment_results:
+                    logger.info(f"First result keys: {list(enrichment_results[0].keys())}")
+            else:
+                logger.warning("No enrichment results found in form data")
+                enrichment_results = []
+                
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error for enrichment_results: {e}")
-            logger.error(f"Problematic JSON: {enrichment_results_str[:200]}")
+            logger.error(f"Problematic JSON: {enrichment_results_str[:500]}")
+            # Fallback: try to get enrichment results from session or recreate them
             enrichment_results = []
+        
+        # Get network PNG data and log it
+        network_png_data = request.form.get('network_png', '')
+        logger.info(f"Network PNG form data length: {len(network_png_data)}")
+        if network_png_data:
+            logger.info(f"Network PNG starts with: {network_png_data[:50]}...")
+        else:
+            logger.warning("No network PNG data received from form")
         
         report_data = ReportData(
             metadata=metadata,
@@ -543,6 +608,8 @@ def generate_report():
             id_type=request.form.get('id_type', ''),
             enrichment_results=enrichment_results,
             volcano_data=json.loads(request.form.get('volcano_data', '[]')) if request.form.get('volcano_data') else None,
+            network_data=json.loads(request.form.get('network_data', '{}')) if request.form.get('network_data') else None,
+            network_png=network_png_data,
             software_versions=get_software_versions()
         )
         
