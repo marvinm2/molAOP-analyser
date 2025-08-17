@@ -437,11 +437,51 @@
             Log2FC threshold for enrichment:
         </label>
 
-        <input type="number" step="0.01" name="logfc_threshold" id="logfc_threshold"
-               value="{{ logfc_threshold or '' }}">
-        <button type="submit" title="Click to update the volcano plot using the selected threshold.">
-            Confirm Log2FC Threshold
-        </button>
+        <div style="margin: 10px 0;">
+            <div style="margin-bottom: 10px;">
+                <strong style="color: #29235C; font-size: 14px;">Quick Options:</strong>
+            </div>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px; justify-content: center;">
+                <button type="button" onclick="setThreshold(0)" style="padding: 5px 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px;">0 (All genes)</button>
+                <button type="button" onclick="setThreshold(0.5)" style="padding: 5px 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px;">0.5</button>
+                <button type="button" onclick="setThreshold(1.0)" style="padding: 5px 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px;">1.0</button>
+                <button type="button" onclick="setThreshold(1.5)" style="padding: 5px 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px;">1.5</button>
+                <button type="button" onclick="setThreshold(2.0)" style="padding: 5px 12px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 13px;">2.0</button>
+                <button type="button" onclick="setPercentageThreshold(10)" style="padding: 5px 12px; background: #e8f4f8; border: 1px solid #307BBF; border-radius: 4px; cursor: pointer; font-size: 13px; color: #307BBF;">Top 10%</button>
+                <button type="button" onclick="setPercentageThreshold(20)" style="padding: 5px 12px; background: #e8f4f8; border: 1px solid #307BBF; border-radius: 4px; cursor: pointer; font-size: 13px; color: #307BBF;">Top 20%</button>
+            </div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; justify-content: center;">
+            <span style="font-weight: bold; color: #29235C;">Custom:</span>
+            <input type="number" step="0.01" name="logfc_threshold" id="logfc_threshold"
+                   value="{{ logfc_threshold or '0' }}" style="width: 80px;">
+            <button type="submit" title="Click to update the volcano plot using the selected threshold." style="background-color: #307BBF; color: white; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer;">
+                Update Plot
+            </button>
+        </div>
+
+        <script>
+        function setThreshold(value) {
+            document.getElementById('logfc_threshold').value = value;
+            // Auto-submit the form to update the plot
+            document.querySelector('form[action="{{ url_for("preview") }}"]').submit();
+        }
+
+        function setPercentageThreshold(percentage) {
+            if (typeof volcanoData !== 'undefined' && volcanoData.length > 0) {
+                // Calculate threshold based on percentage of most extreme log2FC values
+                const absLogFCs = volcanoData.map(d => Math.abs(parseFloat(d.log2FC) || 0)).sort((a, b) => b - a);
+                const targetIndex = Math.floor(absLogFCs.length * (percentage / 100));
+                const threshold = Math.round(absLogFCs[targetIndex] * 100) / 100; // Round to 2 decimals
+                document.getElementById('logfc_threshold').value = threshold;
+                // Auto-submit the form to update the plot
+                document.querySelector('form[action="{{ url_for("preview") }}"]').submit();
+            } else {
+                alert('Please load a dataset first to use percentage-based thresholds.');
+            }
+        }
+        </script>
 
     </form>
 
