@@ -53,7 +53,7 @@ docker-compose up --build
 
 ### 3. Open in your browser
 
-Go to: http://localhost:5000
+Go to: <http://localhost:5000>
 
 ---
 
