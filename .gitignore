@@ -23,6 +23,7 @@ venv/
 *.tmp
 *.log
 cookies.txt
+demo_preview.html
 
 # OS files
 .DS_Store
