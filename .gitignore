@@ -4,6 +4,7 @@ molAOP_analyser.db
 
 # Python cache
 __pycache__/
+__pycache__/*
 *.py[cod]
 *$py.class
 
