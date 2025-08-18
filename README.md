@@ -7,6 +7,7 @@ This web application allows users to upload or select gene expression datasets a
 ## Features
 
 ### Data Processing & Analysis
+
 - Upload differential expression results or use demo datasets  
 - **Auto-detection** of gene ID, log2FC, and p-value columns with confidence indicators
 - Interactive volcano plot visualization with customizable thresholds
@@ -15,6 +16,7 @@ This web application allows users to upload or select gene expression datasets a
 - Support for multiple gene ID formats and duplicate handling
 
 ### Visualization & Interactivity
+
 - **Interactive AOP network** visualization using Cytoscape.js with:
   - Color-coded nodes by KE type (MIE, Intermediate, AO)
   - Gene expression coloring (-2 to +2 log2FC scale)
@@ -26,6 +28,7 @@ This web application allows users to upload or select gene expression datasets a
 - Proper decimal formatting for p-values (scientific notation < 0.001)
 
 ### Report Generation
+
 - **PDF and HTML reports** with complete analysis documentation
 - Experiment metadata capture (dataset ID, stressor, dosing, owner, description)
 - Network visualizations embedded in reports
@@ -43,16 +46,19 @@ cd molAOP-analyser
 ```
 
 ### 2. Build and run the app
+
 ```bash
 docker-compose up --build
 ```
 
 ### 3. Open in your browser
+
 Go to: http://localhost:5000
 
 ---
 
 ## Project Structure
+
 ```bash
 ├── app.py                      # Flask app entry point
 ├── helpers.py                 # Utility functions
@@ -69,6 +75,7 @@ Go to: http://localhost:5000
 ├── Dockerfile                 # Container build
 └── docker-compose.yml         # Service orchestration
 ```
+
 ---
 
 ## Demo Datasets
@@ -84,6 +91,7 @@ The app includes preloaded differential expression datasets simulating chemical 
 ## Development
 
 To run locally without Docker:
+
 ```bash
 pip install -r requirements.txt
 python app.py

@@ -134,7 +134,7 @@
         </form>
         
         <p style="font-size: 12px; color: #666; margin-top: 10px; font-style: italic;">
-            💡 This information will be included in generated reports for better documentation.
+            This information will be included in generated reports for better documentation.
         </p>
     </div>
 
@@ -190,7 +190,7 @@
                 Gene Symbol / ID column:
                 {% if column_suggestions and column_suggestions.best_gene_id %}
                     <span class="auto-suggestion" title="Auto-detected with {{ (column_suggestions.best_gene_id.confidence * 100) | round(0) }}% confidence">
-                        🤖 Auto-detected
+                        Auto-detected
                     </span>
                 {% endif %}
             </label>
@@ -225,7 +225,7 @@
                 log2FC column:
                 {% if column_suggestions and column_suggestions.best_log2fc %}
                     <span class="auto-suggestion" title="Auto-detected with {{ (column_suggestions.best_log2fc.confidence * 100) | round(0) }}% confidence">
-                        🤖 Auto-detected
+                        Auto-detected
                     </span>
                 {% endif %}
             </label>
@@ -257,7 +257,7 @@
             <label for="pval_column">p-value column:
                 {% if column_suggestions and column_suggestions.best_pvalue %}
                     <span class="auto-suggestion" title="Auto-detected with {{ (column_suggestions.best_pvalue.confidence * 100) | round(0) }}% confidence">
-                        🤖 Auto-detected
+                        Auto-detected
                     </span>
                 {% endif %}
             </label>
