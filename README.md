@@ -1,17 +1,35 @@
 # Molecular AOP KE Enrichment App
 
-This web application allows users to upload or select gene expression datasets and perform Key Event (KE) enrichment analysis in the context of Molecular Adverse Outcome Pathways (AOPs). The results are visualized in interactive tables and network diagrams.
+This web application allows users to upload or select gene expression datasets and perform Key Event (KE) enrichment analysis in the context of Molecular Adverse Outcome Pathways (AOPs). The results are visualized in interactive tables and network diagrams with comprehensive reporting capabilities.
 
 ---
 
 ## Features
 
-- Upload differential expression results or use demo datasets
-- Column mapping for gene symbols, log2FC, and p-values
-- Volcano plot visualization of DE genes
-- KE enrichment analysis using Fisher's exact test
-- AOP network visualization using Cytoscape.js
-- Exportable results and interactive controls
+### Data Processing & Analysis
+- Upload differential expression results or use demo datasets  
+- **Auto-detection** of gene ID, log2FC, and p-value columns with confidence indicators
+- Interactive volcano plot visualization with customizable thresholds
+- **Quick threshold options**: 0, 0.5, 1.0, 1.5, 2.0, Top 10%, Top 20% genes
+- KE enrichment analysis using Fisher's exact test with FDR correction
+- Support for multiple gene ID formats and duplicate handling
+
+### Visualization & Interactivity
+- **Interactive AOP network** visualization using Cytoscape.js with:
+  - Color-coded nodes by KE type (MIE, Intermediate, AO)
+  - Gene expression coloring (-2 to +2 log2FC scale)
+  - Significance borders for enriched KEs and genes
+  - **Comprehensive legend** with node types and color scales
+  - Add/toggle gene nodes, reset view, download options
+- **Enhanced results table** with user-friendly column names
+- **Network statistics** dashboard showing node/edge counts
+- Proper decimal formatting for p-values (scientific notation < 0.001)
+
+### Report Generation
+- **PDF and HTML reports** with complete analysis documentation
+- Experiment metadata capture (dataset ID, stressor, dosing, owner, description)
+- Network visualizations embedded in reports
+- Exportable tables (CSV, Excel) and network data (JSON)
 
 ---
 

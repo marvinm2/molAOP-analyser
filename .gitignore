@@ -26,6 +26,9 @@ venv/
 cookies.txt
 demo_preview.html
 
+# Development documentation
+CLAUDE.md
+
 # OS files
 .DS_Store
 Thumbs.db
