@@ -129,6 +129,7 @@ def build_ke_gene_mapping(
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Build mapping of KE to gene data for network visualization.
+    Only includes genes that exist in the user's dataset (have expression data).
     
     Args:
         reference_sets: Dictionary mapping KE_ID to gene sets
@@ -145,12 +146,15 @@ def build_ke_gene_mapping(
         if ke in ke_list:
             gene_data = []
             for g in genes:
-                gene_data.append({
-                    "id": g,
-                    "log2FC": gene_logfc_map.get(g, 0),
-                    "significant": bool(gene_significance_map.get(g, False))
-                })
+                # Only include genes that exist in the user's dataset
+                if g in gene_logfc_map:
+                    gene_data.append({
+                        "id": g,
+                        "log2FC": gene_logfc_map[g],
+                        "significant": bool(gene_significance_map.get(g, False))
+                    })
             ke_gene_map[ke] = gene_data
     
-    logger.debug(f"Built KE-gene mapping for {len(ke_gene_map)} KEs")
+    total_genes = sum(len(genes) for genes in ke_gene_map.values())
+    logger.debug(f"Built KE-gene mapping for {len(ke_gene_map)} KEs with {total_genes} genes (filtered to only include genes with expression data)")
     return ke_gene_map
