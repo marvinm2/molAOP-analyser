@@ -36,3 +36,6 @@ Thumbs.db
 # Upload directory (keep structure but ignore contents)
 uploads/*
 !uploads/.gitkeep
+
+# Demo data - exclude cisplatin datasets
+data/Cisplatin_Kidney/

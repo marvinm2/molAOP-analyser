@@ -4,7 +4,8 @@ Configuration settings for the Molecular AOP Analyser application.
 import os
 from dataclasses import dataclass
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
+import zoneinfo
 
 class Config:
     # File upload settings
@@ -30,7 +31,61 @@ class Config:
     # Demo datasets
     DEMO_DATASETS = {
         'GSE90122_TO90137.tsv': 'PXR agonist 1 – GSE90122_TO90137',
-        'GSE90122_SR12813.tsv': 'PXR agonist 2 – GSE90122_SR12813'
+        'GSE90122_SR12813.tsv': 'PXR agonist 2 – GSE90122_SR12813',
+        'Cisplatin_Kidney/CSP_4hr_0.1uM.csv': 'Cisplatin 4hr 0.1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_0.5uM.csv': 'Cisplatin 4hr 0.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_1uM.csv': 'Cisplatin 4hr 1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_2.5uM.csv': 'Cisplatin 4hr 2.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_5uM.csv': 'Cisplatin 4hr 5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_10uM.csv': 'Cisplatin 4hr 10μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_20uM.csv': 'Cisplatin 4hr 20μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_30uM.csv': 'Cisplatin 4hr 30μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_4hr_50uM.csv': 'Cisplatin 4hr 50μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_0.1uM.csv': 'Cisplatin 8hr 0.1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_0.5uM.csv': 'Cisplatin 8hr 0.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_1uM.csv': 'Cisplatin 8hr 1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_2.5uM.csv': 'Cisplatin 8hr 2.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_5uM.csv': 'Cisplatin 8hr 5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_10uM.csv': 'Cisplatin 8hr 10μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_20uM.csv': 'Cisplatin 8hr 20μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_30uM.csv': 'Cisplatin 8hr 30μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_8hr_50uM.csv': 'Cisplatin 8hr 50μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_0.1uM.csv': 'Cisplatin 16hr 0.1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_0.5uM.csv': 'Cisplatin 16hr 0.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_1uM.csv': 'Cisplatin 16hr 1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_2.5uM.csv': 'Cisplatin 16hr 2.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_5uM.csv': 'Cisplatin 16hr 5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_10uM.csv': 'Cisplatin 16hr 10μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_20uM.csv': 'Cisplatin 16hr 20μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_30uM.csv': 'Cisplatin 16hr 30μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_16hr_50uM.csv': 'Cisplatin 16hr 50μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_0.1uM.csv': 'Cisplatin 24hr 0.1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_0.5uM.csv': 'Cisplatin 24hr 0.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_1uM.csv': 'Cisplatin 24hr 1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_2.5uM.csv': 'Cisplatin 24hr 2.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_5uM.csv': 'Cisplatin 24hr 5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_10uM.csv': 'Cisplatin 24hr 10μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_20uM.csv': 'Cisplatin 24hr 20μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_30uM.csv': 'Cisplatin 24hr 30μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_24hr_50uM.csv': 'Cisplatin 24hr 50μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_0.1uM.csv': 'Cisplatin 48hr 0.1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_0.5uM.csv': 'Cisplatin 48hr 0.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_1uM.csv': 'Cisplatin 48hr 1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_2.5uM.csv': 'Cisplatin 48hr 2.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_5uM.csv': 'Cisplatin 48hr 5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_10uM.csv': 'Cisplatin 48hr 10μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_20uM.csv': 'Cisplatin 48hr 20μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_30uM.csv': 'Cisplatin 48hr 30μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_48hr_50uM.csv': 'Cisplatin 48hr 50μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_0.1uM.csv': 'Cisplatin 72hr 0.1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_0.5uM.csv': 'Cisplatin 72hr 0.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_1uM.csv': 'Cisplatin 72hr 1μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_2.5uM.csv': 'Cisplatin 72hr 2.5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_5uM.csv': 'Cisplatin 72hr 5μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_10uM.csv': 'Cisplatin 72hr 10μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_20uM.csv': 'Cisplatin 72hr 20μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_30uM.csv': 'Cisplatin 72hr 30μM – Kidney toxicity',
+        'Cisplatin_Kidney/CSP_72hr_50uM.csv': 'Cisplatin 72hr 50μM – Kidney toxicity'
     }
     
     # AOP case studies
@@ -38,7 +93,7 @@ class Config:
         "DEMO": {"label": "---DEMO---", "enabled": False},
         "steatosis": {"id": "AOP:1", "label": "PXR activation leading to liver steatosis", "enabled": True},
         "VHP-CASES:": {"label": "---VHP CASES---", "enabled": False},
-        "vhp-kidney": {"id": "AOP:2", "label": "DNA adduct formation leading to kidney failure", "enabled": False},
+        "vhp-kidney": {"id": "AOP:2", "label": "DNA adduct formation leading to kidney failure", "enabled": True},
         "vhp-parkinson": {"id": "AOP:3", "label": "Calcium overload in dopaminergic neurons of the substantia nigra leading to parkinsonian motor deficits", "enabled": False},
         "vhp-thyroid": {"id": "AOP:4", "label": "Thyroid hormone-mediated neurodevelopmental toxicity", "enabled": False},
         "ORGAN-NETWORK": {"label": "---ORGAN NETWORKS---","enabled": False},
@@ -79,7 +134,9 @@ class ExperimentMetadata:
     def __post_init__(self):
         """Set upload timestamp if not provided."""
         if self.upload_timestamp is None:
-            self.upload_timestamp = datetime.now()
+            # Use Europe/Amsterdam timezone (CEST/CET)
+            tz = zoneinfo.ZoneInfo("Europe/Amsterdam")
+            self.upload_timestamp = datetime.now(tz)
     
     def to_dict(self) -> dict:
         """Convert metadata to dictionary for JSON serialization."""

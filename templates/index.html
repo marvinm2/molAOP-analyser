@@ -48,6 +48,7 @@
     <ul style="font-size: 15px; color: #333;">
         <li><strong>PXR agonist 1</strong> (GSE90122_TO90137): A reference dataset simulating exposure to a prototypical PXR activator.</li>
         <li><strong>PXR agonist 2</strong> (GSE90122_SR12813): A second compound activating the same nuclear receptor, with a distinct gene profile.</li>
+        <li><strong>Cisplatin kidney exposure</strong>: 45 datasets covering time points from 4-72hr and doses from 0.1-50μM to study nephrotoxicity mechanisms.</li>
     </ul>
     <p style="font-size: 15px; color: #333;">
         After selecting a dataset, the tool will guide you through:
@@ -64,6 +65,7 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
     <h2>Select Demo Dataset</h2>
 
+    <h3>PXR Agonists (Liver Steatosis)</h3>
     <label>
         <input type="radio" name="demo_file" value="GSE90122_TO90137.tsv" required>
         PXR agonist 1 – GSE90122_TO90137
@@ -73,6 +75,97 @@
         <input type="radio" name="demo_file" value="GSE90122_SR12813.tsv">
         PXR agonist 2 – GSE90122_SR12813
     </label><br><br>
+
+    <h3>Cisplatin Kidney Exposure</h3>
+    <details style="margin-bottom: 10px;">
+        <summary style="cursor: pointer; font-weight: bold; margin-bottom: 5px;">4 Hour Exposure</summary>
+        <div style="margin-left: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; line-height: 1.2;">
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_0.1uM.csv" style="margin-right: 5px;">0.1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_0.5uM.csv" style="margin-right: 5px;">0.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_1uM.csv" style="margin-right: 5px;">1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_2.5uM.csv" style="margin-right: 5px;">2.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_5uM.csv" style="margin-right: 5px;">5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_10uM.csv" style="margin-right: 5px;">10μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_20uM.csv" style="margin-right: 5px;">20μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_30uM.csv" style="margin-right: 5px;">30μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_50uM.csv" style="margin-right: 5px;">50μM</label>
+        </div>
+    </details>
+
+    <details style="margin-bottom: 10px;">
+        <summary style="cursor: pointer; font-weight: bold; margin-bottom: 5px;">8 Hour Exposure</summary>
+        <div style="margin-left: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; line-height: 1.2;">
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_0.1uM.csv" style="margin-right: 5px;">0.1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_0.5uM.csv" style="margin-right: 5px;">0.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_1uM.csv" style="margin-right: 5px;">1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_2.5uM.csv" style="margin-right: 5px;">2.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_5uM.csv" style="margin-right: 5px;">5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_10uM.csv" style="margin-right: 5px;">10μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_20uM.csv" style="margin-right: 5px;">20μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_30uM.csv" style="margin-right: 5px;">30μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_50uM.csv" style="margin-right: 5px;">50μM</label>
+        </div>
+    </details>
+
+    <details style="margin-bottom: 10px;">
+        <summary style="cursor: pointer; font-weight: bold; margin-bottom: 5px;">16 Hour Exposure</summary>
+        <div style="margin-left: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; line-height: 1.2;">
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_0.1uM.csv" style="margin-right: 5px;">0.1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_0.5uM.csv" style="margin-right: 5px;">0.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_1uM.csv" style="margin-right: 5px;">1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_2.5uM.csv" style="margin-right: 5px;">2.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_5uM.csv" style="margin-right: 5px;">5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_10uM.csv" style="margin-right: 5px;">10μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_20uM.csv" style="margin-right: 5px;">20μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_30uM.csv" style="margin-right: 5px;">30μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_50uM.csv" style="margin-right: 5px;">50μM</label>
+        </div>
+    </details>
+
+    <details style="margin-bottom: 10px;">
+        <summary style="cursor: pointer; font-weight: bold; margin-bottom: 5px;">24 Hour Exposure</summary>
+        <div style="margin-left: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; line-height: 1.2;">
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_0.1uM.csv" style="margin-right: 5px;">0.1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_0.5uM.csv" style="margin-right: 5px;">0.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_1uM.csv" style="margin-right: 5px;">1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_2.5uM.csv" style="margin-right: 5px;">2.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_5uM.csv" style="margin-right: 5px;">5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_10uM.csv" style="margin-right: 5px;">10μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_20uM.csv" style="margin-right: 5px;">20μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_30uM.csv" style="margin-right: 5px;">30μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_50uM.csv" style="margin-right: 5px;">50μM</label>
+        </div>
+    </details>
+
+    <details style="margin-bottom: 10px;">
+        <summary style="cursor: pointer; font-weight: bold; margin-bottom: 5px;">48 Hour Exposure</summary>
+        <div style="margin-left: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; line-height: 1.2;">
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_0.1uM.csv" style="margin-right: 5px;">0.1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_0.5uM.csv" style="margin-right: 5px;">0.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_1uM.csv" style="margin-right: 5px;">1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_2.5uM.csv" style="margin-right: 5px;">2.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_5uM.csv" style="margin-right: 5px;">5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_10uM.csv" style="margin-right: 5px;">10μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_20uM.csv" style="margin-right: 5px;">20μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_30uM.csv" style="margin-right: 5px;">30μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_50uM.csv" style="margin-right: 5px;">50μM</label>
+        </div>
+    </details>
+
+    <details style="margin-bottom: 10px;">
+        <summary style="cursor: pointer; font-weight: bold; margin-bottom: 5px;">72 Hour Exposure</summary>
+        <div style="margin-left: 20px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; line-height: 1.2;">
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_0.1uM.csv" style="margin-right: 5px;">0.1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_0.5uM.csv" style="margin-right: 5px;">0.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_1uM.csv" style="margin-right: 5px;">1μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_2.5uM.csv" style="margin-right: 5px;">2.5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_5uM.csv" style="margin-right: 5px;">5μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_10uM.csv" style="margin-right: 5px;">10μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_20uM.csv" style="margin-right: 5px;">20μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_30uM.csv" style="margin-right: 5px;">30μM</label>
+            <label style="margin: 2px 0; font-size: 14px;"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_50uM.csv" style="margin-right: 5px;">50μM</label>
+        </div>
+    </details>
 
     <button type="submit">Load Demo Dataset</button>
     </form>

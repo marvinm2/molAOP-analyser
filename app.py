@@ -178,18 +178,25 @@ def preview():
 
     # Handle demo file selection (pre-loaded datasets)
     elif demo_filename:
-        filename = os.path.basename(demo_filename)  # Security: strip any path components
+        # Security: normalize and validate the demo filename path
+        normalized_path = os.path.normpath(demo_filename)
+        
+        # Ensure the path doesn't escape the data directory
+        if '..' in normalized_path or normalized_path.startswith('/'):
+            return f"Invalid demo file path: {demo_filename}", 400
+            
+        filename = os.path.basename(normalized_path)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
-        # Copy demo file from data directory to uploads directory
-        source_path = os.path.join('data', filename)
+        # Copy demo file from data directory to uploads directory (preserving subdirectory)
+        source_path = os.path.join('data', normalized_path)
         if not os.path.exists(source_path):
-            return f"Demo file {filename} not found.", 404
+            return f"Demo file {normalized_path} not found.", 404
         
         # Copy the file to uploads directory
         import shutil
         shutil.copy2(source_path, filepath)
-        logger.info(f"Copied demo file {filename} from {source_path} to {filepath}")
+        logger.info(f"Copied demo file {normalized_path} from {source_path} to {filepath}")
 
     # Handle re-processing of existing uploaded file
     elif filename:
@@ -693,7 +700,7 @@ if __name__ == '__main__':
             logger.warning("Database initialization failed - continuing without persistence")
         
         # Start the application
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        app.run(debug=True, host='0.0.0.0', port=5002)
         
     except FileNotFoundError as e:
         logger.error(f"Startup failed: {e}")

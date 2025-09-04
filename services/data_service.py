@@ -84,7 +84,9 @@ def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0) -> T
     
     for gene, group in grouped:
         if len(group) == 1:
-            combined_rows.append(group.iloc[0])
+            # Convert Series to dict to maintain consistency
+            row = group.iloc[0].to_dict()
+            combined_rows.append(row)
         else:
             # Average log2FC and combine p-values using Fisher's method
             avg_fc = group['log2FC'].astype(float).mean()
