@@ -40,10 +40,12 @@ def run_enrichment_analysis(
     all_genes = set(df['ID'])
     user_gene_status = dict(zip(df['ID'], df['significant']))
     
+    # Use all measured genes as statistical background
+    # This provides consistent comparisons across different AOPs
     sig_genes = df['significant'].sum()
     non_sig_genes = df.shape[0] - sig_genes
     
-    logger.info(f"Gene universe: {len(all_genes)} total, {sig_genes} significant, {non_sig_genes} non-significant")
+    logger.info(f"Statistical background: {len(all_genes)} total genes ({sig_genes} significant, {non_sig_genes} non-significant)")
     
     results = []
     
@@ -54,6 +56,11 @@ def run_enrichment_analysis(
             
             if not ke_genes:
                 logger.debug(f"No overlap found for KE {ke}")
+                continue
+                
+            # Skip KEs with too few genes for reliable statistics
+            if len(ke_genes) < 5:
+                logger.debug(f"Skipping KE {ke}: only {len(ke_genes)} genes (minimum 5 required)")
                 continue
             
             sig_in_ke = {g for g in ke_genes if user_gene_status.get(g, False)}
@@ -68,7 +75,15 @@ def run_enrichment_analysis(
             # Run Fisher's exact test (one-tailed, greater)
             odds, pval = fisher_exact([[a, b], [c, d]], alternative="greater")
             
-            logger.debug(f"KE {ke}: {len(ke_genes)} total genes, {a} significant overlap")
+            # Add statistical warnings for edge cases
+            if a == 0:
+                logger.warning(f"KE {ke}: No significant genes found - result may not be meaningful")
+            elif len(ke_genes) < 10:
+                logger.debug(f"KE {ke}: Small gene set ({len(ke_genes)} genes) - interpret with caution")
+            elif a / len(ke_genes) > 0.9:
+                logger.debug(f"KE {ke}: Very high enrichment ratio ({a}/{len(ke_genes)}) - verify biological relevance")
+            
+            logger.debug(f"KE {ke}: {len(ke_genes)} total genes, {a} significant overlap (p={pval:.2e})")
             
             results.append({
                 'KE': ke,
