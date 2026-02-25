@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 3 of 3 (Network Performance)
-Plan: 1 of 2 in current phase — Plan 03-01 complete
-Status: Phase 3 active
-Last activity: 2026-02-25 — Completed 03-01 (Cytoscape.js overhaul: 3.33.1, LR dagre, spinner, per-KE expand, collapse all)
+Plan: 2 of 2 in current phase — Plan 03-02 complete
+Status: Phase 3 complete — all plans done
+Last activity: 2026-02-25 — Completed 03-02 (overlay zoom controls, transparent PNG export)
 
-Progress: [███████░░░] 70%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 3.2 min
-- Total execution time: 0.27 hours
+- Total plans completed: 6
+- Average duration: 2.8 min
+- Total execution time: 0.28 hours
 
 **By Phase:**
 
@@ -29,10 +29,10 @@ Progress: [███████░░░] 70%
 |-------|-------|-------|----------|
 | 01-api-integration | 2 | 9 min | 4.5 min |
 | 02-ui-ux-and-documentation | 3 | 10 min | 3.3 min |
-| 03-network-performance | 1 | 2 min | 2 min |
+| 03-network-performance | 2 | 3 min | 1.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 3 min, 2 min, 3 min, 5 min, 2 min
+- Last 5 plans: 2 min, 3 min, 5 min, 2 min, 1 min
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -65,6 +65,8 @@ Recent decisions affecting current work:
 - [Phase 03-network-performance]: Per-KE click-to-expand replaces bulk addGeneNodes() to avoid browser freeze on large networks (AOP:2 ~696 genes)
 - [Phase 03-network-performance]: requestAnimationFrame before cy.layout() ensures spinner paints before CPU-intensive layout work begins
 - [Phase 03-network-performance]: Shared gene nodes deduped by cy.getElementById check — single node with edges to all KEs shows cross-KE biological overlap
+- [Phase 03-network-performance]: Zoom controls positioned absolute inside position:relative wrapper — no new wrapper needed; 1.25x zoom factor per step
+- [Phase 03-network-performance]: downloadPNG() transparent by default (no bg param); report generation retains bg:'white' for PDF embedding
 
 ### Pending Todos
 
@@ -79,5 +81,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 03-01-PLAN.md — Cytoscape.js network overhaul with spinner, LR dagre, per-KE expand, collapse all
+Stopped at: Completed 03-02-PLAN.md — Overlay zoom controls and transparent PNG export; Phase 3 complete
 Resume file: None

@@ -21,7 +21,7 @@
 ### Network Visualisation
 
 - [x] **NET-01**: Large AOP networks render without browser slowdown (profiled and optimised)
-- [ ] **NET-02**: PNG export button visible in results page for publication screenshots
+- [x] **NET-02**: PNG export button visible in results page for publication screenshots
 
 ### Export
 
@@ -76,7 +76,7 @@
 | EXP-01 | Phase 2 | Complete |
 | DOC-01 | Phase 2 | Complete |
 | NET-01 | Phase 3 | Complete |
-| NET-02 | Phase 3 | Pending |
+| NET-02 | Phase 3 | Complete |
 
 **Coverage:**
 - v1 requirements: 11 total
