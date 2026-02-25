@@ -763,19 +763,21 @@ const cy = cytoscape({
         }
     }
 ],
-    layout: {
-        name: 'dagre',
-        rankDir: 'LR',
-        nodeSep: 60,
-        rankSep: 80,
-        padding: 30
-    }
+    layout: { name: 'preset' }
 });
 
 cy.one('layoutstop', function() {
     clearTimeout(largeNetworkTimeout);
     hideSpinner();
 });
+
+cy.layout({
+    name: 'dagre',
+    rankDir: 'LR',
+    nodeSep: 60,
+    rankSep: 80,
+    padding: 30
+}).run();
 
 // Update network statistics on initial load
 updateNetworkStats();
