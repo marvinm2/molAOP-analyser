@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}About — molAOP Analyser{% endblock %}
+
+{% block content %}
+<div class="card card--narrow" style="margin-top: 24px;">
+    <h1>About the Molecular AOP Analyser</h1>
+
+    <p>
+        The Molecular AOP Analyser is a web-based tool for Key Event enrichment analysis
+        of transcriptomic data in the context of Adverse Outcome Pathways. It enables researchers
+        and regulators to statistically assess which Key Events within an AOP are supported by
+        their experimental gene expression data.
+    </p>
+
+    <h2>Purpose</h2>
+    <p>
+        Given a differential gene expression dataset and a selected AOP, the tool performs
+        Fisher's exact test enrichment analysis to identify Key Events whose associated gene
+        sets are significantly over-represented among differentially expressed genes. Results
+        are visualised as an interactive AOP network with gene-level expression overlays.
+    </p>
+
+    <h2>Part of VHP4Safety</h2>
+    <p>
+        This tool is developed as part of the
+        <a href="https://vhp4safety.nl" target="_blank" rel="noopener">VHP4Safety</a>
+        (Virtual Human Platform for Safety Assessment) project, an initiative to develop
+        a virtual human platform for next-generation risk assessment of chemicals, pharmaceuticals,
+        and other substances.
+    </p>
+
+    <h2>Data Sources</h2>
+    <p>
+        Key Event gene set mappings are derived from the
+        <a href="https://molaop.bioinformatics.nl" target="_blank" rel="noopener">molAOP Builder</a>
+        platform, which links AOP Key Events to WikiPathways biological pathways. Gene annotations
+        are sourced from <a href="https://www.wikipathways.org" target="_blank" rel="noopener">WikiPathways</a>.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+        For questions, feedback, or collaboration enquiries, please contact the VHP4Safety
+        bioinformatics team or visit the
+        <a href="https://vhp4safety.nl" target="_blank" rel="noopener">VHP4Safety website</a>.
+    </p>
+</div>
+{% endblock %}

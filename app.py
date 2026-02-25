@@ -174,6 +174,15 @@ def documentation():
     """
     return render_template('documentation.html')
 
+@app.route('/about')
+def about():
+    """Render the About page.
+
+    Returns:
+        str: Rendered HTML template for the About page
+    """
+    return render_template('about.html')
+
 @app.route('/api/upload_network_png', methods=['POST'])
 @csrf.exempt
 def upload_network_png():
