@@ -7,6 +7,7 @@ import logging
 import uuid
 import base64
 import time
+import datetime
 from typing import Optional
 from scipy.stats import fisher_exact, combine_pvalues
 from statsmodels.stats.multitest import multipletests
@@ -543,6 +544,7 @@ def analyze():
         stored_metadata['pval_column'] = pval_col
         stored_metadata['significant_genes'] = len(df_processed[df_processed['significant'] == True])
         stored_metadata['data_source'] = data_source
+        stored_metadata['analysis_date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
         # Save experiment metadata and results to database
         try:
