@@ -585,5 +585,35 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   METADATA SUMMARY CARD
+   ========================================================================== */
+
+.metadata-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+}
+
+.metadata-summary__item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.metadata-summary__label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metadata-summary__value {
+    font-size: 15px;
+    font-weight: 600;
+    color: #29235C;
+}
+
+/* ==========================================================================
    END OF STYLESHEET
    ========================================================================== */
