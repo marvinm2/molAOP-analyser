@@ -202,6 +202,35 @@
             font-weight: 500;
         }
 
+        /* Overlay zoom controls */
+        .network-zoom-controls {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 10;
+        }
+        .network-zoom-btn {
+            width: 32px;
+            height: 32px;
+            background: rgba(41, 35, 92, 0.85);  /* Primary Dark #29235C */
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+        .network-zoom-btn:hover {
+            background: rgba(41, 35, 92, 1);
+        }
+
         /* Report form layout */
         .report-form {
             display: inline-flex;
@@ -471,6 +500,11 @@
                     <div class="network-spinner__circle"></div>
                     <p class="network-spinner__message" id="network-spinner-msg">Rendering network...</p>
                 </div>
+            </div>
+            <div class="network-zoom-controls">
+                <button class="network-zoom-btn" id="zoom-in" title="Zoom in">+</button>
+                <button class="network-zoom-btn" id="zoom-out" title="Zoom out">&minus;</button>
+                <button class="network-zoom-btn" id="zoom-fit" title="Fit to screen">&#8862;</button>
             </div>
             <div id="cy" style="width: 100%; height: 800px; border: 2px solid #ccc; border-radius: 8px; background: white;"></div>
         </div>
@@ -745,6 +779,23 @@ cy.one('layoutstop', function() {
 
 // Update network statistics on initial load
 updateNetworkStats();
+
+// --- Overlay zoom controls ---
+document.getElementById('zoom-in').addEventListener('click', function() {
+    cy.zoom({
+        level: cy.zoom() * 1.25,
+        renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 }
+    });
+});
+document.getElementById('zoom-out').addEventListener('click', function() {
+    cy.zoom({
+        level: cy.zoom() / 1.25,
+        renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 }
+    });
+});
+document.getElementById('zoom-fit').addEventListener('click', function() {
+    cy.fit(undefined, 20);
+});
 
 // --- Per-KE click-to-expand with shared gene node deduplication ---
 const expandedKEs = new Set();
