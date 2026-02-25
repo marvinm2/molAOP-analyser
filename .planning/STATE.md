@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 1 of 3 (API Integration)
-Plan: 1 of TBD in current phase
-Status: In progress
-Last activity: 2026-02-25 — Completed 01-01 (Builder API client)
+Plan: 2 of 2 in current phase — Phase complete
+Status: Phase 1 complete
+Last activity: 2026-02-25 — Completed 01-02 (API integration wiring and data source indicator)
 
-Progress: [█░░░░░░░░░] 10%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 6 min
-- Total execution time: 0.1 hours
+- Total plans completed: 2
+- Average duration: 4.5 min
+- Total execution time: 0.15 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-api-integration | 1 | 6 min | 6 min |
+| 01-api-integration | 2 | 9 min | 4.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 6 min
-- Trend: -
+- Last 5 plans: 6 min, 3 min
+- Trend: faster
 
 *Updated after each plan completion*
 
@@ -48,6 +48,9 @@ Recent decisions affecting current work:
 - load_reference_sets() accepts ke_wp_df=None to avoid duplicating merge logic across CSV and API paths
 - KE ID normalisation (space to colon) happens at API fetch boundary, not inside load_reference_sets()
 - Empty BUILDER_API_URL raises ValueError (not network error) to distinguish config vs runtime failures
+- [Phase 01-api-integration]: load_cached_reference_sets() returns (reference_sets, data_source) tuple so provenance flows to the template without a separate lookup
+- [Phase 01-api-integration]: diskcache.FanoutCache at module level — all Gunicorn workers share same directory by design
+- [Phase 01-api-integration]: Data source indicator uses neutral language: 'Local reference files' not error messaging for CSV fallback
 
 ### Pending Todos
 
@@ -62,5 +65,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 01-01-PLAN.md — Builder API client and helpers refactor
+Stopped at: Completed 01-02-PLAN.md — API integration wiring and data source indicator
 Resume file: None

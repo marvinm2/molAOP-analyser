@@ -8,8 +8,8 @@
 ### API Integration
 
 - [x] **API-01**: App fetches KE-gene set mappings from Builder `/api/v1/mappings` endpoint instead of static CSVs
-- [ ] **API-02**: App falls back gracefully to local CSV files when Builder API is unreachable
-- [ ] **API-03**: API responses are cached to avoid repeated calls during a session
+- [x] **API-02**: App falls back gracefully to local CSV files when Builder API is unreachable
+- [x] **API-03**: API responses are cached to avoid repeated calls during a session
 
 ### UI/UX
 
@@ -67,8 +67,8 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | API-01 | Phase 1 | Complete |
-| API-02 | Phase 1 | Pending |
-| API-03 | Phase 1 | Pending |
+| API-02 | Phase 1 | Complete |
+| API-03 | Phase 1 | Complete |
 | UI-01 | Phase 2 | Pending |
 | UI-02 | Phase 2 | Pending |
 | UI-03 | Phase 2 | Pending |
