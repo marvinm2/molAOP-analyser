@@ -269,7 +269,9 @@
 <form action="{{ url_for('preview') }}#volcano-section" method="post" id="columnForm">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
     <input type="hidden" name="filename" value="{{ filename }}">
-    
+    <!-- Signal to the backend that the user has confirmed their column choices -->
+    <input type="hidden" name="columns_confirmed" value="true">
+
     <!-- Hidden metadata fields -->
     <input type="hidden" name="dataset_id" id="hidden_dataset_id">
     <input type="hidden" name="owner" id="hidden_owner">
@@ -518,7 +520,9 @@
         <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
         <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
-        
+        <!-- Preserve confirmation state so the volcano section stays visible after threshold updates -->
+        <input type="hidden" name="columns_confirmed" value="true">
+
         <!-- Hidden metadata fields -->
         <input type="hidden" name="dataset_id" class="metadata-field">
         <input type="hidden" name="owner" class="metadata-field">
@@ -557,8 +561,8 @@
         <script>
         function setThreshold(value) {
             document.getElementById('logfc_threshold').value = value;
-            // Auto-submit the form to update the plot
-            document.querySelector('form[action="{{ url_for("preview") }}"]').submit();
+            // Submit volcanoForm specifically to update the plot while keeping columns confirmed
+            document.getElementById('volcanoForm').submit();
         }
 
         function setPercentageThreshold(percentage) {
@@ -568,8 +572,8 @@
                 const targetIndex = Math.floor(absLogFCs.length * (percentage / 100));
                 const threshold = Math.round(absLogFCs[targetIndex] * 100) / 100; // Round to 2 decimals
                 document.getElementById('logfc_threshold').value = threshold;
-                // Auto-submit the form to update the plot
-                document.querySelector('form[action="{{ url_for("preview") }}"]').submit();
+                // Submit volcanoForm specifically to update the plot while keeping columns confirmed
+                document.getElementById('volcanoForm').submit();
             } else {
                 alert('Please load a dataset first to use percentage-based thresholds.');
             }
