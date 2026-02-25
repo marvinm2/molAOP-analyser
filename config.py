@@ -13,6 +13,7 @@ class Config:
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB for form data (reports)
     ALLOWED_EXTENSIONS = {'csv', 'tsv', 'txt'}
     UPLOAD_FOLDER = 'uploads'
+    TEMP_FOLDER = 'temp'  # Temporary files for network PNGs
     
     # Data processing settings
     MAX_GENES_DISPLAY = 10000
@@ -105,7 +106,13 @@ class Config:
     
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-change-in-production'
-    
+
+    # Builder API settings
+    BUILDER_API_URL = os.environ.get('BUILDER_API_URL', '')
+    BUILDER_API_TIMEOUT = int(os.environ.get('BUILDER_API_TIMEOUT', '30'))
+    CACHE_DIR = os.environ.get('CACHE_DIR', '/tmp/molaop_cache')
+    CACHE_TTL = 3600  # 1 hour
+
     @classmethod
     def validate_data_files(cls):
         """Validate that all required data files exist."""

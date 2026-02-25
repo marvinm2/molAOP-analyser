@@ -10,6 +10,8 @@ sqlalchemy
 weasyprint
 reportlab
 svglib
+requests
+diskcache
 pytest
 pytest-flask
 pytest-mock
