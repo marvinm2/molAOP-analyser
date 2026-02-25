@@ -7,7 +7,7 @@ Three phases transform the working molAOP Analyser into a platform-integrated, b
 ## Phases
 
 - [x] **Phase 1: API Integration** - Replace static CSV reference data with live molAOP Builder API calls, with graceful CSV fallback and rate-limit-safe caching (completed 2026-02-25)
-- [ ] **Phase 2: UI/UX and Documentation** - Overhaul all pages to VHP4Safety brand standards, add sticky navigation, and publish a documentation page
+- [x] **Phase 2: UI/UX and Documentation** - Overhaul all pages to VHP4Safety brand standards, add sticky navigation, and publish a documentation page (completed 2026-02-25)
 - [ ] **Phase 3: Network Performance** - Optimise Cytoscape.js for large AOP networks and surface export controls
 
 ## Phase Details
@@ -60,5 +60,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. API Integration | 1/2 | Complete    | 2026-02-25 |
-| 2. UI/UX and Documentation | 2/3 | In Progress|  |
+| 2. UI/UX and Documentation | 3/3 | Complete   | 2026-02-25 |
 | 3. Network Performance | 0/TBD | Not started | - |

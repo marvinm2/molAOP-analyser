@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 2 of 3 (UI/UX and Documentation)
-Plan: 2 of 3 in current phase — Plan 02-02 complete
+Plan: 3 of 4 in current phase — Plan 02-03 complete
 Status: Phase 2 active
-Last activity: 2026-02-25 — Completed 02-02 (index.html and documentation.html migrated to base.html, card layout, 3-section docs)
+Last activity: 2026-02-25 — Completed 02-03 (results.html migrated to base.html, metadata card, CSV export, analysis_date)
 
-Progress: [████░░░░░░] 40%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -28,14 +28,13 @@ Progress: [████░░░░░░] 40%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-api-integration | 2 | 9 min | 4.5 min |
-| 02-ui-ux-and-documentation | 2 | 5 min | 2.5 min |
+| 02-ui-ux-and-documentation | 3 | 10 min | 3.3 min |
 
 **Recent Trend:**
-- Last 5 plans: 6 min, 3 min, 2 min, 3 min
+- Last 5 plans: 6 min, 3 min, 2 min, 3 min, 5 min
 - Trend: consistent
 
 *Updated after each plan completion*
-| Phase 02-ui-ux-and-documentation P03 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -59,6 +58,8 @@ Recent decisions affecting current work:
 - [Phase 02-ui-ux-and-documentation]: alert-band replaces .subheader h2 in index.html — more semantically appropriate for a page-level notice outside the card
 - [Phase 02-ui-ux-and-documentation]: documentation.html scoped to three sections (Input File Format, Statistical Methods, Interpreting Results) — Getting Started, Understanding AOPs, Glossary, FAQ removed
 - [Phase 02-ui-ux-and-documentation]: Volcano plot Plotly script wrapped in {% if volcano_data %} guard inside {% block scripts %} to prevent JS reference errors on initial page load
+- [Phase 02-ui-ux-and-documentation]: CSV button uses btn--primary (blue) placed top-right of enrichment card header for immediate visibility without scrolling
+- [Phase 02-ui-ux-and-documentation]: DataTables buttons bar preserved alongside branded CSV button for power user access to copy/excel/print
 
 ### Pending Todos
 
@@ -73,5 +74,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 02-02-PLAN.md — index.html and documentation.html migrated to base.html
+Stopped at: Completed 02-03-PLAN.md — results.html overhaul with metadata card, CSV export, and analysis_date
 Resume file: None
