@@ -38,8 +38,8 @@ Plans:
   5. A user can download the enrichment results table as a CSV file from the results page
 **Plans**: 3 plans
 Plans:
-- [ ] 02-01-PLAN.md -- Base template (sticky nav, Inter font, footer), global CSS overhaul, About page and route
-- [ ] 02-02-PLAN.md -- Refactor index.html (single centred card) and documentation.html (3 required sections)
+- [x] 02-01-PLAN.md -- Base template (sticky nav, Inter font, footer), global CSS overhaul, About page and route
+- [x] 02-02-PLAN.md -- Refactor index.html (single centred card) and documentation.html (3 required sections)
 - [ ] 02-03-PLAN.md -- Refactor results.html (metadata card, styled table card, CSV export button, analysis_date)
 
 ### Phase 3: Network Performance
@@ -60,5 +60,5 @@ Phases execute in numeric order: 1 → 2 → 3
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. API Integration | 1/2 | Complete    | 2026-02-25 |
-| 2. UI/UX and Documentation | 1/3 | In Progress|  |
+| 2. UI/UX and Documentation | 2/3 | In Progress|  |
 | 3. Network Performance | 0/TBD | Not started | - |

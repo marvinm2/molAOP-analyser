@@ -10,31 +10,32 @@ See: .planning/PROJECT.md (updated 2026-02-25)
 ## Current Position
 
 Phase: 2 of 3 (UI/UX and Documentation)
-Plan: 1 of 4 in current phase — Plan 02-01 complete
+Plan: 2 of 3 in current phase — Plan 02-02 complete
 Status: Phase 2 active
-Last activity: 2026-02-25 — Completed 02-01 (brand foundation: base.html, style.css overhaul, /about route)
+Last activity: 2026-02-25 — Completed 02-02 (index.html and documentation.html migrated to base.html, card layout, 3-section docs)
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 3.7 min
-- Total execution time: 0.17 hours
+- Total plans completed: 4
+- Average duration: 3.5 min
+- Total execution time: 0.23 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-api-integration | 2 | 9 min | 4.5 min |
-| 02-ui-ux-and-documentation | 1 | 2 min | 2 min |
+| 02-ui-ux-and-documentation | 2 | 5 min | 2.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 6 min, 3 min, 2 min
-- Trend: faster
+- Last 5 plans: 6 min, 3 min, 2 min, 3 min
+- Trend: consistent
 
 *Updated after each plan completion*
+| Phase 02-ui-ux-and-documentation P03 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -55,6 +56,9 @@ Recent decisions affecting current work:
 - [Phase 02-ui-ux-and-documentation]: Background changed from sky blue (#93D5F6) to neutral light grey (#f5f6fa) — sky blue too dominant with branded dark nav
 - [Phase 02-ui-ux-and-documentation]: Legacy header { display:none } kept rather than deleted to prevent bleed-through during incremental template migration
 - [Phase 02-ui-ux-and-documentation]: .subheader reduced from red (#ff0000) to brand orange (#EB5B25) with reduced padding/font-size for subtle alert styling
+- [Phase 02-ui-ux-and-documentation]: alert-band replaces .subheader h2 in index.html — more semantically appropriate for a page-level notice outside the card
+- [Phase 02-ui-ux-and-documentation]: documentation.html scoped to three sections (Input File Format, Statistical Methods, Interpreting Results) — Getting Started, Understanding AOPs, Glossary, FAQ removed
+- [Phase 02-ui-ux-and-documentation]: Volcano plot Plotly script wrapped in {% if volcano_data %} guard inside {% block scripts %} to prevent JS reference errors on initial page load
 
 ### Pending Todos
 
@@ -69,5 +73,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 02-01-PLAN.md — brand foundation (base.html, style.css, /about route)
+Stopped at: Completed 02-02-PLAN.md — index.html and documentation.html migrated to base.html
 Resume file: None

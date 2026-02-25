@@ -16,7 +16,7 @@
 - [x] **UI-01**: All pages use VHP4Safety brand palette (#29235C, #E6007E, #307BBF) and Inter typography
 - [x] **UI-02**: Sticky navigation header matching molAOP Builder style with app branding
 - [ ] **UI-03**: Results page visual hierarchy improved (consistent card layouts, spacing, typography)
-- [ ] **UI-04**: Upload/analysis page restyled to match brand
+- [x] **UI-04**: Upload/analysis page restyled to match brand
 
 ### Network Visualisation
 
@@ -29,7 +29,7 @@
 
 ### Documentation
 
-- [ ] **DOC-01**: Documentation page with usage guide, input format spec, and statistical method explanation
+- [x] **DOC-01**: Documentation page with usage guide, input format spec, and statistical method explanation
 
 ## v2 Requirements
 
@@ -72,9 +72,9 @@
 | UI-01 | Phase 2 | Complete |
 | UI-02 | Phase 2 | Complete |
 | UI-03 | Phase 2 | Pending |
-| UI-04 | Phase 2 | Pending |
+| UI-04 | Phase 2 | Complete |
 | EXP-01 | Phase 2 | Pending |
-| DOC-01 | Phase 2 | Pending |
+| DOC-01 | Phase 2 | Complete |
 | NET-01 | Phase 3 | Pending |
 | NET-02 | Phase 3 | Pending |
 
