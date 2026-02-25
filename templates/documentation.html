@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}Documentation — molAOP Analyser{% endblock %}
+
+{% block head_extra %}
+<style>
+    .doc-nav {
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        border-left: 5px solid #307BBF;
+    }
+    .doc-nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+    .doc-nav li {
+        margin: 8px 0;
+    }
+    .doc-nav a {
+        color: #307BBF;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 15px;
+    }
+    .doc-nav a:hover {
+        color: #E6007E;
+        text-decoration: underline;
+    }
+    .doc-section {
+        margin-bottom: 40px;
+        padding: 20px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .doc-section h2 {
+        color: #29235C;
+        border-bottom: 3px solid #307BBF;
+        padding-bottom: 10px;
+        margin-top: 0;
+    }
+    .doc-section h3 {
+        color: #307BBF;
+        margin-top: 25px;
+    }
+    .doc-section h4 {
+        color: #29235C;
+        margin-top: 20px;
+    }
+    .info-box {
+        background-color: #f1f9ff;
+        border-left: 5px solid #307BBF;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+    }
+    .warning-box {
+        background-color: #fff4e6;
+        border-left: 5px solid #EB5B25;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+    }
+    .example-box {
+        background-color: #f0f0f0;
+        border: 1px solid #ccc;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 13px;
+    }
+    code {
+        background-color: #f0f0f0;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: monospace;
+        color: #E6007E;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card card--narrow" style="margin-top: 24px;">
+
+    <!-- Quick Navigation -->
+    <div class="doc-nav">
+        <h3 style="margin-top: 0; color: #29235C;">Contents</h3>
+        <ul>
+            <li><a href="#input-format">Input File Format Specification</a></li>
+            <li><a href="#statistical-methods">Statistical Methods</a></li>
+            <li><a href="#interpreting-results">Interpreting Results</a></li>
+        </ul>
+    </div>
+
+    <!-- Section 1: Input File Format -->
+    <div class="doc-section" id="input-format">
+        <h2>Input File Format Specification</h2>
+
+        <h3>File Format</h3>
+        <ul>
+            <li>Accepted formats: CSV, TSV, or TXT</li>
+            <li>Maximum file size: 10 MB</li>
+            <li>Must be tabular data with column headers</li>
+        </ul>
+
+        <h3>Required Columns</h3>
+        <p>Your data file must contain at least three columns (column names don't matter &mdash; the tool auto-detects them):</p>
+        <ol>
+            <li><strong>Gene Identifiers:</strong> HGNC symbols (e.g., TP53), Ensembl IDs (e.g., ENSG00000141510), or Entrez IDs</li>
+            <li><strong>Fold Change:</strong> log&#x2082; fold change values from differential expression analysis</li>
+            <li><strong>P-values:</strong> Statistical significance values (raw or adjusted p-values)</li>
+        </ol>
+
+        <h3>Example Data Format</h3>
+        <div class="example-box">
+Gene_Symbol    log2FoldChange    pvalue    padj
+TP53           2.34             0.0001    0.005
+BRCA1          -1.56            0.023     0.089
+EGFR           0.89             0.045     0.12
+CYP3A4         3.21             0.00001   0.0001
+...
+        </div>
+
+        <div class="warning-box">
+            <strong>Note:</strong> Gene identifiers should be consistent throughout your file. Mixing identifier types
+            (e.g., some symbols, some Ensembl IDs) may reduce matching efficiency.
+        </div>
+
+        <h3>Data Preprocessing Tips</h3>
+        <ul>
+            <li>Remove duplicate gene entries or aggregate them before upload</li>
+            <li>Ensure p-values are between 0 and 1</li>
+            <li>log&#x2082;FC values can be any real number (typically between -10 and +10)</li>
+            <li>Missing values (NA, NaN) in gene ID column will cause those rows to be skipped</li>
+        </ul>
+    </div>
+
+    <!-- Section 2: Statistical Methods -->
+    <div class="doc-section" id="statistical-methods">
+        <h2>Statistical Methods</h2>
+
+        <h3>Fisher's Exact Test</h3>
+        <p>
+            The enrichment analysis uses Fisher's exact test to determine if a Key Event gene set is over-represented
+            among your significant genes. For each KE, a 2&times;2 contingency table is constructed:
+        </p>
+        <div class="example-box">
+            |                  | In KE gene set | Not in KE gene set |
+            |------------------|----------------|--------------------|
+            | Significant      | a              | b                  |
+            | Not significant  | c              | d                  |
+        </div>
+        <p>
+            Fisher's exact test calculates the probability of observing this distribution (or more extreme) under the
+            null hypothesis that genes are randomly distributed.
+        </p>
+
+        <h3>False Discovery Rate (FDR) Correction</h3>
+        <p>
+            Because multiple KEs are tested simultaneously, we apply Benjamini-Hochberg FDR correction to control the
+            false discovery rate. This adjusts p-values to account for multiple comparisons, reducing false positives.
+        </p>
+        <div class="info-box">
+            <strong>Interpretation:</strong> FDR &lt; 0.05 means there is less than 5% chance this result is a false positive
+            among all significant results.
+        </div>
+
+        <h3>Odds Ratio</h3>
+        <p>
+            The odds ratio quantifies the strength of association between KE membership and significance:
+        </p>
+        <ul>
+            <li><strong>OR = 1:</strong> No association</li>
+            <li><strong>OR &gt; 1:</strong> Positive association (enrichment)</li>
+            <li><strong>OR &lt; 1:</strong> Negative association (depletion)</li>
+        </ul>
+        <p>
+            For example, OR = 3.5 means genes in this KE are 3.5 times more likely to be significant than expected by chance.
+        </p>
+
+        <h3>Background Universe</h3>
+        <p>
+            The enrichment analysis uses <strong>all genes in your uploaded dataset</strong> as the background universe.
+            This ensures the statistical test accounts for which genes were actually measured in your experiment.
+        </p>
+
+        <div class="warning-box">
+            <strong>Important:</strong> The background is NOT the entire human genome, but rather the genes you provide
+            in your input file. This makes the test more appropriate for platform-specific data (e.g., RNA-seq, microarray).
+        </div>
+    </div>
+
+    <!-- Section 3: Interpreting Results -->
+    <div class="doc-section" id="interpreting-results">
+        <h2>Interpreting Results</h2>
+
+        <h3>Volcano Plot</h3>
+        <p>The volcano plot visualizes the magnitude (log&#x2082;FC) and significance (-log&#x2081;&#x2080; p-value) of gene expression changes:</p>
+        <ul>
+            <li><strong style="color: red;">Red points:</strong> Significantly upregulated genes (above FC threshold, p &lt; 0.05)</li>
+            <li><strong style="color: blue;">Blue points:</strong> Significantly downregulated genes (below -FC threshold, p &lt; 0.05)</li>
+            <li><strong style="color: green;">Green points:</strong> Statistically significant but below FC threshold</li>
+            <li><strong style="color: lightgray;">Gray points:</strong> Not statistically significant</li>
+        </ul>
+
+        <div class="info-box">
+            <strong>Tip:</strong> Adjust the log&#x2082;FC threshold using quick options (0, 0.5, 1.0, 1.5, 2.0) or percentage-based
+            thresholds (top 10%, top 20%) to focus on the most extreme expression changes.
+        </div>
+
+        <h3>Enrichment Table</h3>
+        <p>The enrichment results table shows which Key Events are over-represented in your significant genes:</p>
+        <ul>
+            <li><strong>Key Event Title:</strong> Name of the biological process or event</li>
+            <li><strong># Overlap:</strong> Number of your significant genes associated with this KE</li>
+            <li><strong>% Enrichment:</strong> Percentage of KE genes that are significant in your dataset</li>
+            <li><strong>P-value:</strong> Statistical significance from Fisher's exact test</li>
+            <li><strong>FDR:</strong> False Discovery Rate (adjusted p-value) using Benjamini-Hochberg correction</li>
+            <li><strong>Odds Ratio:</strong> Magnitude of enrichment (&gt;1 indicates over-representation)</li>
+        </ul>
+
+        <div class="info-box">
+            <strong>Significance threshold:</strong> Typically, FDR &lt; 0.05 is considered statistically significant after
+            multiple testing correction.
+        </div>
+
+        <h3>AOP Network Visualization</h3>
+        <p>The interactive network shows how Key Events connect within the selected AOP:</p>
+        <ul>
+            <li><strong>Node colors:</strong>
+                <ul>
+                    <li>Light green = Molecular Initiating Event (MIE)</li>
+                    <li>Light orange = Intermediate Key Event</li>
+                    <li>Light red = Adverse Outcome (AO)</li>
+                </ul>
+            </li>
+            <li><strong>Node borders:</strong>
+                <ul>
+                    <li>Red border = Significantly enriched KE (FDR &lt; 0.05)</li>
+                    <li>Green border = Significantly affected gene</li>
+                </ul>
+            </li>
+            <li><strong>Gene nodes:</strong> Colored by expression (blue = downregulated, red = upregulated)</li>
+            <li><strong>Edges:</strong> Gray lines show KE-KE relationships; thin gray lines show KE-gene associations</li>
+        </ul>
+
+        <h4>Network Controls</h4>
+        <ul>
+            <li><strong>+ Add Gene Nodes:</strong> Display genes associated with each KE</li>
+            <li><strong>Toggle Gene Visibility:</strong> Show/hide gene nodes</li>
+            <li><strong>Reset View:</strong> Return to original layout and zoom</li>
+            <li><strong>Download PNG:</strong> Export network visualization</li>
+            <li><strong>Download Network:</strong> Export Cytoscape JSON file for further analysis</li>
+        </ul>
+    </div>
+
+</div>
+{% endblock %}
