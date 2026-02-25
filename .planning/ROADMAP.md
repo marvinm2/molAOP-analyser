@@ -6,7 +6,7 @@ Three phases transform the working molAOP Analyser into a platform-integrated, b
 
 ## Phases
 
-- [ ] **Phase 1: API Integration** - Replace static CSV reference data with live molAOP Builder API calls, with graceful CSV fallback and rate-limit-safe caching
+- [x] **Phase 1: API Integration** - Replace static CSV reference data with live molAOP Builder API calls, with graceful CSV fallback and rate-limit-safe caching (completed 2026-02-25)
 - [ ] **Phase 2: UI/UX and Documentation** - Overhaul all pages to VHP4Safety brand standards, add sticky navigation, and publish a documentation page
 - [ ] **Phase 3: Network Performance** - Optimise Cytoscape.js for large AOP networks and surface export controls
 
@@ -36,7 +36,11 @@ Plans:
   3. The results page presents enrichment data in clearly separated cards with consistent spacing and typography
   4. The documentation page is reachable from the navigation and covers input file format, statistical method, and result interpretation
   5. A user can download the enrichment results table as a CSV file from the results page
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 02-01-PLAN.md -- Base template (sticky nav, Inter font, footer), global CSS overhaul, About page and route
+- [ ] 02-02-PLAN.md -- Refactor index.html (single centred card) and documentation.html (3 required sections)
+- [ ] 02-03-PLAN.md -- Refactor results.html (metadata card, styled table card, CSV export button, analysis_date)
 
 ### Phase 3: Network Performance
 **Goal**: Large AOP networks render without browser slowdown, and users can export the network as an image for publication use
@@ -55,6 +59,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. API Integration | 1/2 | In Progress|  |
-| 2. UI/UX and Documentation | 0/TBD | Not started | - |
+| 1. API Integration | 1/2 | Complete    | 2026-02-25 |
+| 2. UI/UX and Documentation | 1/3 | In Progress|  |
 | 3. Network Performance | 0/TBD | Not started | - |

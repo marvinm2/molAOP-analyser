@@ -13,8 +13,8 @@
 
 ### UI/UX
 
-- [ ] **UI-01**: All pages use VHP4Safety brand palette (#29235C, #E6007E, #307BBF) and Inter typography
-- [ ] **UI-02**: Sticky navigation header matching molAOP Builder style with app branding
+- [x] **UI-01**: All pages use VHP4Safety brand palette (#29235C, #E6007E, #307BBF) and Inter typography
+- [x] **UI-02**: Sticky navigation header matching molAOP Builder style with app branding
 - [ ] **UI-03**: Results page visual hierarchy improved (consistent card layouts, spacing, typography)
 - [ ] **UI-04**: Upload/analysis page restyled to match brand
 
@@ -69,8 +69,8 @@
 | API-01 | Phase 1 | Complete |
 | API-02 | Phase 1 | Complete |
 | API-03 | Phase 1 | Complete |
-| UI-01 | Phase 2 | Pending |
-| UI-02 | Phase 2 | Pending |
+| UI-01 | Phase 2 | Complete |
+| UI-02 | Phase 2 | Complete |
 | UI-03 | Phase 2 | Pending |
 | UI-04 | Phase 2 | Pending |
 | EXP-01 | Phase 2 | Pending |
