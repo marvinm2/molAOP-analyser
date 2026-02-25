@@ -1,9 +1,12 @@
-from flask import Flask, render_template, request, abort, session, make_response, send_file
+from flask import Flask, render_template, request, abort, session, make_response, send_file, jsonify
 import pandas as pd
 import os
 import json
 import math
 import logging
+import uuid
+import base64
+import time
 from typing import Optional
 from scipy.stats import fisher_exact, combine_pvalues
 from statsmodels.stats.multitest import multipletests
@@ -14,7 +17,8 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf
 from config import Config, ExperimentMetadata
 from validation import validate_form_data, validate_file_upload, log_validation_error
 from helpers import load_reference_sets
-from cache_manager import cache, cached_data_loader
+from cache_manager import cache, cached_data_loader, get_reference_cache
+from services.api_service import fetch_reference_sets_from_api
 from exceptions import AOPAnalysisError, format_error_response
 from utils import cleanup_file, validate_file_path
 from services.data_service import load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data
@@ -35,8 +39,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.config.from_object(Config)
 app.config['UPLOAD_FOLDER'] = Config.UPLOAD_FOLDER
+app.config['TEMP_FOLDER'] = Config.TEMP_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH  # Use higher limit for form data
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['TEMP_FOLDER'], exist_ok=True)
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
@@ -95,15 +101,37 @@ def handle_internal_error(e):
     return "An internal server error occurred. Please try again later.", 500
 
 
+def cleanup_old_temp_files(max_age_hours=1):
+    """Remove temporary files older than max_age_hours.
+
+    Args:
+        max_age_hours: Maximum age in hours before file is deleted
+    """
+    temp_folder = app.config['TEMP_FOLDER']
+    current_time = time.time()
+    max_age_seconds = max_age_hours * 3600
+
+    try:
+        for filename in os.listdir(temp_folder):
+            filepath = os.path.join(temp_folder, filename)
+            if os.path.isfile(filepath):
+                file_age = current_time - os.path.getmtime(filepath)
+                if file_age > max_age_seconds:
+                    os.remove(filepath)
+                    logger.info(f"Cleaned up old temp file: {filename}")
+    except Exception as e:
+        logger.warning(f"Error during temp file cleanup: {e}")
+
+
 def extract_metadata_from_request() -> Optional[ExperimentMetadata]:
     """Extract experiment metadata from request form data.
-    
+
     Returns:
         ExperimentMetadata object if metadata fields are present, None otherwise
     """
     metadata_fields = ['dataset_id', 'stressor', 'dosing', 'owner', 'description']
     metadata_values = {}
-    
+
     # Check if any metadata fields are present and non-empty
     has_metadata = False
     for field in metadata_fields:
@@ -111,10 +139,10 @@ def extract_metadata_from_request() -> Optional[ExperimentMetadata]:
         if value:
             has_metadata = True
         metadata_values[field] = value
-    
+
     if not has_metadata:
         return None
-    
+
     try:
         return ExperimentMetadata(
             dataset_id=metadata_values.get('dataset_id', ''),
@@ -131,11 +159,59 @@ def extract_metadata_from_request() -> Optional[ExperimentMetadata]:
 @app.route('/')
 def index():
     """Render the main application page with available AOP case studies.
-    
+
     Returns:
         str: Rendered HTML template for the main page
     """
     return render_template('index.html', case_study_aops=Config.CASE_STUDY_AOPS)
+
+@app.route('/documentation')
+def documentation():
+    """Render the documentation page.
+
+    Returns:
+        str: Rendered HTML template for documentation
+    """
+    return render_template('documentation.html')
+
+@app.route('/api/upload_network_png', methods=['POST'])
+@csrf.exempt
+def upload_network_png():
+    """Upload network PNG data and store in temporary file.
+
+    Expects JSON with 'png_data' field containing base64-encoded PNG.
+    Returns JSON with 'temp_id' for later retrieval.
+    """
+    try:
+        # Clean up old files before saving new one
+        cleanup_old_temp_files()
+
+        data = request.get_json()
+        if not data or 'png_data' not in data:
+            return jsonify({'error': 'No PNG data provided'}), 400
+
+        png_data = data['png_data']
+
+        # Remove data URL prefix if present
+        if png_data.startswith('data:image/png;base64,'):
+            png_data = png_data.replace('data:image/png;base64,', '')
+
+        # Generate unique ID for temp file
+        temp_id = str(uuid.uuid4())
+        temp_path = os.path.join(app.config['TEMP_FOLDER'], f"{temp_id}.png")
+
+        # Decode and save PNG
+        png_bytes = base64.b64decode(png_data)
+        with open(temp_path, 'wb') as f:
+            f.write(png_bytes)
+
+        logger.info(f"Saved network PNG to temp file: {temp_id}.png ({len(png_bytes)} bytes)")
+
+        return jsonify({'temp_id': temp_id}), 200
+
+    except Exception as e:
+        logger.error(f"Failed to upload network PNG: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/preview', methods=['POST'])
 def preview():
@@ -260,18 +336,21 @@ def preview():
     pval_y = -math.log10(pval_cutoff)  # Y-axis position for significance line
     volcano_data = []  # Will store plot data points
 
-    # Generate volcano plot data when all required columns are available
-    if id_col and fc_col and pval_col:
+    # Check if user explicitly confirmed column selections
+    columns_confirmed = request.form.get("columns_confirmed") == "true"
+
+    # Generate volcano plot data ONLY when columns are confirmed by user
+    if id_col and fc_col and pval_col and columns_confirmed:
         try:
             # Extract and standardize the three essential columns
             df_v = df[[id_col, fc_col, pval_col]].dropna()
             df_v.columns = ['ID', 'log2FC', 'pval']
-            
+
             # Ensure proper data types for plotting
             df_v['ID'] = df_v['ID'].astype(str)  # Gene identifiers as strings
             df_v['log2FC'] = pd.to_numeric(df_v['log2FC'], errors='coerce')  # Numeric fold changes
             df_v['pval'] = pd.to_numeric(df_v['pval'], errors='coerce')  # Numeric p-values
-            
+
             # Remove any remaining invalid data and limit for performance
             df_v = df_v.dropna().head(Config.MAX_GENES_DISPLAY)
             volcano_data = df_v.to_dict(orient="records")
@@ -289,6 +368,7 @@ def preview():
         logfc_threshold=logfc_threshold,
         pval_cutoff=pval_cutoff,
         pval_y=pval_y,
+        columns_confirmed=columns_confirmed,
         case_study_aops=Config.CASE_STUDY_AOPS
     )
 
@@ -409,7 +489,7 @@ def analyze():
         ke_list, edges, ke_type_map, ke_title_map = load_aop_data(aop_id)
         
         # Get cached reference sets and run enrichment analysis
-        current_reference_sets = load_cached_reference_sets()
+        current_reference_sets, data_source = load_cached_reference_sets()
         enrichment_results = run_enrichment_analysis(
             df_processed, current_reference_sets, ke_list, ke_title_map
         )
@@ -453,7 +533,8 @@ def analyze():
         stored_metadata['fc_column'] = fc_col
         stored_metadata['pval_column'] = pval_col
         stored_metadata['significant_genes'] = len(df_processed[df_processed['significant'] == True])
-        
+        stored_metadata['data_source'] = data_source
+
         # Save experiment metadata and results to database
         try:
             if stored_metadata:
@@ -592,8 +673,34 @@ def generate_report():
             # Fallback: try to get enrichment results from session or recreate them
             enrichment_results = []
         
-        # Get network PNG data and log it
-        network_png_data = request.form.get('network_png', '')
+        # Get network PNG from temp file
+        network_png_id = request.form.get('network_png_id', '')
+        network_png_data = ''
+
+        if network_png_id:
+            temp_path = os.path.join(app.config['TEMP_FOLDER'], f"{network_png_id}.png")
+            if os.path.exists(temp_path):
+                try:
+                    with open(temp_path, 'rb') as f:
+                        png_bytes = f.read()
+                    # Convert to base64 data URL for compatibility with existing report generation
+                    network_png_data = 'data:image/png;base64,' + base64.b64encode(png_bytes).decode('utf-8')
+                    logger.info(f"Loaded network PNG from temp file: {network_png_id} ({len(png_bytes)} bytes)")
+
+                    # Clean up temp file after reading
+                    try:
+                        os.remove(temp_path)
+                        logger.info(f"Cleaned up temp file: {network_png_id}.png")
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to clean up temp file {network_png_id}.png: {cleanup_error}")
+
+                except Exception as e:
+                    logger.error(f"Failed to read temp PNG file: {e}")
+                    network_png_data = ''
+            else:
+                logger.warning(f"Temp PNG file not found: {network_png_id}.png")
+        else:
+            logger.warning("No network_png_id provided in form data")
         logger.info(f"Network PNG form data length: {len(network_png_data)}")
         if network_png_data:
             logger.info(f"Network PNG starts with: {network_png_data[:50]}...")
@@ -660,28 +767,74 @@ def generate_report():
         return "An error occurred while generating the report. Please try again.", 500
 
 
+# Multi-process-safe disk cache for reference sets.
+# In a Gunicorn pre-fork deployment each worker gets its own Python object,
+# but all objects point to the same directory — the intended diskcache pattern.
+_reference_cache = get_reference_cache(Config.CACHE_DIR)
+REFERENCE_CACHE_KEY = "reference_sets_v1"
+
+
 def load_cached_reference_sets():
-    """Load AOP reference gene sets with intelligent caching.
-    
-    Loads the mapping between Key Events (KEs) and WikiPathways gene sets,
-    with 1-hour TTL caching to improve performance on repeated requests.
-    
+    """Load AOP reference gene sets with API-first strategy and disk caching.
+
+    Loading order:
+    1. Check diskcache (shared across Gunicorn workers)
+    2. Fetch from Builder API (with retry)
+    3. Fall back to local CSV files
+
     Returns:
-        dict: Mapping of KE IDs to sets of associated genes
+        tuple: (reference_sets dict, data_source string)
+        data_source is one of: 'api', 'cache', 'csv'
     """
-    return cached_data_loader(
-        cache_key="reference_sets",
-        loader_func=lambda: load_reference_sets(
-            ke_wp_path='data/KE-WP.csv',           # KE to WikiPathway mappings
-            wp_gene_path='data/edges_wpid_to_gene.csv',  # WikiPathway to gene mappings
-            node_path='data/node_attributes.csv'          # Gene annotation data
-        ),
-        ttl=3600  # Cache for 1 hour to balance freshness and performance
+    # Check disk cache first
+    cached = _reference_cache.get(REFERENCE_CACHE_KEY)
+    if cached is not None:
+        reference_sets, original_source = cached
+        logger.info(
+            f"Loaded {len(reference_sets)} KE sets from disk cache "
+            f"(originally from {original_source})"
+        )
+        return reference_sets, "cache"
+
+    # Try API
+    try:
+        reference_sets = fetch_reference_sets_from_api(Config)
+        _reference_cache.set(
+            REFERENCE_CACHE_KEY,
+            (reference_sets, "api"),
+            expire=Config.CACHE_TTL,
+        )
+        logger.info(
+            f"Loaded {len(reference_sets)} KE sets from Builder API, "
+            f"cached for {Config.CACHE_TTL}s"
+        )
+        return reference_sets, "api"
+    except Exception as exc:
+        logger.warning(
+            f"Builder API unavailable ({exc}); falling back to local CSV files"
+        )
+
+    # Fall back to CSV
+    reference_sets = load_reference_sets(
+        ke_wp_path='data/KE-WP.csv',
+        wp_gene_path='data/edges_wpid_to_gene.csv',
+        node_path='data/node_attributes.csv'
     )
+    _reference_cache.set(
+        REFERENCE_CACHE_KEY,
+        (reference_sets, "csv"),
+        expire=Config.CACHE_TTL,
+    )
+    logger.info(
+        f"Loaded {len(reference_sets)} KE sets from local CSV files, "
+        f"cached for {Config.CACHE_TTL}s"
+    )
+    return reference_sets, "csv"
+
 
 # Load initial reference sets
-reference_sets = load_cached_reference_sets()
-logger.info(f"Loaded {len(reference_sets)} KE sets from reference files.")
+reference_sets, _initial_data_source = load_cached_reference_sets()
+logger.info(f"Loaded {len(reference_sets)} KE sets (source: {_initial_data_source})")
 if reference_sets:
     first_ke = list(reference_sets.keys())[0]
     logger.info(f"Example KE set: {first_ke} with {len(reference_sets[first_ke])} genes.")
@@ -700,7 +853,7 @@ if __name__ == '__main__':
             logger.warning("Database initialization failed - continuing without persistence")
         
         # Start the application
-        app.run(debug=True, host='0.0.0.0', port=5002)
+        app.run(debug=True, host='0.0.0.0', port=5010)
         
     except FileNotFoundError as e:
         logger.error(f"Startup failed: {e}")

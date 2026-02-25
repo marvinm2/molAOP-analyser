@@ -10,3 +10,4 @@ services:
       - .:/app
     environment:
       - FLASK_ENV=development
+      - BUILDER_API_URL=

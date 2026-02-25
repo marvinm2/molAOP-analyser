@@ -5,6 +5,7 @@ import time
 import logging
 from typing import Dict, Any, Optional, Callable
 from threading import Lock
+import diskcache
 
 logger = logging.getLogger(__name__)
 
@@ -135,13 +136,32 @@ cache = CacheManager()
 def cached_data_loader(cache_key: str, loader_func: Callable[[], Any], ttl: int = 3600) -> Any:
     """
     Decorator/utility for caching data loading operations.
-    
+
     Args:
         cache_key: Unique key for this data
         loader_func: Function to load data if not cached
         ttl: Cache TTL in seconds (default 1 hour)
-        
+
     Returns:
         Cached or loaded data
     """
     return cache.get_or_set(cache_key, loader_func, ttl)
+
+
+def get_reference_cache(cache_dir: str = '/tmp/molaop_cache') -> diskcache.FanoutCache:
+    """Get or create a process-safe disk cache for reference data.
+
+    Uses FanoutCache with 8 shards to reduce SQLite write contention
+    when multiple Gunicorn workers access the cache concurrently.
+
+    Args:
+        cache_dir: Directory path for the disk cache storage
+
+    Returns:
+        diskcache.FanoutCache instance pointing to cache_dir
+    """
+    return diskcache.FanoutCache(
+        directory=cache_dir,
+        timeout=60,  # SQLite lock timeout in seconds (not TTL)
+        shards=8,
+    )
