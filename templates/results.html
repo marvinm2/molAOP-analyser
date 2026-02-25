@@ -64,24 +64,63 @@
     <div class="page-container">
     <header>
         <h1>Molecular Adverse Outcome Pathway Analyser</h1>
+        <nav class="main-nav">
+            <a href="{{ url_for('index') }}" class="nav-link">Home</a>
+            <a href="{{ url_for('documentation') }}" class="nav-link">Documentation</a>
+        </nav>
     </header>
     <div class="content-box">
         <h1>KE Enrichment Results</h1>
 
         <div class="explanation">
             <p><strong>Gene Identifier Type:</strong> {{ id_type }}</p>
-            <p>This table presents enrichment results for Key Events (KEs) based on your transcriptomic dataset.</p>
+            <p>This table presents enrichment results for
+                <span class="help-tooltip">Key Events (KEs)
+                    <span class="tooltiptext">Key Events are measurable biological changes essential for progression from molecular initiating event to adverse outcome in an AOP framework.</span>
+                </span>
+                based on your transcriptomic dataset.
+            </p>
             <p>Each row corresponds to a KE, showing the degree of overlap between its associated gene set and your differentially expressed genes.</p>
 
             <ul>
                 <li><strong>Overlap Genes:</strong> Genes shared between the KE set and your dataset.</li>
                 <li><strong># Overlap:</strong> Number of overlapping genes.</li>
-                <li><strong>p-value:</strong> Statistical significance (Fisher's exact test).</li>
-                <li><strong>FDR:</strong> Adjusted p-value using the Benjamini-Hochberg procedure.</li>
+                <li><strong>P-value:</strong> Statistical significance from
+                    <span class="help-tooltip">Fisher's exact test
+                        <span class="tooltiptext">Fisher's exact test determines if a gene set is over-represented among significant genes using 2×2 contingency tables. Lower p-values indicate stronger enrichment.</span>
+                    </span>.
+                </li>
+                <li><strong>FDR:</strong>
+                    <span class="help-tooltip">False Discovery Rate
+                        <span class="tooltiptext">Adjusted p-value using Benjamini-Hochberg correction to control for multiple testing. FDR < 0.05 means less than 5% of significant results are expected to be false positives.</span>
+                    </span>
+                    (adjusted p-value).
+                </li>
+                <li><strong>Odds Ratio:</strong>
+                    <span class="help-tooltip">Effect size
+                        <span class="tooltiptext">Quantifies enrichment strength. OR > 1 indicates over-representation. For example, OR = 3.5 means genes in this KE are 3.5× more likely to be significant than expected by chance.</span>
+                    </span>
+                    of the enrichment.
+                </li>
             </ul>
 
-            <p>The enrichment was calculated using all genes in your uploaded dataset as the background universe.</p>
+            <p>The enrichment was calculated using all genes in your uploaded dataset as the
+                <span class="help-tooltip">background universe
+                    <span class="tooltiptext">The statistical test uses all genes in your dataset (not the entire genome) as background. This accounts for which genes were actually measured in your experiment.</span>
+                </span>.
+            </p>
             <p><strong>Background gene set size:</strong> {{ background_size }}</p>
+            <!-- Data source indicator -->
+            <p style="font-size: 13px; color: #555; margin-top: 4px;">
+                <strong>Reference data:</strong>
+                {% if metadata.get('data_source') == 'api' %}
+                    <span style="color: #009FE3; font-weight: 500;">Live (molAOP Builder API)</span>
+                {% elif metadata.get('data_source') == 'cache' %}
+                    <span style="color: #45A6B2; font-weight: 500;">Cached (molAOP Builder, &lt;1 hour)</span>
+                {% else %}
+                    <span style="color: #EB5B25; font-weight: 500;">Local reference files</span>
+                {% endif %}
+            </p>
         </div>
 
         <!-- Report Generation Section -->
@@ -91,7 +130,7 @@
                 Create a comprehensive report including experiment metadata, analysis settings, and results for documentation or sharing.
             </p>
             
-            <form id="reportForm" action="{{ url_for('generate_report') }}" method="post" style="display: inline-flex; gap: 10px; align-items: center;" onsubmit="captureNetworkPNG()">
+            <form id="reportForm" action="{{ url_for('generate_report') }}" method="post" style="display: inline-flex; gap: 10px; align-items: center;" onsubmit="return handleReportSubmit(event)">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
                 <!-- Hidden fields with analysis data -->
                 <input type="hidden" name="filename" value="{{ metadata.get('filename', 'unknown') }}">
@@ -108,7 +147,7 @@
                 <textarea name="enrichment_results" style="display: none;">{{ table_json | safe }}</textarea>
                 <textarea name="volcano_data" style="display: none;">{{ volcano_json | safe }}</textarea>
                 <textarea name="network_data" style="display: none;">{{ network_json | safe }}</textarea>
-                <textarea name="network_png" id="network-png-data" style="display: none;"></textarea>
+                <input type="hidden" name="network_png_id" id="network-png-id" value="">
                 <!-- Metadata fields for report generation -->
                 <input type="hidden" name="dataset_id" value="{{ metadata.get('dataset_id', '') }}">
                 <input type="hidden" name="stressor" value="{{ metadata.get('stressor', '') }}">
@@ -531,33 +570,61 @@ function downloadJSON() {
   link.click();
 }
 
-function captureNetworkPNG() {
-  // First ensure genes are added to the network for complete visualization
-  if (cy.nodes('.gene').length === 0) {
-    console.log('Adding genes to network before capture...');
-    addGeneNodes();
-    // Wait for layout to complete
-    setTimeout(() => captureNetworkImage(), 1000);
-  } else {
-    captureNetworkImage();
-  }
-}
+async function handleReportSubmit(event) {
+  event.preventDefault();
 
-function captureNetworkImage() {
-  // Capture the current network as PNG for PDF report with high quality
+  const submitButton = event.target.querySelector('button[type="submit"]');
+  const originalText = submitButton.innerHTML;
+  submitButton.disabled = true;
+  submitButton.innerHTML = '⏳ Uploading network...';
+
   try {
-    const png = cy.png({ 
-      full: true, 
-      scale: 2, // Higher scale for better quality
+    // Ensure genes are added to the network
+    if (cy.nodes('.gene').length === 0) {
+      console.log('Adding genes to network before capture...');
+      addGeneNodes();
+      // Wait for layout to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    // Capture network PNG
+    const png = cy.png({
+      full: true,
+      scale: 2,
       bg: 'white'
-      // Remove maxWidth/maxHeight constraints to prevent stretching
     });
-    document.getElementById('network-png-data').value = png;
-    console.log('Network PNG captured for PDF report with genes included');
+
+    // Upload PNG to server
+    const response = await fetch('/api/upload_network_png', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ png_data: png })
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to upload network PNG');
+    }
+
+    const data = await response.json();
+    console.log('Network PNG uploaded successfully. Temp ID:', data.temp_id);
+
+    // Store temp ID in hidden field
+    document.getElementById('network-png-id').value = data.temp_id;
+
+    // Now submit the form
+    submitButton.innerHTML = '📄 Generating report...';
+    event.target.submit();
+
   } catch (error) {
-    console.warn('Failed to capture network PNG:', error);
-    document.getElementById('network-png-data').value = '';
+    console.error('Error uploading network PNG:', error);
+    alert('Failed to upload network image. Please try again.');
+    submitButton.disabled = false;
+    submitButton.innerHTML = originalText;
   }
+
+  return false;
 }
 
 </script>
