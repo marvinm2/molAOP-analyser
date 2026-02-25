@@ -14,7 +14,7 @@
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
 
     <!-- Cytoscape core -->
-    <script src="https://unpkg.com/cytoscape@3.26.0/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/cytoscape@3.33.1/dist/cytoscape.min.js"></script>
 
     <!-- Dagre layout extension — must follow Cytoscape and Dagre in this order -->
     <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
@@ -162,6 +162,44 @@
         }
         .network-stats__value {
             text-align: right;
+        }
+
+        /* Network spinner overlay */
+        #network-spinner {
+            position: absolute;
+            inset: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+        #network-spinner[style*="display: none"] { display: none; }
+        .network-spinner__backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0.75);
+            border-radius: 8px;
+        }
+        .network-spinner__content {
+            position: relative;
+            text-align: center;
+            z-index: 21;
+        }
+        .network-spinner__circle {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #307BBF;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .network-spinner__message {
+            font-size: 14px;
+            color: #29235C;
+            font-weight: 500;
         }
 
         /* Report form layout */
@@ -365,7 +403,7 @@
             - KE nodes with a <span style="color:red;">red border</span> are statistically significant (FDR &lt; 0.05).<br>
             - Gene nodes with a <span style="color:green;">green border</span> are also significantly affected.
             <br><br>
-            Use the buttons below the network to add gene nodes, toggle their visibility, reset the view, or download the network.
+            Click on any KE node to expand and show its associated genes. Use 'Collapse All' to return to the KE-only view.
         </p>
 
         <!-- Network Legend -->
@@ -426,13 +464,21 @@
             </div>
         </div>
 
-        <div id="cy" style="width: 100%; height: 800px; border: 2px solid #ccc; border-radius: 8px; background: white;"></div>
+        <div style="position: relative;">
+            <div id="network-spinner" style="display: none;">
+                <div class="network-spinner__backdrop"></div>
+                <div class="network-spinner__content">
+                    <div class="network-spinner__circle"></div>
+                    <p class="network-spinner__message" id="network-spinner-msg">Rendering network...</p>
+                </div>
+            </div>
+            <div id="cy" style="width: 100%; height: 800px; border: 2px solid #ccc; border-radius: 8px; background: white;"></div>
+        </div>
 
         <div class="network-controls">
-            <button onclick="addGeneNodes()">+ Add Gene Nodes</button>
-            <button onclick="toggleGenes()">Toggle Gene Visibility</button>
-            <button onclick="cy.reset(); cy.fit();">Reset View</button>
-            <button onclick="downloadPNG()">Download PNG</button>
+            <button onclick="collapseAll()">Collapse All</button>
+            <button onclick="cy.fit(undefined, 20);">Reset View</button>
+            <button onclick="downloadPNG()">Export PNG</button>
             <button onclick="downloadJSON()">Download Network</button>
         </div>
 
@@ -585,6 +631,24 @@ function defaultLogFCColor(logfc) {
     return `rgb(${r},${g},${b})`;
 }
 
+// --- Spinner functions ---
+function showSpinner(message) {
+    document.getElementById('network-spinner-msg').textContent = message || 'Rendering network...';
+    document.getElementById('network-spinner').style.display = 'flex';
+}
+function hideSpinner() {
+    document.getElementById('network-spinner').style.display = 'none';
+}
+function updateSpinnerMessage(message) {
+    document.getElementById('network-spinner-msg').textContent = message;
+}
+
+// --- Cytoscape initialisation ---
+showSpinner('Rendering network...');
+const largeNetworkTimeout = setTimeout(function() {
+    updateSpinnerMessage('Large network — this may take a moment');
+}, 3000);
+
 const cy = cytoscape({
     container: document.getElementById('cy'),
     elements: [...network.nodes, ...network.edges],
@@ -667,73 +731,83 @@ const cy = cytoscape({
 ],
     layout: {
         name: 'dagre',
-        rankDir: 'TB'
+        rankDir: 'LR',
+        nodeSep: 60,
+        rankSep: 80,
+        padding: 30
     }
+});
+
+cy.one('layoutstop', function() {
+    clearTimeout(largeNetworkTimeout);
+    hideSpinner();
 });
 
 // Update network statistics on initial load
 updateNetworkStats();
 
-// --- Gene node interaction ---
-let genesVisible = true;
+// --- Per-KE click-to-expand with shared gene node deduplication ---
+const expandedKEs = new Set();
 
-function addGeneNodes() {
-    const addedGenes = new Set();
+cy.on('tap', 'node', function(event) {
+    const node = event.target;
+    if (node.hasClass('gene')) return;  // only expand KE nodes
 
-    Object.entries(keToGenes).forEach(([ke, geneList]) => {
-        geneList.forEach(geneObj => {
-            const gene = geneObj.id;
-            const logfc = geneObj.log2FC || 0;
-            const isSignificant = geneObj.significant === true;
+    const keId = node.data('id');
+    const genes = keToGenes[keId];
+    if (!genes || genes.length === 0) return;
+    if (expandedKEs.has(keId)) return;  // already expanded
 
-            const nodeClasses = isSignificant ? 'gene significant' : 'gene';
+    expandedKEs.add(keId);
+    showSpinner('Expanding KE...');
 
-            if (!addedGenes.has(gene)) {
-                cy.add({
-                    group: 'nodes',
-                    data: {
-                        id: gene,
-                        label: gene,
-                        logfc: logfc
-                    },
-                    classes: nodeClasses
+    // Use requestAnimationFrame to let spinner render before heavy work
+    requestAnimationFrame(function() {
+        try {
+            cy.batch(function() {
+                genes.forEach(function(geneObj) {
+                    const geneId = geneObj.id;
+                    // Shared gene node dedup: only add if not already in graph
+                    if (cy.getElementById(geneId).length === 0) {
+                        cy.add({
+                            group: 'nodes',
+                            data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
+                            classes: geneObj.significant ? 'gene significant' : 'gene'
+                        });
+                    }
+                    // Dedup edges by deterministic ID
+                    var edgeId = keId + '_' + geneId;
+                    if (cy.getElementById(edgeId).length === 0) {
+                        cy.add({
+                            group: 'edges',
+                            data: { id: edgeId, source: geneId, target: keId },
+                            classes: 'gene-link'
+                        });
+                    }
                 });
-                addedGenes.add(gene);
-            }
-
-            cy.add({
-                group: 'edges',
-                data: {
-                    id: ke + '_' + gene,
-                    source: gene,
-                    target: ke
-                },
-                classes: 'gene-link'
             });
-        });
+
+            // Layout OUTSIDE batch — critical for correct positioning
+            var layout = cy.layout({ name: 'cose', animate: true, animationDuration: 500 });
+            layout.promiseOn('layoutstop').then(function() {
+                hideSpinner();
+                updateNetworkStats();
+            });
+            layout.run();
+        } catch (e) {
+            console.error('Error expanding KE:', e);
+            hideSpinner();
+        }
     });
+});
 
-    cy.layout({ name: 'cose', animate: true }).run();
-
-    // Update network statistics after adding genes
-    updateNetworkStats();
-}
-
-function toggleGenes() {
-    const geneNodes = cy.nodes('.gene');
-    const geneEdges = cy.edges('.gene-link');
-
-    if (genesVisible) {
-        geneNodes.hide();
-        geneEdges.hide();
-    } else {
-        geneNodes.show();
-        geneEdges.show();
-    }
-
-    genesVisible = !genesVisible;
-
-    // Update network statistics after toggling gene visibility
+// --- Collapse All: remove gene nodes, restore KE-only dagre LR layout ---
+function collapseAll() {
+    cy.batch(function() {
+        cy.nodes('.gene').remove();
+    });
+    expandedKEs.clear();
+    cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 60, rankSep: 80, padding: 30 }).run();
     updateNetworkStats();
 }
 
@@ -766,8 +840,36 @@ async function handleReportSubmit(event) {
     // Ensure genes are added to the network
     if (cy.nodes('.gene').length === 0) {
       console.log('Adding genes to network before capture...');
-      addGeneNodes();
-      // Wait for layout to complete
+      // Expand all KEs for report capture
+      Object.keys(keToGenes).forEach(function(keId) {
+        if (!expandedKEs.has(keId)) {
+          expandedKEs.add(keId);
+          var genes = keToGenes[keId];
+          if (genes && genes.length > 0) {
+            cy.batch(function() {
+              genes.forEach(function(geneObj) {
+                var geneId = geneObj.id;
+                if (cy.getElementById(geneId).length === 0) {
+                  cy.add({
+                    group: 'nodes',
+                    data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
+                    classes: geneObj.significant ? 'gene significant' : 'gene'
+                  });
+                }
+                var edgeId = keId + '_' + geneId;
+                if (cy.getElementById(edgeId).length === 0) {
+                  cy.add({
+                    group: 'edges',
+                    data: { id: edgeId, source: geneId, target: keId },
+                    classes: 'gene-link'
+                  });
+                }
+              });
+            });
+          }
+        }
+      });
+      cy.layout({ name: 'cose', animate: false }).run();
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
