@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}molAOP Analyser{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+
+    <nav class="site-nav">
+        <div class="site-nav__inner">
+            <a href="{{ url_for('index') }}" class="site-nav__brand">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="VHP4Safety Logo" class="site-nav__logo">
+                <span class="site-nav__title">molAOP Analyser</span>
+            </a>
+            <ul class="site-nav__links">
+                <li><a href="{{ url_for('index') }}">Home</a></li>
+                <li><a href="{{ url_for('documentation') }}">Documentation</a></li>
+                <li><a href="{{ url_for('about') }}">About</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="page-main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <div>
+            &copy; 2025 Molecular AOP Analyser &mdash; Part of the <a href="https://vhp4safety.nl" target="_blank" rel="noopener">VHP4Safety</a> platform
+        </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+
+</body>
+</html>
