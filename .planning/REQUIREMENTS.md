@@ -15,17 +15,17 @@
 
 - [x] **UI-01**: All pages use VHP4Safety brand palette (#29235C, #E6007E, #307BBF) and Inter typography
 - [x] **UI-02**: Sticky navigation header matching molAOP Builder style with app branding
-- [ ] **UI-03**: Results page visual hierarchy improved (consistent card layouts, spacing, typography)
+- [x] **UI-03**: Results page visual hierarchy improved (consistent card layouts, spacing, typography)
 - [x] **UI-04**: Upload/analysis page restyled to match brand
 
 ### Network Visualisation
 
-- [ ] **NET-01**: Large AOP networks render without browser slowdown (profiled and optimised)
+- [x] **NET-01**: Large AOP networks render without browser slowdown (profiled and optimised)
 - [ ] **NET-02**: PNG export button visible in results page for publication screenshots
 
 ### Export
 
-- [ ] **EXP-01**: User can download enrichment results table as CSV
+- [x] **EXP-01**: User can download enrichment results table as CSV
 
 ### Documentation
 
@@ -71,11 +71,11 @@
 | API-03 | Phase 1 | Complete |
 | UI-01 | Phase 2 | Complete |
 | UI-02 | Phase 2 | Complete |
-| UI-03 | Phase 2 | Pending |
+| UI-03 | Phase 2 | Complete |
 | UI-04 | Phase 2 | Complete |
-| EXP-01 | Phase 2 | Pending |
+| EXP-01 | Phase 2 | Complete |
 | DOC-01 | Phase 2 | Complete |
-| NET-01 | Phase 3 | Pending |
+| NET-01 | Phase 3 | Complete |
 | NET-02 | Phase 3 | Pending |
 
 **Coverage:**

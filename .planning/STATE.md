@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-25)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 2 — UI/UX and Documentation
+**Current focus:** Phase 3 — Network Performance
 
 ## Current Position
 
-Phase: 2 of 3 (UI/UX and Documentation)
-Plan: 3 of 4 in current phase — Plan 02-03 complete
-Status: Phase 2 active
-Last activity: 2026-02-25 — Completed 02-03 (results.html migrated to base.html, metadata card, CSV export, analysis_date)
+Phase: 3 of 3 (Network Performance)
+Plan: 1 of 2 in current phase — Plan 03-01 complete
+Status: Phase 3 active
+Last activity: 2026-02-25 — Completed 03-01 (Cytoscape.js overhaul: 3.33.1, LR dagre, spinner, per-KE expand, collapse all)
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 3.5 min
-- Total execution time: 0.23 hours
+- Total plans completed: 5
+- Average duration: 3.2 min
+- Total execution time: 0.27 hours
 
 **By Phase:**
 
@@ -29,9 +29,10 @@ Progress: [█████░░░░░] 50%
 |-------|-------|-------|----------|
 | 01-api-integration | 2 | 9 min | 4.5 min |
 | 02-ui-ux-and-documentation | 3 | 10 min | 3.3 min |
+| 03-network-performance | 1 | 2 min | 2 min |
 
 **Recent Trend:**
-- Last 5 plans: 6 min, 3 min, 2 min, 3 min, 5 min
+- Last 5 plans: 3 min, 2 min, 3 min, 5 min, 2 min
 - Trend: consistent
 
 *Updated after each plan completion*
@@ -60,6 +61,10 @@ Recent decisions affecting current work:
 - [Phase 02-ui-ux-and-documentation]: Volcano plot Plotly script wrapped in {% if volcano_data %} guard inside {% block scripts %} to prevent JS reference errors on initial page load
 - [Phase 02-ui-ux-and-documentation]: CSV button uses btn--primary (blue) placed top-right of enrichment card header for immediate visibility without scrolling
 - [Phase 02-ui-ux-and-documentation]: DataTables buttons bar preserved alongside branded CSV button for power user access to copy/excel/print
+- [Phase 03-network-performance]: Cytoscape.js upgraded from 3.26.0 to 3.33.1; dagre rankDir changed from TB to LR for AOP pathway flow
+- [Phase 03-network-performance]: Per-KE click-to-expand replaces bulk addGeneNodes() to avoid browser freeze on large networks (AOP:2 ~696 genes)
+- [Phase 03-network-performance]: requestAnimationFrame before cy.layout() ensures spinner paints before CPU-intensive layout work begins
+- [Phase 03-network-performance]: Shared gene nodes deduped by cy.getElementById check — single node with edges to all KEs shows cross-KE biological overlap
 
 ### Pending Todos
 
@@ -74,5 +79,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-25
-Stopped at: Completed 02-03-PLAN.md — results.html overhaul with metadata card, CSV export, and analysis_date
+Stopped at: Completed 03-01-PLAN.md — Cytoscape.js network overhaul with spinner, LR dagre, per-KE expand, collapse all
 Resume file: None

@@ -8,7 +8,7 @@ Three phases transform the working molAOP Analyser into a platform-integrated, b
 
 - [x] **Phase 1: API Integration** - Replace static CSV reference data with live molAOP Builder API calls, with graceful CSV fallback and rate-limit-safe caching (completed 2026-02-25)
 - [x] **Phase 2: UI/UX and Documentation** - Overhaul all pages to VHP4Safety brand standards, add sticky navigation, and publish a documentation page (completed 2026-02-25)
-- [ ] **Phase 3: Network Performance** - Optimise Cytoscape.js for large AOP networks and surface export controls
+- [ ] **Phase 3: Network Performance** - Optimise Cytoscape.js for large AOP networks and surface export controls (1/2 plans complete)
 
 ## Phase Details
 
@@ -40,7 +40,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md -- Base template (sticky nav, Inter font, footer), global CSS overhaul, About page and route
 - [x] 02-02-PLAN.md -- Refactor index.html (single centred card) and documentation.html (3 required sections)
-- [ ] 02-03-PLAN.md -- Refactor results.html (metadata card, styled table card, CSV export button, analysis_date)
+- [x] 02-03-PLAN.md -- Refactor results.html (metadata card, styled table card, CSV export button, analysis_date)
 
 ### Phase 3: Network Performance
 **Goal**: Large AOP networks render without browser slowdown, and users can export the network as an image for publication use
@@ -50,7 +50,10 @@ Plans:
   1. The kidney organ AOP network loaded with the cisplatin 72hr 50uM dataset renders to an interactive state in under three seconds on a modern laptop browser
   2. Expanding gene nodes on a KE in the largest available network does not freeze the browser tab
   3. A PNG export button is visible on the results page and downloads a full-resolution screenshot of the current network view
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 03-01-PLAN.md -- Spinner overlay, Cytoscape.js upgrade, dagre LR layout, per-KE click-to-expand, collapse all
+- [ ] 03-02-PLAN.md -- Overlay zoom controls, transparent PNG export
 
 ## Progress
 
@@ -61,4 +64,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. API Integration | 1/2 | Complete    | 2026-02-25 |
 | 2. UI/UX and Documentation | 3/3 | Complete   | 2026-02-25 |
-| 3. Network Performance | 0/TBD | Not started | - |
+| 3. Network Performance | 1/2 | In progress | - |
