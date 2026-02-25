@@ -1,8 +1,34 @@
 import pandas as pd
 
-def load_reference_sets(ke_wp_path, wp_gene_path, node_path):
-    # Load input files
-    ke_wp_df = pd.read_csv(ke_wp_path)
+
+def load_reference_sets(ke_wp_path='data/KE-WP.csv',
+                        wp_gene_path='data/edges_wpid_to_gene.csv',
+                        node_path='data/node_attributes.csv',
+                        ke_wp_df=None):
+    """Build KE-to-gene reference sets from local CSV files or a pre-built DataFrame.
+
+    Parameters
+    ----------
+    ke_wp_path : str
+        Path to the KE-WP mapping CSV file. Ignored when ``ke_wp_df`` is provided.
+    wp_gene_path : str
+        Path to the WikiPathways-to-gene edge CSV file.
+    node_path : str
+        Path to the node attributes CSV file (gene ID to symbol mapping).
+    ke_wp_df : pandas.DataFrame or None
+        Optional pre-built DataFrame with columns ``KE_ID`` and ``WP_ID``.
+        When provided, the CSV at ``ke_wp_path`` is not read. KE IDs must
+        already be normalised to the ``"KE:55"`` colon format.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping of KE ID -> set of uppercase gene symbols.
+    """
+    # Use the provided DataFrame or read from the CSV file
+    if ke_wp_df is None:
+        ke_wp_df = pd.read_csv(ke_wp_path)
+
     wp_gene_df = pd.read_csv(wp_gene_path)
     node_df = pd.read_csv(node_path)
 
