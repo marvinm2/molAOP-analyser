@@ -556,6 +556,20 @@
         </div>
     </div>
 
+    <!-- Share Results card -->
+    <div class="card card--wide">
+        <h3>Share Results</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 15px;">
+            Generate a stable link to share these enrichment results with colleagues. The link is valid for 30 days.
+        </p>
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <button id="copyLinkBtn" style="background-color: #307BBF; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold;">
+                <span id="copyLinkText">Copy link</span>
+            </button>
+            <span id="copyLinkHint" style="font-size: 13px; color: #555; font-style: italic; display: none;"></span>
+        </div>
+    </div>
+
     <!-- Report Generation card -->
     <div class="card card--wide">
         <h3>Generate Analysis Report</h3>
@@ -880,6 +894,66 @@ function downloadJSON() {
   link.download = 'aop_network.cyjs';
   link.click();
 }
+
+// --- Copy link (shareable URL) ---
+document.getElementById('copyLinkBtn').addEventListener('click', async function() {
+    const btn = this;
+    const btnText = document.getElementById('copyLinkText');
+    const hint = document.getElementById('copyLinkHint');
+    btn.disabled = true;
+
+    try {
+        const tableData = {{ table_json | safe }};
+        const networkData = {{ network_json | safe }};
+        const keGeneData = {{ ke_gene_json | safe }};
+        const keTypeMapData = {{ ke_type_map | safe }};
+        const keTitleMapData = {{ ke_title_map | safe }};
+
+        const resp = await fetch('/api/share', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                enrichment_table: tableData,
+                network: networkData,
+                ke_gene_map: keGeneData,
+                ke_type_map: keTypeMapData,
+                ke_title_map: keTitleMapData,
+                aop_id: '{{ metadata.get("aop_id", "") }}',
+                aop_label: '{{ metadata.get("aop_label", "") }}',
+                metadata: {
+                    dataset_id: '{{ metadata.get("dataset_id", "") }}',
+                    gene_count: {{ background_size }},
+                    significant_genes: {{ metadata.get('significant_genes', 0) }}
+                }
+            })
+        });
+
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed');
+
+        const url = window.location.origin + '/results/' + data.uuid;
+        await navigator.clipboard.writeText(url);
+
+        btnText.textContent = 'Copied!';
+        hint.textContent = url;
+        hint.style.display = 'inline';
+        setTimeout(() => {
+            btnText.textContent = 'Copy link';
+            btn.disabled = false;
+            hint.style.display = 'none';
+        }, 2000);
+    } catch (err) {
+        console.error('Share failed:', err);
+        btnText.textContent = 'Failed';
+        hint.textContent = 'Could not copy link. Please try again.';
+        hint.style.display = 'inline';
+        setTimeout(() => {
+            btnText.textContent = 'Copy link';
+            btn.disabled = false;
+            hint.style.display = 'none';
+        }, 2000);
+    }
+});
 
 async function handleReportSubmit(event) {
   event.preventDefault();
