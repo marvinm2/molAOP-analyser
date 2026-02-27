@@ -4,9 +4,10 @@ Database models and setup for the Molecular AOP Analyser.
 Provides SQLite-based persistence for experiment metadata and analysis results.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import json
+import uuid as uuid_lib
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -72,6 +73,84 @@ class ExperimentRecord(Base):
             'upload_timestamp': self.upload_timestamp.isoformat() if self.upload_timestamp else None,
             'analysis_timestamp': self.analysis_timestamp.isoformat() if self.analysis_timestamp else None,
         }
+
+
+class SharedResult(Base):
+    """Stores serialized analysis data for shareable UUID links.
+
+    Created on-demand when user clicks 'Copy link' on results page.
+    Expires after 30 days. Independent from ExperimentRecord.
+    """
+
+    __tablename__ = 'shared_results'
+
+    uuid = Column(String(36), primary_key=True, default=lambda: str(uuid_lib.uuid4()))
+    created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+
+    # Analysis identity
+    aop_id = Column(String(100))
+    aop_label = Column(String(500))
+
+    # Serialized results (JSON Text columns)
+    enrichment_json = Column(Text, nullable=False)
+    network_json = Column(Text, nullable=False)
+    ke_gene_json = Column(Text)
+    ke_type_map_json = Column(Text)
+    ke_title_map_json = Column(Text)
+
+    # Display metadata
+    dataset_label = Column(String(500))
+    gene_count = Column(Integer)
+    significant_genes = Column(Integer)
+
+    @classmethod
+    def create(cls, enrichment_table, network, ke_gene_map, ke_type_map,
+               ke_title_map, aop_id, aop_label, metadata):
+        """Factory method to create a SharedResult with 30-day expiry.
+
+        Args:
+            enrichment_table: List of enrichment result dicts
+            network: Cytoscape network dict (nodes/edges)
+            ke_gene_map: Dict mapping KE IDs to gene lists
+            ke_type_map: Dict mapping KE IDs to type strings
+            ke_title_map: Dict mapping KE IDs to title strings
+            aop_id: AOP identifier string
+            aop_label: Human-readable AOP label
+            metadata: Dict with dataset_id, gene_count, significant_genes
+
+        Returns:
+            SharedResult instance with UUID and 30-day expiry
+        """
+        expiry = datetime.utcnow() + timedelta(days=30)
+        return cls(
+            uuid=str(uuid_lib.uuid4()),
+            expires_at=expiry,
+            aop_id=aop_id,
+            aop_label=aop_label,
+            enrichment_json=json.dumps(enrichment_table),
+            network_json=json.dumps(network),
+            ke_gene_json=json.dumps(ke_gene_map) if ke_gene_map else None,
+            ke_type_map_json=json.dumps(ke_type_map) if ke_type_map else None,
+            ke_title_map_json=json.dumps(ke_title_map) if ke_title_map else None,
+            dataset_label=metadata.get('dataset_id', ''),
+            gene_count=metadata.get('gene_count'),
+            significant_genes=metadata.get('significant_genes'),
+        )
+
+
+def cleanup_expired_shared_results(session):
+    """Delete shared results past their expiry date.
+
+    Called lazily on each new share creation to avoid accumulating stale rows.
+
+    Args:
+        session: SQLAlchemy database session
+    """
+    session.query(SharedResult).filter(
+        SharedResult.expires_at < datetime.utcnow()
+    ).delete(synchronize_session=False)
+    session.commit()
 
 
 class DatabaseManager:
