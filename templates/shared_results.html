@@ -1,0 +1,754 @@
+{% extends "base.html" %}
+{% block title %}Shared Analysis — molAOP Analyser{% endblock %}
+
+{% block head_extra %}
+    {% if not not_found and not expired %}
+    <!-- DataTables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+
+    <!-- jQuery and DataTables JS -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.print.min.js"></script>
+
+    <!-- Cytoscape core -->
+    <script src="https://unpkg.com/cytoscape@3.33.1/dist/cytoscape.min.js"></script>
+
+    <!-- Dagre layout extension — must follow Cytoscape and Dagre in this order -->
+    <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
+    <script>
+    cytoscape.use(window.cytoscapeDagre);
+    </script>
+
+    <style>
+        /* Results table overrides */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            border: 1px solid #ccc;
+            padding: 10px;
+            white-space: nowrap;
+        }
+        th {
+            background-color: #307BBF;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        /* Shared view banner */
+        .shared-banner {
+            background: #EEF5FB;
+            border: 1px solid #307BBF;
+            border-radius: 6px;
+            padding: 10px 16px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #29235C;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .shared-banner__icon {
+            font-size: 18px;
+        }
+
+        /* Network legend */
+        .network-legend {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .network-legend__inner {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            max-width: 800px;
+            width: 100%;
+        }
+        .network-legend__grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            font-size: 13px;
+        }
+        .network-legend__item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .network-legend__swatch {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 1px solid #999;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        .network-legend__scale {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .network-legend__gradient {
+            display: flex;
+            align-items: center;
+            margin-top: 5px;
+        }
+        .network-legend__gradient-bar {
+            width: 100px;
+            height: 12px;
+            background: linear-gradient(to right, #2c7bb6, #abd9e9, #ffffcc, #fdae61, #d73027);
+            border: 1px solid #999;
+        }
+
+        /* Network controls */
+        .network-controls {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        /* Network statistics */
+        .network-stats {
+            margin: 30px auto;
+            max-width: 600px;
+        }
+        .network-stats__table {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .network-stats__table table {
+            font-size: 14px;
+        }
+        .network-stats__table td {
+            padding: 8px 0;
+        }
+        .network-stats__table tr {
+            border-bottom: 1px solid #ddd;
+        }
+        .network-stats__table tr:last-child {
+            border-bottom: none;
+        }
+        .network-stats__label {
+            font-weight: bold;
+            color: #29235C;
+        }
+        .network-stats__value {
+            text-align: right;
+        }
+
+        /* Network spinner overlay */
+        #network-spinner {
+            position: absolute;
+            inset: 0;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+        }
+        #network-spinner[style*="display: none"] { display: none; }
+        .network-spinner__backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0.75);
+            border-radius: 8px;
+        }
+        .network-spinner__content {
+            position: relative;
+            text-align: center;
+            z-index: 21;
+        }
+        .network-spinner__circle {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #307BBF;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .network-spinner__message {
+            font-size: 14px;
+            color: #29235C;
+            font-weight: 500;
+        }
+
+        /* Overlay zoom controls */
+        .network-zoom-controls {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 10;
+        }
+        .network-zoom-btn {
+            width: 32px;
+            height: 32px;
+            background: rgba(41, 35, 92, 0.85);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+        .network-zoom-btn:hover {
+            background: rgba(41, 35, 92, 1);
+        }
+
+        /* State pages (not found / expired) */
+        .state-message {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        .state-message h2 {
+            color: #29235C;
+            margin-bottom: 16px;
+        }
+        .state-message p {
+            font-size: 16px;
+            color: #555;
+            margin-bottom: 24px;
+        }
+        .state-message a {
+            color: #307BBF;
+            font-weight: bold;
+        }
+    </style>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+
+{% if not_found %}
+    <!-- Not found state -->
+    <div class="card card--wide">
+        <div class="state-message">
+            <h2>Shared Analysis Not Found</h2>
+            <p>This shared analysis was not found. Please check the URL.</p>
+            <a href="{{ url_for('index') }}">&larr; Return to molAOP Analyser</a>
+        </div>
+    </div>
+
+{% elif expired %}
+    <!-- Expired state -->
+    <div class="card card--wide">
+        <div class="state-message">
+            <h2>Shared Analysis Expired</h2>
+            <p>This shared analysis has expired. Contact the owner for a new link.</p>
+            <a href="{{ url_for('index') }}">&larr; Return to molAOP Analyser</a>
+        </div>
+    </div>
+
+{% else %}
+    <!-- Shared view banner -->
+    <div class="card card--wide" style="padding: 12px 20px;">
+        <div class="shared-banner">
+            <span class="shared-banner__icon">&#128279;</span>
+            <span><strong>Shared Analysis</strong> &mdash; This is a read-only view of a shared enrichment analysis. Results expire 30 days from creation.</span>
+        </div>
+    </div>
+
+    <!-- Metadata summary card -->
+    <div class="card card--wide metadata-summary-card">
+        <div class="metadata-summary">
+            {% if dataset_label %}
+            <div class="metadata-summary__item">
+                <span class="metadata-summary__label">Dataset</span>
+                <span class="metadata-summary__value">{{ dataset_label }}</span>
+            </div>
+            {% endif %}
+            {% if aop_label %}
+            <div class="metadata-summary__item">
+                <span class="metadata-summary__label">AOP</span>
+                <span class="metadata-summary__value">{{ aop_label }}</span>
+            </div>
+            {% endif %}
+            {% if gene_count %}
+            <div class="metadata-summary__item">
+                <span class="metadata-summary__label">Background Genes</span>
+                <span class="metadata-summary__value">{{ gene_count }}</span>
+            </div>
+            {% endif %}
+            {% if significant_genes %}
+            <div class="metadata-summary__item">
+                <span class="metadata-summary__label">Significant Genes</span>
+                <span class="metadata-summary__value">{{ significant_genes }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Enrichment Results card -->
+    <div class="card card--wide">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <h2 style="margin: 0;">KE Enrichment Results</h2>
+            <button class="btn btn--primary" onclick="downloadCSV()" title="Download enrichment results as CSV">
+                Download Results (CSV)
+            </button>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table id="resultsTable" class="display">
+                <thead>
+                    <tr>
+                        {% set column_names = {
+                            'Title': 'Key Event Title',
+                            'p_value': 'P-value',
+                            'FDR': 'FDR',
+                            'num_overlap': '# Overlap',
+                            'pct_sig_in_KE': '% Enrichment',
+                            'total_KE_genes_in_dataset': 'KE Gene Count',
+                            'odds_ratio': 'Odds Ratio',
+                            'overlap': 'Overlapping Genes',
+                            'KE': 'KE ID',
+                            'sig_in_KE': 'Sig in KE',
+                            'sig_not_KE': 'Sig not KE',
+                            'non_sig_in_KE': 'Non-sig in KE',
+                            'non_sig_not_KE': 'Non-sig not KE'
+                        } %}
+                        {% if table %}
+                        {% for col in table[0].keys() %}
+                        <th>{{ column_names.get(col, col) }}</th>
+                        {% endfor %}
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table %}
+                    <tr>
+                        {% for col, val in row.items() %}
+                        <td>
+                            {% if col in ['p_value', 'FDR'] %}
+                                {% if val is not none and val < 0.001 %}
+                                    {{ "%.2e"|format(val) }}
+                                {% elif val is not none %}
+                                    {{ "%.4f"|format(val) }}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            {% elif col == 'odds_ratio' and val != 'NA' and val is not none %}
+                                {{ "%.2f"|format(val) }}
+                            {% elif col == 'pct_sig_in_KE' and val is not none %}
+                                {{ "%.1f"|format(val) }}%
+                            {% else %}
+                                {{ val if val is not none else '—' }}
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- AOP Network card -->
+    <div class="card card--wide">
+        <h2>AOP Network</h2>
+        <p style="font-size: 15px; color: #444; max-width: 800px; text-align: left;">
+            This network diagram shows how the Key Events (KEs) are connected within the selected Adverse Outcome Pathway (AOP).
+            <br><br>
+            <strong>Color coding:</strong><br>
+            - Node color reflects gene-level log<sub>2</sub> fold change.<br>
+            - KE nodes with a <span style="color:red;">red border</span> are statistically significant (FDR &lt; 0.05).<br>
+            - Gene nodes with a <span style="color:green;">green border</span> are also significantly affected.
+            <br><br>
+            Click on any KE node to expand and show its associated genes. Use 'Collapse All' to return to the KE-only view.
+        </p>
+
+        <!-- Network Legend -->
+        <div class="network-legend">
+            <div class="network-legend__inner">
+                <h3 style="margin-top: 0; margin-bottom: 15px; color: #29235C; font-size: 16px;">Network Legend</h3>
+                <div class="network-legend__grid">
+                    <div>
+                        <strong style="color: #29235C;">Key Event Types:</strong>
+                        <div style="margin-top: 8px;">
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #b3e6b3;"></div>
+                                <span>MIE (Molecular Initiating Event)</span>
+                            </div>
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #ffd9b3;"></div>
+                                <span>Intermediate Key Event</span>
+                            </div>
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #f4b3b3;"></div>
+                                <span>AO (Adverse Outcome)</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <strong style="color: #29235C;">Significance &amp; Expression:</strong>
+                        <div style="margin-top: 8px;">
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #ffd9b3; border: 3px solid red;"></div>
+                                <span>Significant KE (FDR &lt; 0.05)</span>
+                            </div>
+                            <div class="network-legend__item">
+                                <div style="width: 16px; height: 16px; background: linear-gradient(to right, #2c7bb6, #ffffcc, #d73027); border: 2px solid green; border-radius: 50%; margin-right: 8px; flex-shrink: 0;"></div>
+                                <span>Significant Gene (colored by log&#8322;FC)</span>
+                            </div>
+                            <div class="network-legend__item">
+                                <div style="width: 2px; height: 15px; background: #ccc; margin-right: 8px; margin-left: 9px; flex-shrink: 0;"></div>
+                                <span>KE-gene connections</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="network-legend__scale">
+                    <strong style="color: #29235C; font-size: 13px;">Gene Expression Scale (log&#8322;FC):</strong>
+                    <div class="network-legend__gradient">
+                        <span style="font-size: 11px; margin-right: 5px;">-2</span>
+                        <div class="network-legend__gradient-bar"></div>
+                        <span style="font-size: 11px; margin-left: 5px;">+2</span>
+                        <span style="font-size: 11px; margin-left: 10px; color: #666;">Downregulated &larr; &rarr; Upregulated</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div style="position: relative;">
+            <div id="network-spinner" style="display: none;">
+                <div class="network-spinner__backdrop"></div>
+                <div class="network-spinner__content">
+                    <div class="network-spinner__circle"></div>
+                    <p class="network-spinner__message" id="network-spinner-msg">Rendering network...</p>
+                </div>
+            </div>
+            <div class="network-zoom-controls">
+                <button class="network-zoom-btn" id="zoom-in" title="Zoom in">+</button>
+                <button class="network-zoom-btn" id="zoom-out" title="Zoom out">&minus;</button>
+                <button class="network-zoom-btn" id="zoom-fit" title="Fit to screen">&#8862;</button>
+            </div>
+            <div id="cy" style="width: 100%; height: 800px; border: 2px solid #ccc; border-radius: 8px; background: white;"></div>
+        </div>
+
+        <div class="network-controls">
+            <button onclick="collapseAll()">Collapse All</button>
+            <button onclick="cy.fit(undefined, 20);">Reset View</button>
+            <button onclick="downloadPNG()">Export PNG</button>
+            <button onclick="downloadJSON()">Download Network</button>
+        </div>
+
+        <!-- Network Statistics -->
+        <div class="network-stats">
+            <h3 style="color: #29235C; text-align: center; margin-bottom: 15px;">Network Statistics</h3>
+            <div class="network-stats__table">
+                <table id="networkStatsTable" style="width: 100%; border-collapse: collapse;">
+                    <tbody>
+                        <tr>
+                            <td class="network-stats__label">Total Key Events</td>
+                            <td class="network-stats__value" id="stat-total-kes">-</td>
+                        </tr>
+                        <tr>
+                            <td class="network-stats__label">Significant Key Events</td>
+                            <td class="network-stats__value" id="stat-sig-kes">-</td>
+                        </tr>
+                        <tr>
+                            <td class="network-stats__label">Total Gene Nodes</td>
+                            <td class="network-stats__value" id="stat-total-genes">0</td>
+                        </tr>
+                        <tr>
+                            <td class="network-stats__label">Significant Gene Nodes</td>
+                            <td class="network-stats__value" id="stat-sig-genes">0</td>
+                        </tr>
+                        <tr>
+                            <td class="network-stats__label">KE-KE Relationships</td>
+                            <td class="network-stats__value" id="stat-ke-edges">-</td>
+                        </tr>
+                        <tr>
+                            <td class="network-stats__label">KE-Gene Connections</td>
+                            <td class="network-stats__value" id="stat-gene-edges">0</td>
+                        </tr>
+                        <tr>
+                            <td class="network-stats__label">Total Network Edges</td>
+                            <td class="network-stats__value" id="stat-total-edges">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if not not_found and not expired %}
+<script>
+const network = {{ network_json | safe }};
+const keToGenes = {{ ke_gene_json | safe }};
+
+// --- DataTables init with CSV export support ---
+let resultsTable;
+$(document).ready(function() {
+    resultsTable = $('#resultsTable').DataTable({
+        dom: 'Bfrtip',
+        autoWidth: true,
+        buttons: ['copy', 'csv', 'excel', 'print']
+    });
+});
+
+function downloadCSV() {
+    resultsTable.button('.buttons-csv').trigger();
+}
+
+// --- Network Statistics Functions ---
+function updateNetworkStats() {
+    const keNodes = cy.nodes().not('.gene');
+    const geneNodes = cy.nodes('.gene');
+    const sigKeNodes = cy.nodes('.significant').not('.gene');
+    const sigGeneNodes = cy.nodes('.gene.significant');
+    const keEdges = cy.edges().not('.gene-link');
+    const geneEdges = cy.edges('.gene-link');
+
+    document.getElementById('stat-total-kes').textContent = keNodes.length;
+    document.getElementById('stat-sig-kes').textContent = sigKeNodes.length;
+    document.getElementById('stat-total-genes').textContent = geneNodes.length;
+    document.getElementById('stat-sig-genes').textContent = sigGeneNodes.length;
+    document.getElementById('stat-ke-edges').textContent = keEdges.length;
+    document.getElementById('stat-gene-edges').textContent = geneEdges.length;
+    document.getElementById('stat-total-edges').textContent = cy.edges().length;
+}
+
+// --- Gradient function for gene node coloring ---
+function defaultLogFCColor(logfc) {
+    const fc = parseFloat(logfc) || 0;
+    const fcClamped = Math.max(-1, Math.min(1, fc));
+    const norm = (fcClamped + 1) / 2;
+    const interpolate = (start, end, t) => Math.round(start + (end - start) * t);
+
+    let r, g, b;
+    if (norm < 0.5) {
+        const t = norm * 2;
+        r = interpolate(44, 255, t);
+        g = interpolate(123, 255, t);
+        b = interpolate(182, 255, t);
+    } else {
+        const t = (norm - 0.5) * 2;
+        r = interpolate(255, 215, t);
+        g = interpolate(255, 25, t);
+        b = interpolate(255, 255, t);
+    }
+    if (fc === 0) return '#ccc';
+    return `rgb(${r},${g},${b})`;
+}
+
+// --- Spinner functions ---
+function showSpinner(message) {
+    document.getElementById('network-spinner-msg').textContent = message || 'Rendering network...';
+    document.getElementById('network-spinner').style.display = 'flex';
+}
+function hideSpinner() {
+    document.getElementById('network-spinner').style.display = 'none';
+}
+function updateSpinnerMessage(message) {
+    document.getElementById('network-spinner-msg').textContent = message;
+}
+
+// --- Cytoscape initialisation ---
+showSpinner('Rendering network...');
+const largeNetworkTimeout = setTimeout(function() {
+    updateSpinnerMessage('Large network — this may take a moment');
+}, 3000);
+
+const cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: [...network.nodes, ...network.edges],
+    wheelSensitivity: 0.1,
+    style: [
+    {
+        selector: 'node',
+        style: {
+            'label': 'data(label)',
+            'color': '#000',
+            'font-size': 12,
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'width': 45,
+            'height': 45
+        }
+    },
+    {
+        selector: 'node[ke_type = "MIE"]',
+        style: { 'background-color': '#b3e6b3' }
+    },
+    {
+        selector: 'node[ke_type = "AO"]',
+        style: { 'background-color': '#f4b3b3' }
+    },
+    {
+        selector: 'node[ke_type = "intermediate"]',
+        style: { 'background-color': '#ffd9b3' }
+    },
+    {
+        selector: 'node.significant',
+        style: { 'border-width': 3, 'border-color': 'red' }
+    },
+    {
+        selector: 'node.gene.significant',
+        style: { 'border-color': 'green' }
+    },
+    {
+        selector: 'node.gene',
+        style: {
+            'shape': 'ellipse',
+            'label': 'data(label)',
+            'width': 20,
+            'height': 20,
+            'font-size': 8,
+            'color': '#000',
+            'background-color': ele => defaultLogFCColor(ele.data('logfc'))
+        }
+    },
+    {
+        selector: 'edge',
+        style: {
+            'width': 2,
+            'line-color': '#999',
+            'target-arrow-color': '#999',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier'
+        }
+    },
+    {
+        selector: 'edge.gene-link',
+        style: {
+            'line-color': '#ccc',
+            'width': 1,
+            'target-arrow-shape': 'none',
+            'curve-style': 'bezier'
+        }
+    }
+    ],
+    layout: { name: 'preset' }
+});
+
+cy.one('layoutstop', function() {
+    clearTimeout(largeNetworkTimeout);
+    hideSpinner();
+});
+
+cy.layout({
+    name: 'dagre',
+    rankDir: 'LR',
+    nodeSep: 60,
+    rankSep: 80,
+    padding: 30
+}).run();
+
+updateNetworkStats();
+
+// --- Overlay zoom controls ---
+document.getElementById('zoom-in').addEventListener('click', function() {
+    cy.zoom({ level: cy.zoom() * 1.25, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+});
+document.getElementById('zoom-out').addEventListener('click', function() {
+    cy.zoom({ level: cy.zoom() / 1.25, renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 } });
+});
+document.getElementById('zoom-fit').addEventListener('click', function() {
+    cy.fit(undefined, 20);
+});
+
+// --- Per-KE click-to-expand with shared gene node deduplication ---
+const expandedKEs = new Set();
+
+cy.on('tap', 'node', function(event) {
+    const node = event.target;
+    if (node.hasClass('gene')) return;
+
+    const keId = node.data('id');
+    const genes = keToGenes[keId];
+    if (!genes || genes.length === 0) return;
+    if (expandedKEs.has(keId)) return;
+
+    expandedKEs.add(keId);
+    showSpinner('Expanding KE...');
+
+    requestAnimationFrame(function() {
+        try {
+            cy.batch(function() {
+                genes.forEach(function(geneObj) {
+                    const geneId = geneObj.id;
+                    if (cy.getElementById(geneId).length === 0) {
+                        cy.add({
+                            group: 'nodes',
+                            data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
+                            classes: geneObj.significant ? 'gene significant' : 'gene'
+                        });
+                    }
+                    var edgeId = keId + '_' + geneId;
+                    if (cy.getElementById(edgeId).length === 0) {
+                        cy.add({
+                            group: 'edges',
+                            data: { id: edgeId, source: geneId, target: keId },
+                            classes: 'gene-link'
+                        });
+                    }
+                });
+            });
+
+            var layout = cy.layout({ name: 'cose', animate: true, animationDuration: 500 });
+            layout.promiseOn('layoutstop').then(function() {
+                hideSpinner();
+                updateNetworkStats();
+            });
+            layout.run();
+        } catch (e) {
+            console.error('Error expanding KE:', e);
+            hideSpinner();
+        }
+    });
+});
+
+// --- Collapse All ---
+function collapseAll() {
+    cy.batch(function() { cy.nodes('.gene').remove(); });
+    expandedKEs.clear();
+    cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 60, rankSep: 80, padding: 30 }).run();
+    updateNetworkStats();
+}
+
+function downloadPNG() {
+    const png = cy.png({ full: true, scale: 2 });
+    const link = document.createElement('a');
+    link.href = png;
+    link.download = 'aop_network.png';
+    link.click();
+}
+
+function downloadJSON() {
+    const json = cy.json();
+    const blob = new Blob([JSON.stringify(json, null, 2)], { type: "application/json" });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'aop_network.cyjs';
+    link.click();
+}
+</script>
+{% endif %}
+{% endblock %}
