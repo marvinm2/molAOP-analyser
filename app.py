@@ -27,7 +27,7 @@ from services.enrichment_service import run_enrichment_analysis, build_ke_gene_m
 from services.network_service import build_cytoscape_network
 from services.column_detector import column_detector
 from services.gene_id_validator import gene_id_validator
-from database import db_manager, init_database
+from database import db_manager, init_database, SharedResult, cleanup_expired_shared_results
 from services.report_service import report_generator, ReportData, get_software_versions
 
 # Configure logging
@@ -222,6 +222,83 @@ def upload_network_png():
     except Exception as e:
         logger.error(f"Failed to upload network PNG: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/share', methods=['POST'])
+@csrf.exempt
+def create_share():
+    """Create a shareable UUID for the current analysis results.
+
+    Receives enrichment table, network JSON, and KE metadata as a JSON payload.
+    Lazily cleans up expired shared results before inserting the new record.
+
+    Returns:
+        JSON with 'uuid' field (200) or error message (400/500).
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    session_db = db_manager.get_session()
+    try:
+        # Lazy cleanup of expired shared results
+        cleanup_expired_shared_results(session_db)
+
+        record = SharedResult.create(
+            enrichment_table=data.get('enrichment_table', []),
+            network=data.get('network', {}),
+            ke_gene_map=data.get('ke_gene_map', {}),
+            ke_type_map=data.get('ke_type_map', {}),
+            ke_title_map=data.get('ke_title_map', {}),
+            aop_id=data.get('aop_id', ''),
+            aop_label=data.get('aop_label', ''),
+            metadata=data.get('metadata', {}),
+        )
+        session_db.add(record)
+        session_db.commit()
+        return jsonify({'uuid': record.uuid}), 200
+    except Exception as e:
+        session_db.rollback()
+        logger.error(f"Failed to create shared result: {e}")
+        return jsonify({'error': 'Failed to create shareable link'}), 500
+    finally:
+        session_db.close()
+
+
+@app.route('/results/<uuid_str>')
+def shared_results(uuid_str):
+    """Render a shared analysis result page by UUID.
+
+    Args:
+        uuid_str: 36-character UUID identifying the shared result.
+
+    Returns:
+        Rendered shared_results.html template (200), 404 if not found,
+        or 410 if the shared result has expired.
+    """
+    session_db = db_manager.get_session()
+    try:
+        record = session_db.query(SharedResult).filter_by(uuid=uuid_str).first()
+        if not record:
+            return render_template('shared_results.html', not_found=True), 404
+        if record.expires_at < datetime.datetime.utcnow():
+            return render_template('shared_results.html', expired=True), 410
+        return render_template(
+            'shared_results.html',
+            record=record,
+            table=json.loads(record.enrichment_json),
+            table_json=record.enrichment_json,
+            network_json=record.network_json,
+            ke_gene_json=record.ke_gene_json or '{}',
+            ke_type_map=record.ke_type_map_json or '{}',
+            ke_title_map=record.ke_title_map_json or '{}',
+            aop_label=record.aop_label,
+            dataset_label=record.dataset_label,
+            gene_count=record.gene_count,
+            significant_genes=record.significant_genes,
+        )
+    finally:
+        session_db.close()
+
 
 @app.route('/preview', methods=['POST'])
 def preview():
