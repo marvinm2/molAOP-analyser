@@ -29,6 +29,7 @@ from services.column_detector import column_detector
 from services.gene_id_validator import gene_id_validator
 from database import db_manager, init_database, SharedResult, cleanup_expired_shared_results
 from services.report_service import report_generator, ReportData, get_software_versions
+from services.aop_discovery_service import get_aop_list
 
 # Configure logging
 logging.basicConfig(
@@ -262,6 +263,37 @@ def create_share():
         return jsonify({'error': 'Failed to create shareable link'}), 500
     finally:
         session_db.close()
+
+
+@app.route('/api/aops')
+def api_aops():
+    """Return AOP list filtered by optional query string.
+
+    Query params:
+        q: Search query (filters by AOP ID and title, case-insensitive).
+           If empty, returns only mapped AOPs (for on-focus default suggestions).
+
+    Returns:
+        JSON array of AOP objects, capped at 50 results.
+    """
+    q = request.args.get('q', '').lower().strip()
+
+    try:
+        aops = get_aop_list(Config)
+    except Exception as e:
+        logger.error(f"AOP discovery failed: {e}")
+        return jsonify({'error': 'Failed to load AOP list. Please try again.'}), 503
+
+    if q:
+        filtered = [
+            a for a in aops
+            if q in a['aop_id'].lower() or q in a['title'].lower()
+        ]
+    else:
+        # No query: return mapped AOPs only (on-focus default suggestions)
+        filtered = [a for a in aops if a['mapped_ke_count'] > 0]
+
+    return jsonify(filtered[:50])
 
 
 @app.route('/results/<uuid_str>')
