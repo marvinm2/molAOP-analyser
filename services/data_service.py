@@ -194,7 +194,7 @@ def load_aop_data(aop_id: str) -> Tuple[Set[str], pd.DataFrame, Dict[str, str], 
                 aop_config = entry
                 break
 
-        source = (aop_config or {}).get("source", "csv")
+        source = (aop_config or {}).get("source", "sparql")
 
         if source == "sparql":
             from services.sparql_service import fetch_aop_ke_data_cached
