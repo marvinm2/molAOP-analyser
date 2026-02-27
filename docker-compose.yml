@@ -5,9 +5,10 @@ services:
     build: .
     container_name: ke_enrichment_app
     ports:
-      - "5000:5000"
+      - "5010:5000"
     volumes:
       - .:/app
     environment:
       - FLASK_ENV=development
       - BUILDER_API_URL=
+      - SPARQL_ENDPOINT=https://aopwiki.rdf.bigcat-bioinformatics.org/sparql/

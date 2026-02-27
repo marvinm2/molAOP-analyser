@@ -11,6 +11,7 @@ weasyprint
 reportlab
 svglib
 requests
+SPARQLWrapper
 diskcache
 pytest
 pytest-flask

@@ -151,34 +151,69 @@ def guess_id_type(gene_series: pd.Series) -> str:
     logger.info(f"Predicted gene ID type: {predicted_type} (scores: {scores})")
     return predicted_type
 
+def _load_aop_data_csv(aop_id: str) -> Tuple[Set[str], pd.DataFrame, Dict[str, str], Dict[str, str]]:
+    """Load AOP data from local CSV files.
+
+    Args:
+        aop_id: AOP identifier (e.g. "AOP:1")
+
+    Returns:
+        Tuple of (ke_list, edges_df, ke_type_map, ke_title_map)
+    """
+    aop_ke_map = pd.read_csv('data/aop_ke_map.csv')
+    ke_list = set(aop_ke_map[aop_ke_map['AOP_ID'] == aop_id]['KE_ID'].dropna())
+
+    aop_ker_df = pd.read_csv('data/aop_ker_edges.csv')
+    edges = aop_ker_df[aop_ker_df['AOP_ID'] == aop_id]
+
+    ke_metadata_df = pd.read_csv("data/ke_metadata.csv")
+    ke_type_map = dict(zip(ke_metadata_df["KE_ID"], ke_metadata_df["Type"]))
+    ke_title_map = dict(zip(ke_metadata_df["KE_ID"], ke_metadata_df["Title"]))
+
+    return ke_list, edges, ke_type_map, ke_title_map
+
+
 def load_aop_data(aop_id: str) -> Tuple[Set[str], pd.DataFrame, Dict[str, str], Dict[str, str]]:
     """
     Load AOP-specific data including KE list, edges, and metadata.
-    
+
+    Routes to local CSV files or AOP-Wiki SPARQL endpoint based on the
+    ``source`` field in the CASE_STUDY_AOPS config entry for this AOP.
+
     Args:
-        aop_id: AOP identifier
-    
+        aop_id: AOP identifier (e.g. "AOP:105" or "NETWORK:kidney")
+
     Returns:
         Tuple of (ke_list, edges_df, ke_type_map, ke_title_map)
     """
     try:
-        # Load AOP-KE mappings
-        aop_ke_map = pd.read_csv('data/aop_ke_map.csv')
-        ke_list = set(aop_ke_map[aop_ke_map['AOP_ID'] == aop_id]['KE_ID'].dropna())
-        
-        # Load AOP edges
-        aop_ker_df = pd.read_csv('data/aop_ker_edges.csv')
-        edges = aop_ker_df[aop_ker_df['AOP_ID'] == aop_id]
-        
-        # Load KE metadata
-        ke_metadata_df = pd.read_csv("data/ke_metadata.csv")
-        ke_type_map = dict(zip(ke_metadata_df["KE_ID"], ke_metadata_df["Type"]))
-        ke_title_map = dict(zip(ke_metadata_df["KE_ID"], ke_metadata_df["Title"]))
-        
-        logger.info(f"Loaded AOP {aop_id} data: {len(ke_list)} KEs, {len(edges)} edges")
-        
+        # Look up config entry for this AOP
+        aop_config = None
+        for entry in Config.CASE_STUDY_AOPS.values():
+            if entry.get("id") == aop_id:
+                aop_config = entry
+                break
+
+        source = (aop_config or {}).get("source", "csv")
+
+        if source == "sparql":
+            from services.sparql_service import fetch_aop_ke_data_cached
+
+            # Combined network: use the aop_ids list from config
+            if aop_id.startswith("NETWORK:") and aop_config and aop_config.get("aop_ids"):
+                sparql_ids = aop_config["aop_ids"]
+            else:
+                sparql_ids = [aop_id]
+
+            ke_list, edges, ke_type_map, ke_title_map = fetch_aop_ke_data_cached(sparql_ids)
+            logger.info(f"Loaded AOP {aop_id} via SPARQL: {len(ke_list)} KEs, {len(edges)} edges")
+            return ke_list, edges, ke_type_map, ke_title_map
+
+        # Default: CSV path
+        ke_list, edges, ke_type_map, ke_title_map = _load_aop_data_csv(aop_id)
+        logger.info(f"Loaded AOP {aop_id} from CSV: {len(ke_list)} KEs, {len(edges)} edges")
         return ke_list, edges, ke_type_map, ke_title_map
-        
+
     except Exception as e:
         logger.error(f"Failed to load AOP data for {aop_id}: {e}")
         raise

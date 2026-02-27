@@ -89,21 +89,57 @@ class Config:
         'Cisplatin_Kidney/CSP_72hr_50uM.csv': 'Cisplatin 72hr 50μM – Kidney toxicity'
     }
     
+    # SPARQL endpoint settings
+    SPARQL_ENDPOINT = os.environ.get(
+        'SPARQL_ENDPOINT',
+        'https://aopwiki.rdf.bigcat-bioinformatics.org/sparql/'
+    )
+    SPARQL_TIMEOUT = int(os.environ.get('SPARQL_TIMEOUT', '30'))
+
+    # Kidney AOP IDs for the combined kidney network
+    KIDNEY_AOP_IDS = [
+        "AOP:33", "AOP:53", "AOP:105", "AOP:116", "AOP:128",
+        "AOP:138", "AOP:177", "AOP:186", "AOP:256", "AOP:257",
+        "AOP:258", "AOP:284", "AOP:384", "AOP:413", "AOP:437",
+        "AOP:447", "AOP:622",
+    ]
+
     # AOP case studies
     CASE_STUDY_AOPS = {
         "DEMO": {"label": "---DEMO---", "enabled": False},
-        "steatosis": {"id": "AOP:1", "label": "PXR activation leading to liver steatosis", "enabled": True},
+        "steatosis": {"id": "AOP:1", "label": "PXR activation leading to liver steatosis", "enabled": True, "source": "csv"},
         "VHP-CASES:": {"label": "---VHP CASES---", "enabled": False},
-        "vhp-kidney": {"id": "AOP:2", "label": "DNA adduct formation leading to kidney failure", "enabled": True},
-        "vhp-parkinson": {"id": "AOP:3", "label": "Calcium overload in dopaminergic neurons of the substantia nigra leading to parkinsonian motor deficits", "enabled": False},
-        "vhp-thyroid": {"id": "AOP:4", "label": "Thyroid hormone-mediated neurodevelopmental toxicity", "enabled": False},
-        "ORGAN-NETWORK": {"label": "---ORGAN NETWORKS---","enabled": False},
+        "vhp-kidney": {"id": "AOP:2", "label": "DNA adduct formation leading to kidney failure", "enabled": True, "source": "csv"},
+        "vhp-parkinson": {"id": "AOP:3", "label": "Calcium overload in dopaminergic neurons of the substantia nigra leading to parkinsonian motor deficits", "enabled": False, "source": "csv"},
+        "vhp-thyroid": {"id": "AOP:4", "label": "Thyroid hormone-mediated neurodevelopmental toxicity", "enabled": False, "source": "csv"},
+        "KIDNEY-AOPS": {"label": "---KIDNEY AOPs---", "enabled": False},
+        "kidney-33": {"id": "AOP:33", "label": "Kidney toxicity induced by activation of 5HT2C", "enabled": True, "source": "sparql"},
+        "kidney-53": {"id": "AOP:53", "label": "ER agonism leading to reduced survival due to renal failure", "enabled": True, "source": "sparql"},
+        "kidney-105": {"id": "AOP:105", "label": "Alpha2u-microglobulin cytotoxicity leading to renal tubular adenomas and carcinomas", "enabled": True, "source": "sparql"},
+        "kidney-116": {"id": "AOP:116", "label": "Cytotoxicity leading to renal tubular adenomas and carcinomas", "enabled": True, "source": "sparql"},
+        "kidney-128": {"id": "AOP:128", "label": "Kidney dysfunction by decreased thyroid hormone", "enabled": True, "source": "sparql"},
+        "kidney-138": {"id": "AOP:138", "label": "OAT1 inhibition leading to renal failure and mortality", "enabled": True, "source": "sparql"},
+        "kidney-177": {"id": "AOP:177", "label": "COX1 inhibition leading to renal failure and mortality", "enabled": True, "source": "sparql"},
+        "kidney-186": {"id": "AOP:186", "label": "Unknown MIE leading to renal failure and mortality", "enabled": True, "source": "sparql"},
+        "kidney-256": {"id": "AOP:256", "label": "Inhibition of mtDNA polymerase gamma leading to kidney toxicity", "enabled": True, "source": "sparql"},
+        "kidney-257": {"id": "AOP:257", "label": "Receptor mediated endocytosis and lysosomal overload leading to kidney toxicity", "enabled": True, "source": "sparql"},
+        "kidney-258": {"id": "AOP:258", "label": "Renal protein alkylation leading to kidney toxicity", "enabled": True, "source": "sparql"},
+        "kidney-284": {"id": "AOP:284", "label": "Binding to SH-group proteins leading to chronic kidney disease", "enabled": True, "source": "sparql"},
+        "kidney-384": {"id": "AOP:384", "label": "Hyperactivation of ACE/Ang-II/AT1R axis leading to chronic kidney disease", "enabled": True, "source": "sparql"},
+        "kidney-413": {"id": "AOP:413", "label": "Oxidation of reduced glutathione leading to mortality via acute renal failure", "enabled": True, "source": "sparql"},
+        "kidney-437": {"id": "AOP:437", "label": "Inhibition of mitochondrial ETC complexes leading to kidney toxicity", "enabled": True, "source": "sparql"},
+        "kidney-447": {"id": "AOP:447", "label": "Inhibition of mitochondrial ETC leading to kidney failure", "enabled": True, "source": "sparql"},
+        "kidney-622": {"id": "AOP:622", "label": "Calcineurin inhibitor induced nephrotoxicity leading to kidney failure", "enabled": True, "source": "sparql"},
+        "ORGAN-NETWORK": {"label": "---ORGAN NETWORKS---", "enabled": False},
+        "Kidney-aop-network": {"id": "NETWORK:kidney", "label": "Kidney AOP network (all 17 AOPs combined)", "enabled": True, "source": "sparql"},
         "Liver-aop-network": {"id": "AOP:5", "label": "Liver AOP network", "enabled": False},
         "Brain-aop-network": {"id": "AOP:6", "label": "Brain AOP network", "enabled": False},
-        "Kidney-aop-network": {"id": "AOP:7", "label": "Kidney AOP network", "enabled": False},
         "Lung-aop-network": {"id": "AOP:8", "label": "Lung AOP network", "enabled": False},
     }
-    
+
+    # Wire up aop_ids for the kidney network entry
+    CASE_STUDY_AOPS["Kidney-aop-network"]["aop_ids"] = KIDNEY_AOP_IDS  # noqa: E501
+
     # Flask settings
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-change-in-production'
 
