@@ -606,20 +606,18 @@
         <input type="hidden" name="description" class="metadata-field">
 
         <div style="margin-bottom: 20px; text-align: center;">
-            <label for="aop_selection"><strong>Select a molecular AOP for enrichment analysis:</strong></label>
+            <label for="aop_search"><strong>Select a molecular AOP for enrichment analysis:</strong></label>
             <p style="max-width: 600px; margin: 10px auto;">
                 This step links the most affected genes in your dataset to key events in a specific Adverse Outcome Pathway.
+                Start typing an AOP name or ID, or click the box to see AOPs with available KE-gene mappings.
             </p>
-            <select id="aop_selection" name="aop_selection" class="wide-dropdown" required>
-                <option value="" disabled selected>-- Choose an AOP --</option>
-                {% for key, aop in case_study_aops.items() %}
-                    {% if aop.get("enabled", True) %}
-                        <option value="{{ aop.id }}">{{ aop.label }}</option>
-                    {% else %}
-                        <option value="{{ aop.id }}" disabled> {{ aop.label }}</option>
-                    {% endif %}
-                {% endfor %}
-            </select>
+            <div class="typeahead-wrapper" style="position: relative; max-width: 600px; margin: 0 auto;">
+                <input type="text" id="aop_search" placeholder="Search AOPs by name or ID..."
+                       autocomplete="off" class="wide-dropdown"
+                       style="width: 100%; padding: 10px; font-size: 14px; box-sizing: border-box;">
+                <input type="hidden" id="aop_selection" name="aop_selection" required>
+                <ul id="aop_suggestions" class="typeahead-dropdown" hidden></ul>
+            </div>
         </div>
         <button type="submit" title="Run enrichment analysis based on selected threshold and genes.">
             Run Enrichment Analysis
@@ -803,5 +801,140 @@ function setPercentageThreshold(percentage) {
         alert('Please load a dataset first to use percentage-based thresholds.');
     }
 }
+</script>
+
+<script>
+// AOP typeahead search — queries /api/aops as user types or on focus
+(function () {
+    // The typeahead elements only exist when the volcano section is rendered
+    const searchInput = document.getElementById('aop_search');
+    const hiddenInput = document.getElementById('aop_selection');
+    const suggestions = document.getElementById('aop_suggestions');
+
+    if (!searchInput || !hiddenInput || !suggestions) {
+        return; // Elements not present on this page load
+    }
+
+    let debounceTimer;
+
+    /**
+     * Format a single AOP object into a human-readable label.
+     * @param {Object} aop - AOP dict from /api/aops
+     * @returns {string}
+     */
+    function formatLabel(aop) {
+        const mappedInfo = aop.mapped_ke_count > 0
+            ? ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs mapped`
+            : '';
+        return `${aop.aop_id}: ${aop.title} (${aop.ke_count} KEs${mappedInfo})`;
+    }
+
+    /**
+     * Render a list of AOP objects (or an error dict) as dropdown items.
+     * @param {Array|Object} aops - Array of AOP dicts or {error: string}
+     */
+    function renderSuggestions(aops) {
+        suggestions.innerHTML = '';
+
+        // Handle error response
+        if (!Array.isArray(aops) && aops.error) {
+            const li = document.createElement('li');
+            li.textContent = aops.error;
+            li.style.color = '#EB5B25';
+            li.style.cursor = 'default';
+
+            const retryBtn = document.createElement('button');
+            retryBtn.textContent = 'Retry';
+            retryBtn.type = 'button';
+            retryBtn.style.marginLeft = '10px';
+            retryBtn.style.fontSize = '12px';
+            retryBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                fetchSuggestions(searchInput.value);
+            });
+            li.appendChild(retryBtn);
+            suggestions.appendChild(li);
+            suggestions.hidden = false;
+            return;
+        }
+
+        if (!Array.isArray(aops) || aops.length === 0) {
+            suggestions.hidden = true;
+            return;
+        }
+
+        aops.forEach(function (aop) {
+            const li = document.createElement('li');
+
+            // Main label: AOP ID and title
+            const mainText = document.createElement('span');
+            mainText.textContent = `${aop.aop_id}: ${aop.title} (${aop.ke_count} KEs)`;
+            li.appendChild(mainText);
+
+            // Mapping info badge
+            if (aop.mapped_ke_count > 0) {
+                const info = document.createElement('span');
+                info.className = 'mapped-info';
+                info.textContent = ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs mapped`;
+                li.appendChild(info);
+            }
+
+            li.dataset.id = aop.aop_id;
+
+            li.addEventListener('click', function () {
+                hiddenInput.value = aop.aop_id;
+                searchInput.value = formatLabel(aop);
+                suggestions.hidden = true;
+            });
+
+            suggestions.appendChild(li);
+        });
+
+        suggestions.hidden = false;
+    }
+
+    /**
+     * Fetch AOP suggestions from the server.
+     * @param {string} q - Search query (may be empty for on-focus defaults)
+     */
+    async function fetchSuggestions(q) {
+        try {
+            const res = await fetch(`/api/aops?q=${encodeURIComponent(q)}`);
+            if (!res.ok) {
+                let errMsg = 'Failed to load AOPs';
+                try {
+                    const err = await res.json();
+                    errMsg = err.error || errMsg;
+                } catch (_) {}
+                renderSuggestions({ error: errMsg });
+                return;
+            }
+            const aops = await res.json();
+            renderSuggestions(aops);
+        } catch (err) {
+            renderSuggestions({ error: 'Network error. Please check your connection.' });
+        }
+    }
+
+    // On focus: show mapped AOPs immediately (empty query returns mapped AOPs)
+    searchInput.addEventListener('focus', function () {
+        fetchSuggestions('');
+    });
+
+    // On input: debounced search
+    searchInput.addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            fetchSuggestions(searchInput.value);
+        }, 250);
+    });
+
+    // Close suggestions when clicking outside the typeahead wrapper
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.typeahead-wrapper')) {
+            suggestions.hidden = true;
+        }
+    });
+})();
 </script>
 {% endblock %}
