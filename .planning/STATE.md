@@ -18,29 +18,30 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 4 — Shareable URLs + AOP Discovery
+**Current focus:** Phase 5 — Network Interactivity & Responsive Layout
 
 ## Current Position
 
-Phase: 4 of 7 (Shareable URLs + AOP Discovery)
-Plan: 2 of 2 in current phase
+Phase: 5 of 7 (Network Interactivity & Responsive Layout)
+Plan: 1 of 1 in current phase
 Status: Active
-Last activity: 2026-02-27 — 04-02 AOP discovery service and typeahead UI complete
+Last activity: 2026-02-28 — 05-01 Network interactivity (expand-all, KE drawer, FDR filter) complete
 
-Progress: [██░░░░░░░░] 20%
+Progress: [███░░░░░░░] 30%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2 (v2.0)
+- Total plans completed: 3 (v2.0)
 - Average duration: 6 minutes
-- Total execution time: 12 minutes
+- Total execution time: 17 minutes
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
+| 05 (Network Interactivity) | 1/1 | 5m | 5m |
 
 *Updated after each plan completion*
 
@@ -60,6 +61,9 @@ Recent decisions affecting current work:
 - [04-02]: get_aop_list() uses diskcache.FanoutCache with 1-week TTL (AOP_LIST_CACHE_KEY = aop_discovery_list_v1)
 - [04-02]: load_aop_data() default source changed from csv to sparql — all dynamic AOPs use SPARQL automatically
 - [04-02]: Typeahead hidden input carries the aop_id value; text input shows human-readable label only
+- [05-01]: FDR filter uses addClass/removeClass('fdr-filtered') with opacity:0.25 — nodes stay in layout, only become semi-transparent
+- [05-01]: Drawer uses CSS transition on 'right' property (desktop) and 'bottom' (mobile <768px) — no JS animation
+- [05-01]: tableData/keTitleMap/keTypeMap hoisted to global script scope so copyLinkBtn handler and drawer share them without re-parsing template JSON
 
 ### Pending Todos
 
@@ -74,6 +78,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-02-27
-Stopped at: Completed 04-02-PLAN.md — AOP discovery service and typeahead UI implemented
+Last session: 2026-02-28
+Stopped at: Completed 05-01-PLAN.md — Network interactivity (expand-all, KE drawer, FDR filter) implemented
 Resume file: None

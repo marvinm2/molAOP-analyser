@@ -24,10 +24,10 @@ Requirements for v2.0 Batch Analysis & Dynamic AOPs milestone. Each maps to road
 
 ### Network Interactivity
 
-- [ ] **NETW-01**: User can expand/collapse all gene nodes with one toggle button
-- [ ] **NETW-02**: Expand-all toggle disabled when total gene count exceeds 200
-- [ ] **NETW-03**: User can view KE detail panel on node click (title, type, FDR, gene list, AOP-Wiki link)
-- [ ] **NETW-04**: User can filter network by FDR significance threshold via slider
+- [x] **NETW-01**: User can expand/collapse all gene nodes with one toggle button
+- [x] **NETW-02**: Expand-all toggle disabled when total gene count exceeds 200
+- [x] **NETW-03**: User can view KE detail panel on node click (title, type, FDR, gene list, AOP-Wiki link)
+- [x] **NETW-04**: User can filter network by FDR significance threshold via slider
 
 ### Upload & UX
 
@@ -94,10 +94,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SHAR-01 | Phase 4 | Complete |
 | SHAR-02 | Phase 4 | Complete |
 | SHAR-03 | Phase 4 | Complete |
-| NETW-01 | Phase 5 | Pending |
-| NETW-02 | Phase 5 | Pending |
-| NETW-03 | Phase 5 | Pending |
-| NETW-04 | Phase 5 | Pending |
+| NETW-01 | Phase 5 | Complete |
+| NETW-02 | Phase 5 | Complete |
+| NETW-03 | Phase 5 | Complete |
+| NETW-04 | Phase 5 | Complete |
 | UPUX-01 | Phase 5 | Pending |
 | UPUX-02 | Phase 5 | Pending |
 | UPUX-03 | Phase 5 | Pending |
