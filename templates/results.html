@@ -493,6 +493,21 @@
             </div>
         </div>
 
+        <!-- Network controls bar — placed above the Cytoscape container -->
+        <div class="network-controls-bar">
+            <button id="expand-all-btn" class="btn btn--primary" title="Expand all KE gene nodes at once">Expand All</button>
+            <button onclick="collapseAll()">Collapse All</button>
+            <div class="fdr-slider-group">
+                <label for="fdr-slider">FDR threshold:</label>
+                <input type="range" id="fdr-slider" min="0" max="1" step="0.01" value="0.05">
+                <span id="fdr-slider-value">0.05</span>
+                <button id="fdr-apply-btn" class="btn btn--primary">Apply</button>
+            </div>
+            <button onclick="cy.fit(undefined, 20);">Reset View</button>
+            <button onclick="downloadPNG()">Export PNG</button>
+            <button onclick="downloadJSON()">Download Network</button>
+        </div>
+
         <div style="position: relative;">
             <div id="network-spinner" style="display: none;">
                 <div class="network-spinner__backdrop"></div>
@@ -507,13 +522,6 @@
                 <button class="network-zoom-btn" id="zoom-fit" title="Fit to screen">&#8862;</button>
             </div>
             <div id="cy" style="width: 100%; height: 800px; border: 2px solid #ccc; border-radius: 8px; background: white;"></div>
-        </div>
-
-        <div class="network-controls">
-            <button onclick="collapseAll()">Collapse All</button>
-            <button onclick="cy.fit(undefined, 20);">Reset View</button>
-            <button onclick="downloadPNG()">Export PNG</button>
-            <button onclick="downloadJSON()">Download Network</button>
         </div>
 
         <!-- Network Statistics -->
@@ -616,12 +624,28 @@
         </p>
     </div>
 
+    <!-- KE Detail Drawer -->
+    <div id="ke-drawer" class="ke-drawer" role="complementary" aria-label="Key Event Details">
+        <div class="ke-drawer__header">
+            <h3 class="ke-drawer__title">Key Event Details</h3>
+            <button class="ke-drawer__close" id="ke-drawer-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="ke-drawer-content" class="ke-drawer__body"></div>
+    </div>
+
 {% endblock %}
 
 {% block scripts %}
 <script>
 const network = {{ network_json | safe }};
 const keToGenes = {{ ke_gene_json | safe }};
+
+// Build lookups for drawer and FDR filter from template data (NETW-03, NETW-04)
+const tableData = {{ table_json | safe }};
+const keTitleMap = {{ ke_title_map | safe }};
+const keTypeMap = {{ ke_type_map | safe }};
+const fdrByKe = {};
+tableData.forEach(function(row) { fdrByKe[row.KE] = row.FDR; });
 
 // --- DataTables init with CSV export support ---
 let resultsTable;
@@ -775,6 +799,15 @@ const cy = cytoscape({
             'target-arrow-shape': 'none',
             'curve-style': 'bezier'
         }
+    },
+    {
+        selector: 'node.fdr-filtered',
+        style: {
+            'opacity': 0.25,
+            'background-color': '#ccc',
+            'border-color': '#aaa',
+            'border-width': 1
+        }
     }
 ],
     layout: { name: 'preset' }
@@ -823,7 +856,7 @@ cy.on('tap', 'node', function(event) {
     const keId = node.data('id');
     const genes = keToGenes[keId];
     if (!genes || genes.length === 0) return;
-    if (expandedKEs.has(keId)) return;  // already expanded
+    if (expandedKEs.has(keId)) { openDrawer(keId); return; }  // already expanded — just open drawer
 
     expandedKEs.add(keId);
     showSpinner('Expanding KE...');
@@ -859,11 +892,149 @@ cy.on('tap', 'node', function(event) {
             layout.promiseOn('layoutstop').then(function() {
                 hideSpinner();
                 updateNetworkStats();
+                openDrawer(keId);
             });
             layout.run();
         } catch (e) {
             console.error('Error expanding KE:', e);
             hideSpinner();
+        }
+    });
+});
+
+// --- Expand All toggle with gene count guard (NETW-01, NETW-02) ---
+const totalGeneCount = Object.values(keToGenes).reduce(function(sum, arr) { return sum + arr.length; }, 0);
+const EXPAND_ALL_LIMIT = 200;
+
+function expandAll() {
+    showSpinner('Expanding all KEs...');
+    requestAnimationFrame(function() {
+        try {
+            cy.batch(function() {
+                Object.keys(keToGenes).forEach(function(keId) {
+                    if (expandedKEs.has(keId)) return;
+                    expandedKEs.add(keId);
+                    var genes = keToGenes[keId] || [];
+                    genes.forEach(function(geneObj) {
+                        var geneId = geneObj.id;
+                        if (cy.getElementById(geneId).length === 0) {
+                            cy.add({
+                                group: 'nodes',
+                                data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
+                                classes: geneObj.significant ? 'gene significant' : 'gene'
+                            });
+                        }
+                        var edgeId = keId + '_' + geneId;
+                        if (cy.getElementById(edgeId).length === 0) {
+                            cy.add({
+                                group: 'edges',
+                                data: { id: edgeId, source: geneId, target: keId },
+                                classes: 'gene-link'
+                            });
+                        }
+                    });
+                });
+            });
+            var layout = cy.layout({ name: 'cose', animate: true, animationDuration: 500 });
+            layout.promiseOn('layoutstop').then(function() {
+                hideSpinner();
+                updateNetworkStats();
+            });
+            layout.run();
+        } catch (e) {
+            console.error('Error in expandAll:', e);
+            hideSpinner();
+        }
+    });
+}
+
+// Wire expand-all button
+var expandAllBtn = document.getElementById('expand-all-btn');
+if (totalGeneCount > EXPAND_ALL_LIMIT) {
+    expandAllBtn.disabled = true;
+    expandAllBtn.textContent = 'Too many genes (' + totalGeneCount + ')';
+    expandAllBtn.title = 'Total gene count exceeds ' + EXPAND_ALL_LIMIT + ' — expand individual KEs instead';
+} else {
+    expandAllBtn.addEventListener('click', expandAll);
+}
+
+// --- KE Detail Drawer (NETW-03) ---
+function buildDrawerHTML(title, keType, fdrStr, genes, aopWikiUrl) {
+    var html = '<div class="ke-drawer__meta">';
+    html += '<div class="ke-drawer__type">' + keType + '</div>';
+    html += '<div class="ke-drawer__fdr">FDR: <strong>' + fdrStr + '</strong></div>';
+    html += '</div>';
+    html += '<h4 class="ke-drawer__ke-title">' + title + '</h4>';
+    html += '<a href="' + aopWikiUrl + '" target="_blank" rel="noopener" class="ke-drawer__wiki-link">View on AOP-Wiki &rarr;</a>';
+    html += '<div class="ke-drawer__gene-list">';
+    html += '<h5>Genes (' + genes.length + ')</h5>';
+    html += '<div class="ke-drawer__gene-scroll">';
+    genes.forEach(function(g) {
+        var sigClass = g.significant ? ' ke-drawer__gene--sig' : '';
+        var fc = (g.log2FC !== undefined && g.log2FC !== null) ? g.log2FC.toFixed(2) : 'N/A';
+        html += '<div class="ke-drawer__gene' + sigClass + '">';
+        html += '<span class="ke-drawer__gene-name">' + g.id + '</span>';
+        html += '<span class="ke-drawer__gene-fc">' + fc + '</span>';
+        if (g.significant) html += '<span class="ke-drawer__gene-sig-badge">sig</span>';
+        html += '</div>';
+    });
+    html += '</div></div>';
+    return html;
+}
+
+function openDrawer(keId) {
+    var title = keTitleMap[keId] || keId;
+    var keType = keTypeMap[keId] || 'Key Event';
+    var fdr = fdrByKe[keId];
+    var fdrStr = (fdr !== undefined)
+        ? (fdr < 0.001 ? fdr.toExponential(2) : fdr.toFixed(4))
+        : 'N/A';
+    var genes = keToGenes[keId] || [];
+    var numericId = String(keId).replace(/\D/g, '');
+    var aopWikiUrl = 'https://www.aopwiki.org/events/' + numericId;
+
+    // Sort: significant first, then by |log2FC| descending
+    var sortedGenes = genes.slice().sort(function(a, b) {
+        if (a.significant !== b.significant) return (b.significant ? 1 : 0) - (a.significant ? 1 : 0);
+        return Math.abs(b.log2FC || 0) - Math.abs(a.log2FC || 0);
+    });
+
+    document.getElementById('ke-drawer').classList.add('ke-drawer--open');
+    document.getElementById('ke-drawer-content').innerHTML = buildDrawerHTML(
+        title, keType, fdrStr, sortedGenes, aopWikiUrl
+    );
+}
+
+function closeDrawer() {
+    document.getElementById('ke-drawer').classList.remove('ke-drawer--open');
+}
+
+// Close drawer via X button
+document.getElementById('ke-drawer-close').addEventListener('click', closeDrawer);
+
+// Close drawer on network background click (not on a node)
+cy.on('tap', function(event) {
+    if (event.target === cy) {
+        closeDrawer();
+    }
+});
+
+// --- FDR Filter Slider (NETW-04) ---
+var fdrSlider = document.getElementById('fdr-slider');
+var fdrSliderValue = document.getElementById('fdr-slider-value');
+fdrSlider.addEventListener('input', function() {
+    fdrSliderValue.textContent = parseFloat(fdrSlider.value).toFixed(2);
+});
+
+document.getElementById('fdr-apply-btn').addEventListener('click', function() {
+    var threshold = parseFloat(fdrSlider.value);
+    cy.nodes().not('.gene').forEach(function(node) {
+        var keId = node.data('id');
+        var fdr = fdrByKe[keId];
+        if (fdr !== undefined && fdr > threshold) {
+            node.addClass('fdr-filtered');
+        } else {
+            node.removeClass('fdr-filtered');
         }
     });
 });
@@ -903,21 +1074,18 @@ document.getElementById('copyLinkBtn').addEventListener('click', async function(
     btn.disabled = true;
 
     try {
-        const tableData = {{ table_json | safe }};
-        const networkData = {{ network_json | safe }};
+        // uses global tableData, keTitleMap, keTypeMap from above
         const keGeneData = {{ ke_gene_json | safe }};
-        const keTypeMapData = {{ ke_type_map | safe }};
-        const keTitleMapData = {{ ke_title_map | safe }};
 
         const resp = await fetch('/api/share', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 enrichment_table: tableData,
-                network: networkData,
+                network: network,
                 ke_gene_map: keGeneData,
-                ke_type_map: keTypeMapData,
-                ke_title_map: keTitleMapData,
+                ke_type_map: keTypeMap,
+                ke_title_map: keTitleMap,
                 aop_id: '{{ metadata.get("aop_id", "") }}',
                 aop_label: '{{ metadata.get("aop_label", "") }}',
                 metadata: {
