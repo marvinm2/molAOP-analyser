@@ -876,5 +876,158 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   DROP ZONE (file upload)
+   ========================================================================== */
+
+.drop-zone {
+    border: 2px dashed #ccc;
+    border-radius: 8px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+    background: #fafafa;
+    margin-bottom: 16px;
+}
+
+.drop-zone--active {
+    border: 2px solid #307BBF;
+    background-color: #e8f4fb;
+}
+
+.drop-zone__icon {
+    font-size: 32px;
+    color: #aaa;
+    margin-bottom: 8px;
+}
+
+.drop-zone__text {
+    font-size: 16px;
+    font-weight: 500;
+    color: #29235C;
+    margin: 0 0 4px;
+}
+
+.drop-zone__hint {
+    font-size: 13px;
+    color: #888;
+    margin: 0 0 8px;
+}
+
+.drop-zone__filename {
+    font-size: 14px;
+    color: #307BBF;
+    font-weight: 500;
+    margin: 8px 0 0;
+}
+
+.drop-zone__remove {
+    background: transparent;
+    color: #E6007E;
+    border: 1px solid #E6007E;
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+    margin-top: 6px;
+    cursor: pointer;
+    width: auto;
+    display: inline-block;
+}
+
+.drop-zone__remove:hover {
+    background: #E6007E;
+    color: white;
+}
+
+/* ==========================================================================
+   RESPONSIVE LAYOUT
+   ========================================================================== */
+
+/* 1024px breakpoint — laptop/small desktop */
+@media (max-width: 1024px) {
+    .card--wide {
+        width: 100%;
+        padding: 20px 16px;
+    }
+}
+
+/* 768px breakpoint — tablet */
+@media (max-width: 768px) {
+    .card--wide,
+    .card--narrow {
+        width: 100%;
+        padding: 16px 12px;
+        border-radius: 0;
+        margin-bottom: 12px;
+    }
+
+    .site-nav__links {
+        gap: 16px;
+    }
+
+    .site-nav__links a {
+        font-size: 13px;
+    }
+
+    /* Network container fixed height on tablet */
+    #cy {
+        height: 500px !important;
+    }
+
+    /* Stack network controls vertically */
+    .network-controls-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .fdr-slider-group {
+        margin-left: 0;
+        flex-wrap: wrap;
+    }
+
+    /* Legend grid: single column on tablet */
+    .network-legend__grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Metadata summary: tighter spacing */
+    .metadata-summary {
+        gap: 12px;
+    }
+
+    /* Column selectors: stack vertically */
+    .column-selectors {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    select.wide-dropdown {
+        min-width: unset;
+        width: 100%;
+    }
+
+    /* Dose grid: 2 columns instead of 3 */
+    .dose-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    /* Metadata form: single column */
+    .metadata-grid-row {
+        grid-template-columns: 1fr;
+    }
+
+    /* Threshold controls: wrap better */
+    .threshold-quick-options {
+        justify-content: flex-start;
+    }
+
+    .threshold-custom {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+}
+
+/* ==========================================================================
    END OF STYLESHEET
    ========================================================================== */
