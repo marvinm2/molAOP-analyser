@@ -325,6 +325,35 @@
         <button type="submit">Load Demo Dataset</button>
     </form>
 
+    <!-- File upload with drag-and-drop -->
+    <div style="margin-top: 24px; padding-top: 24px; border-top: 2px solid #eee;">
+        <h2>Or Upload Your Own Data</h2>
+        <form action="{{ url_for('preview') }}#centered-container" method="post" enctype="multipart/form-data" id="uploadForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+
+            <!-- Hidden metadata fields (will be populated by existing JS) -->
+            <input type="hidden" name="dataset_id" class="metadata-field">
+            <input type="hidden" name="owner" class="metadata-field">
+            <input type="hidden" name="stressor" class="metadata-field">
+            <input type="hidden" name="dosing" class="metadata-field">
+            <input type="hidden" name="description" class="metadata-field">
+
+            <div class="drop-zone" id="upload-drop-zone" role="button" tabindex="0"
+                 aria-label="Drag and drop files here or click to browse">
+                <div class="drop-zone__icon">&#8613;</div>
+                <p class="drop-zone__text">Drag files here or click to browse</p>
+                <p class="drop-zone__hint">CSV, TSV, TXT &mdash; Max 10MB</p>
+                <p class="drop-zone__filename" id="drop-zone-filename" hidden></p>
+                <button type="button" class="drop-zone__remove" id="drop-zone-remove" hidden
+                        aria-label="Remove selected file">&times; Remove</button>
+                <input type="file" id="file-input-hidden" name="gene_file" accept=".csv,.tsv,.txt"
+                       style="display:none">
+            </div>
+
+            <button type="submit" id="upload-submit-btn" disabled>Upload and Preview</button>
+        </form>
+    </div>
+
     <!-- Experiment metadata collection -->
     <div class="info-callout" style="margin-top: 30px;">
         <h3 style="margin-top: 0; color: #29235C;">Experiment Information (Optional)</h3>
@@ -801,6 +830,88 @@ function setPercentageThreshold(percentage) {
         alert('Please load a dataset first to use percentage-based thresholds.');
     }
 }
+</script>
+
+<script>
+// Drag-and-drop upload zone
+(function() {
+    var dropZone = document.getElementById('upload-drop-zone');
+    var fileInput = document.getElementById('file-input-hidden');
+    var submitBtn = document.getElementById('upload-submit-btn');
+
+    if (!dropZone || !fileInput) return;
+
+    // Click to browse
+    dropZone.addEventListener('click', function(e) {
+        if (e.target.id === 'drop-zone-remove') return;
+        fileInput.click();
+    });
+
+    // Keyboard accessibility
+    dropZone.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInput.click();
+        }
+    });
+
+    // Drag-over feedback
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropZone.classList.add('drop-zone--active');
+    });
+    dropZone.addEventListener('dragleave', function() {
+        dropZone.classList.remove('drop-zone--active');
+    });
+
+    // Drop handler
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropZone.classList.remove('drop-zone--active');
+        var file = e.dataTransfer.files[0];
+        if (file) setFile(file);
+    });
+
+    // File input change handler
+    fileInput.addEventListener('change', function() {
+        if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    function setFile(file) {
+        // Transfer to DataTransfer to set on hidden input
+        var dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+
+        document.getElementById('drop-zone-filename').textContent = file.name;
+        document.getElementById('drop-zone-filename').hidden = false;
+        document.getElementById('drop-zone-remove').hidden = false;
+        if (submitBtn) submitBtn.disabled = false;
+    }
+
+    document.getElementById('drop-zone-remove').addEventListener('click', function(e) {
+        e.stopPropagation();
+        fileInput.value = '';
+        document.getElementById('drop-zone-filename').hidden = true;
+        document.getElementById('drop-zone-remove').hidden = true;
+        if (submitBtn) submitBtn.disabled = true;
+    });
+
+    // Ensure metadata is copied into the upload form before submit
+    var uploadForm = document.getElementById('uploadForm');
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', function() {
+            var metadataFields = ['dataset_id', 'owner', 'stressor', 'dosing', 'description'];
+            metadataFields.forEach(function(fieldName) {
+                var source = document.getElementById(fieldName);
+                if (source) {
+                    var hidden = uploadForm.querySelector('input[name="' + fieldName + '"]');
+                    if (hidden) hidden.value = source.value;
+                }
+            });
+        });
+    }
+})();
 </script>
 
 <script>

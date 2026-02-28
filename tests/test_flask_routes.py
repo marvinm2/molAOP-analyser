@@ -17,7 +17,7 @@ class TestFlaskRoutes:
         response = flask_client.get('/')
         
         assert response.status_code == 200
-        assert b'Molecular Adverse Outcome Pathway Analyser' in response.data
+        assert b'molAOP Analyser' in response.data
         assert b'Select Demo Dataset' in response.data
         assert b'Experiment Information' in response.data  # Metadata form
     
