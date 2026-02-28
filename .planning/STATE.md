@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
+milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: active
-last_updated: "2026-02-27"
+status: unknown
+last_updated: "2026-02-28T14:59:11.322Z"
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 10
-  completed_plans: 0
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 5 of 7 (Network Interactivity & Responsive Layout)
-Plan: 1 of 1 in current phase
+Plan: 2 of 2 in current phase (COMPLETE)
 Status: Active
-Last activity: 2026-02-28 — 05-01 Network interactivity (expand-all, KE drawer, FDR filter) complete
+Last activity: 2026-02-28 — 05-02 Responsive layout and drag-and-drop upload complete
 
-Progress: [███░░░░░░░] 30%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -41,7 +41,7 @@ Progress: [███░░░░░░░] 30%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
-| 05 (Network Interactivity) | 1/1 | 5m | 5m |
+| 05 (Network Interactivity) | 2/2 | 8m | 4m |
 
 *Updated after each plan completion*
 
@@ -64,6 +64,10 @@ Recent decisions affecting current work:
 - [05-01]: FDR filter uses addClass/removeClass('fdr-filtered') with opacity:0.25 — nodes stay in layout, only become semi-transparent
 - [05-01]: Drawer uses CSS transition on 'right' property (desktop) and 'bottom' (mobile <768px) — no JS animation
 - [05-01]: tableData/keTitleMap/keTypeMap hoisted to global script scope so copyLinkBtn handler and drawer share them without re-parsing template JSON
+- [Phase 05-02]: Drop zone active state uses brand blue #307BBF solid border and #e8f4fb light blue tint
+- [Phase 05-02]: .drop-zone__remove overrides global button styles with width:auto display:inline-block
+- [Phase 05-02]: #cy uses height:500px !important on 768px to override inline style from results.html
+- [Phase 05-02]: Upload form is separate from demo form with enctype=multipart/form-data POSTing to /preview
 
 ### Pending Todos
 
@@ -79,5 +83,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-02-28
-Stopped at: Completed 05-01-PLAN.md — Network interactivity (expand-all, KE drawer, FDR filter) implemented
+Stopped at: Completed 05-02-PLAN.md — Responsive layout (768px/1024px breakpoints) and drag-and-drop upload implemented
 Resume file: None

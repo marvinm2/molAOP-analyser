@@ -21,7 +21,7 @@
 **Milestone Goal:** Enable multi-dataset comparison and dynamic AOP discovery, transforming the tool from single-dataset analysis to cross-condition investigation.
 
 - [x] **Phase 4: Shareable URLs + AOP Discovery** - UUID-based result sharing and SPARQL-driven dynamic AOP list replace hardcoded config (completed 2026-02-27)
-- [ ] **Phase 5: Network Interactivity + Responsive Layout** - Expand-all toggle, KE detail panel, FDR filter slider, and responsive CSS for tablet/laptop
+- [x] **Phase 5: Network Interactivity + Responsive Layout** - Expand-all toggle, KE detail panel, FDR filter slider, and responsive CSS for tablet/laptop (completed 2026-02-28)
 - [ ] **Phase 6: Batch Analysis** - Sequential multi-file upload with condition tagging, SQLite state persistence, and harmonised background gene sets
 - [ ] **Phase 7: Comparison Visualisation** - Side-by-side heatmap, comparison table, multi-condition AOP network overlay, and delta mode
 
@@ -103,6 +103,6 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 2. UI/UX and Documentation | v1.0 | 3/3 | Complete | 2026-02-25 |
 | 3. Network Performance | v1.0 | 2/2 | Complete | 2026-02-25 |
 | 4. Shareable URLs + AOP Discovery | v2.0 | 0/2 | Not started | - |
-| 5. Network Interactivity + Responsive Layout | 1/2 | In Progress|  | - |
+| 5. Network Interactivity + Responsive Layout | 2/2 | Complete   | 2026-02-28 | - |
 | 6. Batch Analysis | v2.0 | 0/3 | Not started | - |
 | 7. Comparison Visualisation | v2.0 | 0/3 | Not started | - |

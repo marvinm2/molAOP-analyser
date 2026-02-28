@@ -31,9 +31,9 @@ Requirements for v2.0 Batch Analysis & Dynamic AOPs milestone. Each maps to road
 
 ### Upload & UX
 
-- [ ] **UPUX-01**: Responsive layout at 768px and 1024px breakpoints
-- [ ] **UPUX-02**: Drag-and-drop file upload hint on upload page
-- [ ] **UPUX-03**: Network and results layout stacks vertically on tablet viewports
+- [x] **UPUX-01**: Responsive layout at 768px and 1024px breakpoints
+- [x] **UPUX-02**: Drag-and-drop file upload hint on upload page
+- [x] **UPUX-03**: Network and results layout stacks vertically on tablet viewports
 
 ### Batch Analysis
 
@@ -98,9 +98,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NETW-02 | Phase 5 | Complete |
 | NETW-03 | Phase 5 | Complete |
 | NETW-04 | Phase 5 | Complete |
-| UPUX-01 | Phase 5 | Pending |
-| UPUX-02 | Phase 5 | Pending |
-| UPUX-03 | Phase 5 | Pending |
+| UPUX-01 | Phase 5 | Complete |
+| UPUX-02 | Phase 5 | Complete |
+| UPUX-03 | Phase 5 | Complete |
 | BATC-01 | Phase 6 | Pending |
 | BATC-02 | Phase 6 | Pending |
 | BATC-03 | Phase 6 | Pending |
