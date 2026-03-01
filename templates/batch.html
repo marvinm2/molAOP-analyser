@@ -1048,70 +1048,27 @@ document.getElementById('btn-analyze').addEventListener('click', function() {
 });
 
 // -------------------------------------------------------------------------
-// Progress modal + polling
+// Progress modal + htmx polling
 // -------------------------------------------------------------------------
 function showProgressModal(uuid, conditionNames) {
     const modal = document.getElementById('batch-progress-modal');
     const container = document.getElementById('batch-progress-container');
 
-    // Render initial pending items
-    container.innerHTML = '';
-    conditionNames.forEach(function(name) {
-        const item = document.createElement('div');
-        item.className = 'progress-item progress-item--pending';
-        item.dataset.name = name;
-        item.innerHTML = '<span class="progress-item__status">&#9711;</span>' +
-                         '<span>' + escapeHtml(name) + '</span>';
-        container.appendChild(item);
-    });
+    // Inject an htmx-polling div — the server will replace it every second
+    // with the batch_progress.html partial, and send HX-Redirect when done.
+    container.innerHTML =
+        '<div id="batch-progress-container"' +
+        '     hx-get="/batch/' + encodeURIComponent(uuid) + '/status"' +
+        '     hx-trigger="every 1s"' +
+        '     hx-target="#batch-progress-container"' +
+        '     hx-swap="outerHTML">' +
+        '<p>Starting batch analysis...</p>' +
+        '</div>';
 
     modal.style.display = 'flex';
 
-    // Poll /batch/<uuid>/status every 3 seconds
-    pollHandle = setInterval(function() {
-        fetch('/batch/' + uuid + '/status')
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            updateProgressModal(data);
-            if (data.status === 'complete' || data.status === 'failed' || data.status === 'cancelled') {
-                clearInterval(pollHandle);
-                if (data.status === 'complete') {
-                    // Redirect to batch results page
-                    window.location.href = '/batch/' + uuid + '/results';
-                }
-            }
-        })
-        .catch(function() {
-            // Silently ignore transient poll errors
-        });
-    }, 3000);
-}
-
-function updateProgressModal(data) {
-    const container = document.getElementById('batch-progress-container');
-    if (!data.conditions) return;
-
-    data.conditions.forEach(function(cond) {
-        const item = container.querySelector('[data-name="' + CSS.escape(cond.condition_label) + '"]');
-        if (!item) return;
-
-        item.className = 'progress-item progress-item--' + cond.status;
-        let icon = '&#9711;'; // pending
-        if (cond.status === 'running') icon = '<span class="spinner-sm"></span>';
-        else if (cond.status === 'complete') icon = '&#10003;';
-        else if (cond.status === 'failed') icon = '&#10007;';
-
-        item.innerHTML = '<span class="progress-item__status">' + icon + '</span>' +
-                         '<span>' + escapeHtml(cond.condition_label) + '</span>';
-        if (cond.status === 'failed' && cond.error_message) {
-            const err = document.createElement('span');
-            err.style.color = '#EB5B25';
-            err.style.fontSize = '12px';
-            err.style.marginLeft = '8px';
-            err.textContent = '— ' + cond.error_message;
-            item.appendChild(err);
-        }
-    });
+    // Activate htmx on the dynamically inserted element so polling begins
+    htmx.process(document.getElementById('batch-progress-container'));
 }
 
 function escapeHtml(str) {
@@ -1120,10 +1077,18 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-// Cancel button
+// Cancel button — stop htmx polling and POST the cancel request
 document.getElementById('btn-cancel-batch').addEventListener('click', function() {
     if (!batchUuid) return;
-    clearInterval(pollHandle);
+
+    // Remove htmx attributes from the polling container so polling stops immediately
+    const container = document.getElementById('batch-progress-container');
+    if (container) {
+        container.removeAttribute('hx-get');
+        container.removeAttribute('hx-trigger');
+        htmx.process(container); // re-process to deactivate
+    }
+
     fetch('/batch/' + batchUuid + '/cancel', {
         method: 'POST',
         headers: { 'X-CSRFToken': CSRF_TOKEN },

@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, abort, session, make_response, send_file, jsonify
+from flask import Flask, render_template, request, abort, session, make_response, send_file, jsonify, redirect
 import pandas as pd
 import os
 import json
@@ -1249,38 +1249,142 @@ def batch_analyze():
 
 @app.route('/batch/<batch_uuid_str>/status')
 def batch_status(batch_uuid_str):
-    """Return current status of a batch and its conditions.
+    """Return htmx partial for the progress modal, and redirect when complete.
 
-    Used by the client-side polling loop to update the progress modal.
+    Used by the htmx polling loop in the progress modal to update per-file status.
+    When the batch reaches 'complete' status, returns an HX-Redirect header so
+    htmx navigates the browser to the summary page automatically.
 
     Args:
         batch_uuid_str: UUID of the batch to query.
 
     Returns:
-        JSON with batch status and per-condition status dicts.
+        HTML partial (batch_progress.html) with optional HX-Redirect header.
     """
     session_db = db_manager.get_session()
     try:
         batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
         if not batch:
-            return jsonify({'error': 'Batch not found'}), 404
+            abort(404)
 
-        conditions = [
-            {
-                'condition_label': c.condition_label,
-                'status': c.status,
-                'error_message': c.error_message,
-                'gene_count': c.gene_count,
-                'significant_genes': c.significant_genes,
-            }
-            for c in sorted(batch.conditions, key=lambda c: c.position)
-        ]
+        partial = render_template('batch_progress.html', batch=batch)
 
-        return jsonify({
-            'batch_uuid': batch.uuid,
-            'status': batch.status,
-            'conditions': conditions,
-        })
+        if batch.status == 'complete':
+            # Signal htmx to perform a full-page navigation to the summary
+            resp = make_response(partial)
+            resp.headers['HX-Redirect'] = f'/batch/{batch_uuid_str}/summary'
+            return resp
+
+        # For running/pending/failed/cancelled — just return the partial
+        # The hx-trigger="every 1s" is only rendered when status is running/pending,
+        # so polling stops automatically for terminal states
+        return partial
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/summary')
+def batch_summary(batch_uuid_str):
+    """Render the batch summary page after analysis completes.
+
+    Shows batch metadata, harmonisation note, and per-condition result cards
+    with links to individual condition results pages.
+
+    Args:
+        batch_uuid_str: UUID of the completed batch.
+
+    Returns:
+        Rendered batch_summary.html or redirect to /batch if not complete.
+    """
+    session_db = db_manager.get_session()
+    try:
+        batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
+        if not batch:
+            abort(404)
+
+        if batch.status != 'complete':
+            # Batch not done yet — send user back to the batch wizard
+            return redirect('/batch')
+
+        # Load conditions in upload order (heavy JSON blobs loaded on demand per condition)
+        conditions = (
+            session_db.query(ConditionRecord)
+            .filter_by(batch_id=batch.id)
+            .order_by(ConditionRecord.position)
+            .all()
+        )
+        return render_template('batch_summary.html', batch=batch, conditions=conditions)
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/condition/<int:position>')
+def batch_condition_results(batch_uuid_str, position):
+    """Render individual condition results from a completed batch.
+
+    Reuses the standard results.html template, loading enrichment data from
+    the ConditionRecord JSON columns. Passes batch_uuid in metadata so
+    results.html can render a 'Back to batch summary' breadcrumb.
+
+    Args:
+        batch_uuid_str: UUID of the parent batch.
+        position: Zero-based position of the condition within the batch.
+
+    Returns:
+        Rendered results.html with condition-specific enrichment data.
+    """
+    session_db = db_manager.get_session()
+    try:
+        batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
+        if not batch:
+            abort(404)
+
+        cond = (
+            session_db.query(ConditionRecord)
+            .filter_by(batch_id=batch.id, position=position)
+            .first()
+        )
+        if not cond or cond.status != 'complete':
+            abort(404)
+
+        # Deserialise stored analysis results
+        enrichment_table = json.loads(cond.enrichment_json)
+        network = json.loads(cond.network_json)
+        ke_gene_map = json.loads(cond.ke_gene_json) if cond.ke_gene_json else {}
+        ke_type_map = json.loads(cond.ke_type_map_json) if cond.ke_type_map_json else {}
+        ke_title_map = json.loads(cond.ke_title_map_json) if cond.ke_title_map_json else {}
+
+        # Build metadata dict compatible with results.html template variables
+        metadata = {
+            'dataset_id': cond.condition_label,
+            'filename': cond.filename,
+            'aop_id': batch.aop_id,
+            'aop_label': batch.aop_label,
+            'logfc_threshold': batch.logfc_threshold,
+            'pval_cutoff': batch.pval_cutoff,
+            'significant_genes': cond.significant_genes,
+            'analysis_date': cond.completed_at.strftime('%Y-%m-%d %H:%M') if cond.completed_at else '',
+            'data_source': 'batch',
+            # Pass batch context so results.html renders the "Back to batch summary" breadcrumb
+            'batch_uuid': batch_uuid_str,
+            'batch_name': batch.batch_name,
+        }
+
+        return render_template(
+            'results.html',
+            table=enrichment_table,
+            table_json=json.dumps(enrichment_table),
+            volcano_data=[],
+            volcano_json='[]',
+            id_type='symbol',
+            background_size=cond.gene_count or 0,
+            threshold=batch.logfc_threshold,
+            network_json=json.dumps(network),
+            ke_gene_json=json.dumps(ke_gene_map),
+            ke_type_map=json.dumps(ke_type_map),
+            ke_title_map=json.dumps(ke_title_map),
+            metadata=metadata,
+        )
     finally:
         session_db.close()
 

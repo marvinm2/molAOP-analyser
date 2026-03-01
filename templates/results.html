@@ -278,6 +278,11 @@
 
 {% block content %}
 
+    {% if metadata.get('batch_uuid') %}
+    <!-- Breadcrumb back to batch summary when viewing individual condition results -->
+    <a href="/batch/{{ metadata.get('batch_uuid') }}/summary" class="breadcrumb-link">&larr; Back to batch summary{% if metadata.get('batch_name') %}: {{ metadata.get('batch_name') }}{% endif %}</a>
+    {% endif %}
+
     <!-- Metadata summary card -->
     <div class="card card--wide metadata-summary-card">
         <div class="metadata-summary">
