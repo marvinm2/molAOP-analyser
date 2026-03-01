@@ -8,9 +8,9 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import json
 import uuid as uuid_lib
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 
@@ -150,6 +150,127 @@ def cleanup_expired_shared_results(session):
     session.query(SharedResult).filter(
         SharedResult.expires_at < datetime.utcnow()
     ).delete(synchronize_session=False)
+    session.commit()
+
+
+class BatchRecord(Base):
+    """Stores batch analysis state for multi-file enrichment runs.
+
+    A batch groups multiple ConditionRecords (one per uploaded file) under a
+    shared AOP selection, thresholds, and harmonised background gene set.
+    Expires after BATCH_RETENTION_DAYS and is cleaned up lazily on new batch creation.
+    """
+
+    __tablename__ = 'batches'
+
+    # Primary key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Identity
+    uuid = Column(String(36), unique=True, nullable=False, default=lambda: str(uuid_lib.uuid4()))
+    status = Column(String(20), default='pending')  # pending, running, complete, cancelled, failed
+
+    # AOP selection
+    aop_id = Column(String(100))
+    aop_label = Column(String(500))
+
+    # Shared analysis parameters
+    logfc_threshold = Column(Float)
+    pval_cutoff = Column(Float)
+
+    # Harmonised background gene set (JSON array of sorted gene symbols)
+    harmonised_background = Column(Text)
+    harmonised_gene_count = Column(Integer)
+
+    # Batch metadata
+    batch_name = Column(String(500))
+    owner = Column(String(255))
+    description = Column(Text)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+
+    # Relationship to per-file condition records (ordered by upload position)
+    conditions = relationship(
+        'ConditionRecord',
+        back_populates='batch',
+        order_by='ConditionRecord.position',
+    )
+
+
+class ConditionRecord(Base):
+    """Stores per-file analysis state within a batch run.
+
+    Each uploaded file becomes one ConditionRecord attached to a BatchRecord.
+    Tracks file metadata, execution status, enrichment results, and an optional
+    deep-link UUID for the single-condition /results/<uuid> view.
+    """
+
+    __tablename__ = 'batch_conditions'
+
+    # Primary key
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Foreign key to parent batch
+    batch_id = Column(Integer, ForeignKey('batches.id'), nullable=False, index=True)
+
+    # Position within the batch (0-based upload order)
+    position = Column(Integer, nullable=False)
+
+    # File identity
+    filename = Column(String(255))
+    condition_label = Column(String(500), nullable=False)
+
+    # Parsed condition metadata
+    dose = Column(String(200))
+    timepoint = Column(String(200))
+
+    # Execution state
+    status = Column(String(20), default='pending')  # pending, running, complete, failed
+    error_message = Column(Text, nullable=True)
+
+    # Gene counts from analysis
+    gene_count = Column(Integer)
+    significant_genes = Column(Integer)
+
+    # Serialised analysis outputs (JSON Text columns)
+    enrichment_json = Column(Text)      # Full enrichment table as JSON
+    network_json = Column(Text)         # Cytoscape network JSON
+    ke_gene_json = Column(Text)         # KE-to-gene membership map JSON
+    ke_type_map_json = Column(Text)     # KE ID to type string map JSON
+    ke_title_map_json = Column(Text)    # KE ID to title string map JSON
+
+    # Deep-link UUID for the shared /results/<uuid> page
+    shared_result_uuid = Column(String(36), nullable=True)
+
+    # Execution timestamps
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Relationship back to parent batch
+    batch = relationship('BatchRecord', back_populates='conditions')
+
+
+def cleanup_expired_batches(session):
+    """Delete batches past their expires_at date.
+
+    Called lazily on new batch creation to avoid accumulating stale rows.
+    Child ConditionRecords are deleted explicitly before the parent BatchRecord
+    to avoid relying on cascade behaviour.
+
+    Args:
+        session: SQLAlchemy database session
+    """
+    expired = session.query(BatchRecord).filter(
+        BatchRecord.expires_at < datetime.utcnow()
+    ).all()
+    for batch in expired:
+        session.query(ConditionRecord).filter_by(
+            batch_id=batch.id
+        ).delete(synchronize_session=False)
+        session.delete(batch)
     session.commit()
 
 
