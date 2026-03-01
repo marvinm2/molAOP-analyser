@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
 status: unknown
-last_updated: "2026-03-01T18:44:00Z"
+last_updated: "2026-03-01T18:52:05Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 6 of 7 (Batch Analysis)
-Plan: 1 of 3 in current phase (COMPLETE)
+Plan: 2 of 3 in current phase (COMPLETE)
 Status: Active
-Last activity: 2026-03-01 — 06-01 Batch data layer (BatchRecord, ConditionRecord, batch_service.py) complete
+Last activity: 2026-03-01 — 06-02 Batch upload wizard, orchestration service, and Flask routes complete
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 57%
 
 ## Performance Metrics
 
@@ -42,7 +42,7 @@ Progress: [█████░░░░░] 50%
 |-------|-------|-------|----------|
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
 | 05 (Network Interactivity) | 2/2 | 8m | 4m |
-| 06 (Batch Analysis) | 1/3 | 2m | 2m |
+| 06 (Batch Analysis) | 2/3 | 7m | 3.5m |
 
 *Updated after each plan completion*
 
@@ -72,6 +72,10 @@ Recent decisions affecting current work:
 - [06-01]: No cascade='all, delete-orphan' on BatchRecord.conditions — explicit deletion in cleanup_expired_batches() to avoid accidental cascades during development
 - [06-01]: BatchRecord and ConditionRecord tables auto-created by Base.metadata.create_all() on startup — no migration scripts needed
 - [06-01]: parse_cisplatin_filename() returns filename-as-label for non-matching files, never raises exception
+- [06-02]: run_batch() accepts db_url string instead of a session object — SQLAlchemy sessions are not thread-safe, background thread creates its own session
+- [06-02]: /batch/upload and /batch/analyze use @csrf.exempt — JS fetch() POSTs require explicit CSRF handling; these are API-style endpoints
+- [06-02]: Stop-batch strategy on first condition failure — simpler than partial-success tracking
+- [06-02]: parse_cisplatin_filename passed as template kwarg to batch.html so Jinja2 can pre-populate demo checkbox metadata
 
 ### Pending Todos
 
@@ -87,5 +91,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 06-01-PLAN.md — Batch data layer (BatchRecord, ConditionRecord, batch_service.py) complete
+Stopped at: Completed 06-02-PLAN.md — Batch upload wizard (batch.html), orchestration service (batch_service.py), and Flask routes (/batch, /batch/upload, /batch/analyze) complete
 Resume file: None
