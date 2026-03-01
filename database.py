@@ -178,6 +178,11 @@ class BatchRecord(Base):
     logfc_threshold = Column(Float)
     pval_cutoff = Column(Float)
 
+    # Shared column mapping (same for all files in the batch)
+    id_column = Column(String(100))
+    fc_column = Column(String(100))
+    pval_column = Column(String(100))
+
     # Harmonised background gene set (JSON array of sorted gene symbols)
     harmonised_background = Column(Text)
     harmonised_gene_count = Column(Integer)
