@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: unknown
-last_updated: "2026-03-01T18:52:05Z"
+status: active
+last_updated: "2026-03-01T19:10:00Z"
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 6 of 7 (Batch Analysis)
-Plan: 2 of 3 in current phase (COMPLETE)
+Plan: 3 of 3 in current phase (COMPLETE)
 Status: Active
-Last activity: 2026-03-01 — 06-02 Batch upload wizard, orchestration service, and Flask routes complete
+Last activity: 2026-03-01 — 06-03 Batch progress polling, summary page, and condition results complete
 
-Progress: [██████░░░░] 57%
+Progress: [████████░░] 71%
 
 ## Performance Metrics
 
@@ -42,7 +42,7 @@ Progress: [██████░░░░] 57%
 |-------|-------|-------|----------|
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
 | 05 (Network Interactivity) | 2/2 | 8m | 4m |
-| 06 (Batch Analysis) | 2/3 | 7m | 3.5m |
+| 06 (Batch Analysis) | 3/3 | 15m | 5m |
 
 *Updated after each plan completion*
 
@@ -76,6 +76,10 @@ Recent decisions affecting current work:
 - [06-02]: /batch/upload and /batch/analyze use @csrf.exempt — JS fetch() POSTs require explicit CSRF handling; these are API-style endpoints
 - [06-02]: Stop-batch strategy on first condition failure — simpler than partial-success tracking
 - [06-02]: parse_cisplatin_filename passed as template kwarg to batch.html so Jinja2 can pre-populate demo checkbox metadata
+- [06-03]: batch_status returns htmx partial (not JSON) — htmx manages DOM swap; HX-Redirect triggers browser navigation on complete
+- [06-03]: batch.html switches from JS setInterval polling to htmx.process() on dynamically injected hx-get element
+- [06-03]: Cancel clears htmx attributes then re-processes container to deactivate htmx before sending cancel POST
+- [06-03]: results.html breadcrumb uses metadata.batch_uuid presence check — zero overhead for single-analysis results
 
 ### Pending Todos
 
@@ -91,5 +95,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 06-02-PLAN.md — Batch upload wizard (batch.html), orchestration service (batch_service.py), and Flask routes (/batch, /batch/upload, /batch/analyze) complete
+Stopped at: Completed 06-03-PLAN.md — Batch progress polling (htmx), summary page, condition results drill-through complete. Phase 06 complete.
 Resume file: None

@@ -22,7 +22,7 @@
 
 - [x] **Phase 4: Shareable URLs + AOP Discovery** - UUID-based result sharing and SPARQL-driven dynamic AOP list replace hardcoded config (completed 2026-02-27)
 - [x] **Phase 5: Network Interactivity + Responsive Layout** - Expand-all toggle, KE detail panel, FDR filter slider, and responsive CSS for tablet/laptop (completed 2026-02-28)
-- [ ] **Phase 6: Batch Analysis** - Sequential multi-file upload with condition tagging, SQLite state persistence, and harmonised background gene sets
+- [x] **Phase 6: Batch Analysis** - Sequential multi-file upload with condition tagging, SQLite state persistence, and harmonised background gene sets (completed 2026-03-01)
 - [ ] **Phase 7: Comparison Visualisation** - Side-by-side heatmap, comparison table, multi-condition AOP network overlay, and delta mode
 
 ## Phase Details
@@ -71,9 +71,9 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 06-01: Batch data model — `BatchRecord` and `ConditionRecord` SQLAlchemy models, session-UUID scoped upload directories, SQLite state persistence
-- [ ] 06-02: Batch orchestration — `batch_service.py` sequential enrichment loop, background gene set harmonisation, `batch.html` upload wizard
-- [ ] 06-03: Batch progress — htmx polling against `/batch/<batch_id>/status`, per-file progress indicator, completion redirect to compare page
+- [x] 06-01: Batch data model — `BatchRecord` and `ConditionRecord` SQLAlchemy models, session-UUID scoped upload directories, SQLite state persistence
+- [x] 06-02: Batch orchestration — `batch_service.py` sequential enrichment loop, background gene set harmonisation, `batch.html` upload wizard
+- [x] 06-03: Batch progress — htmx polling against `/batch/<batch_id>/status`, per-file progress indicator, summary page, condition results drill-through
 
 ### Phase 7: Comparison Visualisation
 **Goal**: Users can see all batch conditions side-by-side on a shared AOP network and heatmap, toggle between absolute and delta modes, and understand relative significance across conditions at a glance
@@ -104,5 +104,5 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 3. Network Performance | v1.0 | 2/2 | Complete | 2026-02-25 |
 | 4. Shareable URLs + AOP Discovery | v2.0 | 0/2 | Not started | - |
 | 5. Network Interactivity + Responsive Layout | 2/2 | Complete   | 2026-02-28 | - |
-| 6. Batch Analysis | 2/3 | In Progress|  | - |
+| 6. Batch Analysis | v2.0 | 3/3 | Complete | 2026-03-01 |
 | 7. Comparison Visualisation | v2.0 | 0/3 | Not started | - |
