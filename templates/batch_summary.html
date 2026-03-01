@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Batch Results &mdash; molAOP Analyser{% endblock %}
+
+{% block head_extra %}
+  <!-- No additional page-specific styles needed; all batch styles in style.css -->
+{% endblock %}
+
+{% block content %}
+<div class="card card--wide">
+  <h1>Batch Analysis Results</h1>
+
+  <!-- Batch metadata summary -->
+  <div class="batch-meta">
+    <p><strong>Batch:</strong> {{ batch.batch_name or 'Unnamed batch' }}</p>
+    <p><strong>AOP:</strong> {{ batch.aop_label }}</p>
+    <p><strong>Log2FC Threshold:</strong> {{ batch.logfc_threshold }}</p>
+    <p><strong>Harmonised Background:</strong> {{ batch.harmonised_gene_count }} genes (intersection of all conditions)</p>
+    <p><strong>Completed:</strong> {{ batch.completed_at.strftime('%Y-%m-%d %H:%M') if batch.completed_at else 'N/A' }}</p>
+    {% if batch.owner %}<p><strong>Owner:</strong> {{ batch.owner }}</p>{% endif %}
+    {% if batch.description %}<p><strong>Description:</strong> {{ batch.description }}</p>{% endif %}
+  </div>
+
+  <!-- Harmonisation note — transparent to user per locked design decision -->
+  <div class="batch-harmonisation-note">
+    <p>Gene backgrounds have been harmonised across all {{ batch.conditions|length }} conditions using intersection.
+    Each condition uses a background of {{ batch.harmonised_gene_count }} genes for comparable enrichment statistics.</p>
+  </div>
+
+  <!-- Condition results list (upload order, per locked design decision) -->
+  <h2>Conditions ({{ batch.conditions|length }})</h2>
+  <div class="batch-conditions">
+    {% for cond in conditions %}
+    <div class="batch-condition-card">
+      <div class="batch-condition-card__header">
+        <h3>{{ cond.position + 1 }}. {{ cond.condition_label }}</h3>
+        <span class="batch-condition-card__status batch-condition-card__status--{{ cond.status }}">{{ cond.status | capitalize }}</span>
+      </div>
+      <div class="batch-condition-card__body">
+        <p><strong>File:</strong> {{ cond.filename }}</p>
+        {% if cond.dose %}<p><strong>Dose:</strong> {{ cond.dose }}</p>{% endif %}
+        {% if cond.timepoint %}<p><strong>Timepoint:</strong> {{ cond.timepoint }}</p>{% endif %}
+        {% if cond.status == 'complete' %}
+        <p><strong>Genes:</strong> {{ cond.gene_count }} ({{ cond.significant_genes }} significant)</p>
+        <a href="/batch/{{ batch.uuid }}/condition/{{ cond.position }}" class="btn btn--primary btn--small">View Results</a>
+        {% elif cond.status == 'failed' %}
+        <p class="error-text">{{ cond.error_message }}</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+<!-- htmx partial — replaces #batch-progress-container on each poll -->
+<div id="batch-progress-container"
+     {% if batch.status in ['running', 'pending'] %}
+     hx-get="/batch/{{ batch.uuid }}/status"
+     hx-trigger="every 1s"
+     hx-target="#batch-progress-container"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  <div class="batch-progress">
+    <p class="batch-progress__status">
+      Status: <strong>{{ batch.status | capitalize }}</strong>
+      {% if batch.harmonised_gene_count %}
+      &mdash; Harmonised background: {{ batch.harmonised_gene_count }} genes
+      {% endif %}
+    </p>
+
+    <div class="batch-progress__files">
+      {% for cond in batch.conditions %}
+      <div class="batch-progress__file batch-progress__file--{{ cond.status }}">
+        <span class="batch-progress__position">{{ cond.position + 1 }}.</span>
+        <span class="batch-progress__label">{{ cond.condition_label }}</span>
+        <span class="batch-progress__indicator">
+          {% if cond.status == 'pending' %}&#9711; Pending
+          {% elif cond.status == 'running' %}&#8635; Processing...
+          {% elif cond.status == 'complete' %}&#10003; Complete ({{ cond.gene_count }} genes, {{ cond.significant_genes }} significant)
+          {% elif cond.status == 'failed' %}&#10007; Failed: {{ cond.error_message }}
+          {% endif %}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if batch.status == 'failed' %}
+    <p class="batch-progress__error">Batch analysis failed. Please check your files and try again.</p>
+    {% endif %}
+
+    {% if batch.status == 'cancelled' %}
+    <p class="batch-progress__error">Batch analysis was cancelled.</p>
+    {% endif %}
+  </div>
+</div>
