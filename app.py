@@ -4,6 +4,7 @@ import os
 import json
 import math
 import logging
+import threading
 import uuid
 import base64
 import time
@@ -30,7 +31,10 @@ from services.gene_id_validator import gene_id_validator
 from database import db_manager, init_database, SharedResult, cleanup_expired_shared_results, BatchRecord, ConditionRecord, cleanup_expired_batches
 from services.report_service import report_generator, ReportData, get_software_versions
 from services.aop_discovery_service import get_aop_list
-from services.batch_service import parse_cisplatin_filename, create_batch_upload_dir, cleanup_batch_upload_dir, get_cisplatin_demo_files
+from services.batch_service import (
+    parse_cisplatin_filename, create_batch_upload_dir, cleanup_batch_upload_dir,
+    get_cisplatin_demo_files, validate_batch_columns, harmonise_backgrounds, run_batch,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -959,6 +963,356 @@ logger.info(f"Loaded {len(reference_sets)} KE sets (source: {_initial_data_sourc
 if reference_sets:
     first_ke = list(reference_sets.keys())[0]
     logger.info(f"Example KE set: {first_ke} with {len(reference_sets[first_ke])} genes.")
+
+
+@app.route('/batch')
+def batch_page():
+    """Render the batch upload wizard page.
+
+    Provides the cisplatin demo file list (grouped by timepoint) to the template
+    so checkboxes can be rendered server-side.
+
+    Returns:
+        str: Rendered batch.html template
+    """
+    demos = get_cisplatin_demo_files()
+    return render_template('batch.html', cisplatin_demos=demos,
+                           parse_filename=parse_cisplatin_filename)
+
+
+@app.route('/batch/upload', methods=['POST'])
+@csrf.exempt
+def batch_upload():
+    """Receive files for a new batch, save to a UUID-scoped upload directory, and return previews.
+
+    Accepts:
+        files[]: Multipart file uploads (up to BATCH_MAX_FILES)
+        demo_files[]: Relative paths under data/ for demo datasets
+
+    Returns:
+        JSON with keys:
+          batch_uuid (str): UUID for this batch session
+          files (list): Per-file dicts with filename, row_count, columns, suggestions
+    """
+    import shutil as _shutil
+
+    files = request.files.getlist('files[]')
+    demo_paths = request.form.getlist('demo_files[]')
+
+    total = len(files) + len(demo_paths)
+    if total > Config.BATCH_MAX_FILES:
+        return jsonify({'error': f'Maximum {Config.BATCH_MAX_FILES} files allowed.'}), 400
+
+    batch_uuid, batch_dir = create_batch_upload_dir(Config.UPLOAD_FOLDER)
+    file_previews = []
+
+    # Save uploaded files
+    for f in files:
+        if not f or not f.filename:
+            continue
+        if not allowed_file(f.filename):
+            return jsonify({'error': f'File type not allowed: {f.filename}'}), 400
+        safe_name = secure_filename(f.filename)
+        dest = os.path.join(batch_dir, safe_name)
+        f.save(dest)
+        try:
+            df_head = pd.read_csv(dest, sep=None, engine='python', nrows=200)
+            row_count = len(df_head)
+            columns = df_head.columns.tolist()
+            try:
+                suggestions_obj = column_detector.detect_columns(df_head)
+                suggestions = {
+                    'id_col': suggestions_obj.best_gene_id.column_name if suggestions_obj.best_gene_id else None,
+                    'fc_col': suggestions_obj.best_log2fc.column_name if suggestions_obj.best_log2fc else None,
+                    'pval_col': suggestions_obj.best_pvalue.column_name if suggestions_obj.best_pvalue else None,
+                }
+            except Exception:
+                suggestions = {}
+        except Exception as exc:
+            return jsonify({'error': f'Could not read {safe_name}: {exc}'}), 400
+
+        file_previews.append({
+            'filename': safe_name,
+            'row_count': row_count,
+            'columns': columns,
+            'suggestions': suggestions,
+        })
+
+    # Copy demo files from data/ to batch dir
+    for rel_path in demo_paths:
+        norm = os.path.normpath(rel_path)
+        if '..' in norm or norm.startswith('/'):
+            return jsonify({'error': f'Invalid demo path: {rel_path}'}), 400
+        src = os.path.join('data', norm)
+        if not os.path.isfile(src):
+            return jsonify({'error': f'Demo file not found: {norm}'}), 404
+        safe_name = secure_filename(os.path.basename(norm))
+        dest = os.path.join(batch_dir, safe_name)
+        _shutil.copy2(src, dest)
+        try:
+            df_head = pd.read_csv(dest, sep=None, engine='python', nrows=200)
+            row_count = len(df_head)
+            columns = df_head.columns.tolist()
+            try:
+                suggestions_obj = column_detector.detect_columns(df_head)
+                suggestions = {
+                    'id_col': suggestions_obj.best_gene_id.column_name if suggestions_obj.best_gene_id else None,
+                    'fc_col': suggestions_obj.best_log2fc.column_name if suggestions_obj.best_log2fc else None,
+                    'pval_col': suggestions_obj.best_pvalue.column_name if suggestions_obj.best_pvalue else None,
+                }
+            except Exception:
+                suggestions = {}
+        except Exception as exc:
+            return jsonify({'error': f'Could not read demo file {safe_name}: {exc}'}), 400
+
+        file_previews.append({
+            'filename': safe_name,
+            'row_count': row_count,
+            'columns': columns,
+            'suggestions': suggestions,
+        })
+
+    logger.info(f'batch_upload: created batch {batch_uuid} with {len(file_previews)} files')
+    return jsonify({'batch_uuid': batch_uuid, 'files': file_previews}), 200
+
+
+@app.route('/batch/analyze', methods=['POST'])
+@csrf.exempt
+def batch_analyze():
+    """Validate, harmonise, create DB records, and launch the batch analysis in a background thread.
+
+    Form fields expected:
+        batch_uuid, aop_selection, logfc_threshold, batch_name, owner, description,
+        id_col, fc_col, pval_col,
+        filenames[] (ordered list matching condition_labels[], doses[], timepoints[])
+        condition_labels[], doses[], timepoints[]
+
+    Returns:
+        JSON with batch_uuid and status='running' so the client can start polling.
+    """
+    batch_uuid = request.form.get('batch_uuid', '').strip()
+    if not batch_uuid:
+        return jsonify({'error': 'Missing batch_uuid'}), 400
+
+    aop_id = request.form.get('aop_selection', '').strip()
+    if not aop_id:
+        return jsonify({'error': 'AOP selection is required'}), 400
+
+    id_col = request.form.get('id_col', '').strip()
+    fc_col = request.form.get('fc_col', '').strip()
+    pval_col = request.form.get('pval_col', '').strip()
+    if not (id_col and fc_col and pval_col):
+        return jsonify({'error': 'Column mapping (id_col, fc_col, pval_col) is required'}), 400
+
+    try:
+        logfc_threshold = float(request.form.get('logfc_threshold', '0.0'))
+    except ValueError:
+        logfc_threshold = 0.0
+
+    filenames = request.form.getlist('filenames[]')
+    condition_labels = request.form.getlist('condition_labels[]')
+    doses = request.form.getlist('doses[]')
+    timepoints = request.form.getlist('timepoints[]')
+
+    if not filenames:
+        return jsonify({'error': 'No files specified'}), 400
+
+    # Pad doses/timepoints to match filenames length
+    doses = (doses + [''] * len(filenames))[:len(filenames)]
+    timepoints = (timepoints + [''] * len(filenames))[:len(filenames)]
+    condition_labels = (condition_labels + [''] * len(filenames))[:len(filenames)]
+
+    batch_dir = os.path.join(Config.UPLOAD_FOLDER, batch_uuid)
+    if not os.path.isdir(batch_dir):
+        return jsonify({'error': 'Batch upload directory not found — please re-upload files'}), 400
+
+    # Build file_infos for validation and harmonisation
+    file_infos = []
+    for fname in filenames:
+        safe_name = secure_filename(fname)
+        filepath = os.path.join(batch_dir, safe_name)
+        if not os.path.isfile(filepath):
+            return jsonify({'error': f'File not found in batch: {safe_name}'}), 400
+        file_infos.append({
+            'filepath': filepath,
+            'id_col': id_col,
+            'fc_col': fc_col,
+            'pval_col': pval_col,
+        })
+
+    # Validate column consistency
+    valid, err_msg = validate_batch_columns(file_infos)
+    if not valid:
+        return jsonify({'error': err_msg}), 400
+
+    # Harmonise backgrounds
+    try:
+        harmonised_genes, per_file_counts = harmonise_backgrounds(file_infos)
+    except Exception as exc:
+        logger.error(f'batch_analyze: harmonisation failed: {exc}')
+        return jsonify({'error': f'Failed to harmonise gene backgrounds: {exc}'}), 500
+
+    harmonised_count = len(harmonised_genes)
+    warning_msg = None
+    if harmonised_count < Config.BATCH_MIN_HARMONISED_GENES:
+        warning_msg = (
+            f'Warning: only {harmonised_count} genes shared across all files '
+            f'(recommended minimum: {Config.BATCH_MIN_HARMONISED_GENES}). '
+            'Results may be unreliable.'
+        )
+        logger.warning(f'batch_analyze: {warning_msg}')
+
+    # Determine AOP label from config or use raw ID
+    aop_label = aop_id
+    for entry in Config.CASE_STUDY_AOPS.values():
+        if entry.get('id') == aop_id:
+            aop_label = entry.get('label', aop_id)
+            break
+
+    expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=Config.BATCH_RETENTION_DAYS)
+    batch_name = request.form.get('batch_name', '').strip() or f'Batch {batch_uuid[:8]}'
+    owner = request.form.get('owner', '').strip()
+    description = request.form.get('description', '').strip()
+
+    session_db = db_manager.get_session()
+    try:
+        # Lazy cleanup of expired batches
+        cleanup_expired_batches(session_db)
+
+        batch = BatchRecord(
+            uuid=batch_uuid,
+            status='pending',
+            aop_id=aop_id,
+            aop_label=aop_label,
+            logfc_threshold=logfc_threshold,
+            pval_cutoff=Config.PVAL_CUTOFF,
+            id_column=id_col,
+            fc_column=fc_col,
+            pval_column=pval_col,
+            harmonised_background=json.dumps(sorted(harmonised_genes)),
+            harmonised_gene_count=harmonised_count,
+            batch_name=batch_name,
+            owner=owner,
+            description=description,
+            expires_at=expires_at,
+        )
+        session_db.add(batch)
+        session_db.flush()  # Assigns batch.id before creating conditions
+
+        for position, (fname, label, dose, tp) in enumerate(
+            zip(filenames, condition_labels, doses, timepoints)
+        ):
+            safe_name = secure_filename(fname)
+            cond = ConditionRecord(
+                batch_id=batch.id,
+                position=position,
+                filename=safe_name,
+                condition_label=label or safe_name,
+                dose=dose,
+                timepoint=tp,
+                status='pending',
+            )
+            session_db.add(cond)
+
+        session_db.commit()
+        batch_id = batch.id
+        logger.info(f'batch_analyze: BatchRecord {batch_id} created ({len(filenames)} conditions)')
+
+    except Exception as exc:
+        session_db.rollback()
+        logger.error(f'batch_analyze: DB error: {exc}')
+        return jsonify({'error': f'Database error: {exc}'}), 500
+    finally:
+        session_db.close()
+
+    # Launch analysis in a background thread (returns immediately to client)
+    current_reference_sets, _ = load_cached_reference_sets()
+    db_url = db_manager.db_url
+    thread = threading.Thread(
+        target=run_batch,
+        args=(batch_id, db_url, current_reference_sets),
+        daemon=True,
+    )
+    thread.start()
+    logger.info(f'batch_analyze: background thread started for batch {batch_id}')
+
+    response_data = {
+        'batch_uuid': batch_uuid,
+        'status': 'running',
+        'conditions': [l or secure_filename(f) for l, f in zip(condition_labels, filenames)],
+    }
+    if warning_msg:
+        response_data['warning_low_genes'] = warning_msg
+
+    return jsonify(response_data), 200
+
+
+@app.route('/batch/<batch_uuid_str>/status')
+def batch_status(batch_uuid_str):
+    """Return current status of a batch and its conditions.
+
+    Used by the client-side polling loop to update the progress modal.
+
+    Args:
+        batch_uuid_str: UUID of the batch to query.
+
+    Returns:
+        JSON with batch status and per-condition status dicts.
+    """
+    session_db = db_manager.get_session()
+    try:
+        batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
+        if not batch:
+            return jsonify({'error': 'Batch not found'}), 404
+
+        conditions = [
+            {
+                'condition_label': c.condition_label,
+                'status': c.status,
+                'error_message': c.error_message,
+                'gene_count': c.gene_count,
+                'significant_genes': c.significant_genes,
+            }
+            for c in sorted(batch.conditions, key=lambda c: c.position)
+        ]
+
+        return jsonify({
+            'batch_uuid': batch.uuid,
+            'status': batch.status,
+            'conditions': conditions,
+        })
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/cancel', methods=['POST'])
+@csrf.exempt
+def batch_cancel(batch_uuid_str):
+    """Mark a batch as cancelled so the background thread stops after the current condition.
+
+    Args:
+        batch_uuid_str: UUID of the batch to cancel.
+
+    Returns:
+        JSON with updated status.
+    """
+    session_db = db_manager.get_session()
+    try:
+        batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
+        if not batch:
+            return jsonify({'error': 'Batch not found'}), 404
+
+        if batch.status in ('pending', 'running'):
+            batch.status = 'cancelled'
+            session_db.commit()
+            logger.info(f'batch_cancel: batch {batch_uuid_str} marked cancelled')
+
+        return jsonify({'batch_uuid': batch.uuid, 'status': batch.status})
+    except Exception as exc:
+        session_db.rollback()
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        session_db.close()
 
 
 if __name__ == '__main__':

@@ -1,0 +1,1222 @@
+{% extends "base.html" %}
+{% block title %}Batch Analysis &mdash; molAOP Analyser{% endblock %}
+
+{% block head_extra %}
+<style>
+    /* ------------------------------------------------------------------ */
+    /* Batch wizard page styles                                              */
+    /* ------------------------------------------------------------------ */
+
+    .batch-wizard {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    /* Step sections — only the active one is visible */
+    .wizard-step {
+        display: none;
+    }
+    .wizard-step.wizard-step--active {
+        display: block;
+    }
+
+    /* Step header indicator */
+    .wizard-steps-indicator {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 28px;
+        padding-bottom: 16px;
+        border-bottom: 2px solid #e8e8f0;
+    }
+    .wizard-steps-indicator__item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #aaa;
+        font-weight: 500;
+    }
+    .wizard-steps-indicator__item--active {
+        color: #29235C;
+    }
+    .wizard-steps-indicator__item--done {
+        color: #45A6B2;
+    }
+    .wizard-steps-indicator__num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #e0e0e0;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .wizard-steps-indicator__item--active .wizard-steps-indicator__num {
+        background: #29235C;
+        color: white;
+    }
+    .wizard-steps-indicator__item--done .wizard-steps-indicator__num {
+        background: #45A6B2;
+        color: white;
+    }
+    .wizard-steps-indicator__sep {
+        align-self: center;
+        color: #ccc;
+        font-size: 16px;
+    }
+
+    /* Drop zone — reuses existing .drop-zone from style.css with overrides */
+    #batch-drop-zone {
+        cursor: pointer;
+        margin-bottom: 16px;
+    }
+
+    /* File card — mini-preview per uploaded file */
+    .file-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 16px;
+    }
+
+    .file-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        border: 1px solid #d0d0e0;
+        border-radius: 6px;
+        background: #fafafa;
+        font-size: 14px;
+    }
+
+    .file-card__icon {
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+
+    .file-card__info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .file-card__name {
+        font-weight: 600;
+        color: #29235C;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .file-card__meta {
+        color: #777;
+        font-size: 12px;
+        margin-top: 2px;
+    }
+
+    .file-card__remove {
+        background: none;
+        border: none;
+        color: #EB5B25;
+        cursor: pointer;
+        font-size: 18px;
+        padding: 0 4px;
+        line-height: 1;
+        width: auto;
+        display: inline-block;
+        margin: 0;
+        flex-shrink: 0;
+    }
+    .file-card__remove:hover {
+        color: #c04010;
+    }
+
+    /* Demo file group */
+    .demo-group {
+        margin-bottom: 12px;
+    }
+    .demo-group h4 {
+        margin: 0 0 6px 0;
+        color: #29235C;
+        font-size: 14px;
+    }
+    .demo-group label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-right: 12px;
+        margin-bottom: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        font-weight: normal;
+    }
+    .demo-group input[type="checkbox"] {
+        width: auto;
+        margin: 0;
+    }
+
+    /* Condition tagging rows */
+    .tag-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 14px;
+        border: 1px solid #d0d0e0;
+        border-radius: 6px;
+        background: #fafafa;
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    .tag-row__filename {
+        font-weight: 600;
+        color: #29235C;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        grid-column: 1 / -1;
+        font-size: 13px;
+        margin-bottom: 2px;
+    }
+
+    .tag-row input {
+        margin: 0;
+        padding: 6px 8px;
+        font-size: 13px;
+    }
+
+    .tag-row label {
+        font-size: 12px;
+        color: #555;
+        margin-bottom: 2px;
+        font-weight: 500;
+    }
+
+    .tag-field {
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Metadata / AOP step */
+    .settings-grid {
+        display: grid;
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .settings-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+    .settings-field {
+        display: flex;
+        flex-direction: column;
+    }
+    .settings-field label {
+        font-weight: 600;
+        font-size: 13px;
+        color: #29235C;
+        margin-bottom: 4px;
+    }
+    .settings-field input,
+    .settings-field textarea {
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+    .settings-field textarea {
+        resize: vertical;
+        min-height: 60px;
+    }
+
+    /* Navigation buttons */
+    .wizard-nav {
+        display: flex;
+        gap: 12px;
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid #e8e8f0;
+    }
+    .wizard-nav .btn--secondary {
+        background: #f0f0f0;
+        color: #29235C;
+        border: 1px solid #ccc;
+    }
+
+    /* Error banner */
+    .batch-error {
+        background: #fff0ee;
+        border-left: 4px solid #EB5B25;
+        padding: 10px 14px;
+        border-radius: 4px;
+        color: #8a2f0f;
+        font-size: 14px;
+        margin-bottom: 16px;
+        display: none;
+    }
+
+    /* Warning banner (harmonisation count) */
+    .batch-warning {
+        background: #fffbe6;
+        border-left: 4px solid #EB5B25;
+        padding: 10px 14px;
+        border-radius: 4px;
+        color: #7a5a00;
+        font-size: 14px;
+        margin-bottom: 16px;
+        display: none;
+    }
+
+    /* Progress modal overlay */
+    .batch-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .batch-modal__content {
+        background: white;
+        border-radius: 8px;
+        padding: 32px 40px;
+        max-width: 560px;
+        width: 100%;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        text-align: center;
+    }
+
+    .batch-modal__content h2 {
+        margin-top: 0;
+        color: #29235C;
+    }
+
+    /* Per-condition progress items */
+    .progress-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        border-radius: 4px;
+        margin-bottom: 6px;
+        font-size: 14px;
+        text-align: left;
+        background: #f5f5f5;
+    }
+
+    .progress-item__status {
+        flex-shrink: 0;
+        width: 16px;
+        text-align: center;
+    }
+
+    .progress-item--pending { color: #888; }
+    .progress-item--running { color: #307BBF; font-weight: 600; }
+    .progress-item--complete { color: #45A6B2; }
+    .progress-item--failed { color: #EB5B25; }
+
+    .spinner-sm {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid #e0e0e0;
+        border-top: 2px solid #307BBF;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        vertical-align: middle;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Typeahead (reuse index.html pattern) */
+    .typeahead-wrapper {
+        position: relative;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    .typeahead-wrapper input[type="text"] {
+        width: 100%;
+        padding: 10px;
+        font-size: 14px;
+        box-sizing: border-box;
+    }
+
+    details.demo-picker {
+        margin-bottom: 16px;
+        border: 1px solid #d0d0e0;
+        border-radius: 6px;
+        padding: 12px 16px;
+        background: #fafafa;
+    }
+    details.demo-picker summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: #29235C;
+        margin: 0;
+    }
+    .demo-picker-content {
+        margin-top: 12px;
+    }
+
+    @media (max-width: 600px) {
+        .tag-row {
+            grid-template-columns: 1fr;
+        }
+        .settings-row {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card card--wide batch-wizard">
+    <h1>Batch Analysis</h1>
+    <p style="color: #555; margin-bottom: 24px;">
+        Upload 2&ndash;10 gene expression files, tag each with condition metadata, and run
+        enrichment analysis with a harmonised gene background across all files.
+    </p>
+
+    <!-- Step indicator -->
+    <div class="wizard-steps-indicator" id="step-indicator">
+        <div class="wizard-steps-indicator__item wizard-step-ind wizard-step-ind--1 wizard-steps-indicator__item--active" data-step="1">
+            <span class="wizard-steps-indicator__num">1</span> Upload Files
+        </div>
+        <div class="wizard-steps-indicator__sep">&rsaquo;</div>
+        <div class="wizard-steps-indicator__item wizard-step-ind wizard-step-ind--2" data-step="2">
+            <span class="wizard-steps-indicator__num">2</span> Tag Conditions
+        </div>
+        <div class="wizard-steps-indicator__sep">&rsaquo;</div>
+        <div class="wizard-steps-indicator__item wizard-step-ind wizard-step-ind--3" data-step="3">
+            <span class="wizard-steps-indicator__num">3</span> Analysis Settings
+        </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <!-- Step 1: Upload Files                                               -->
+    <!-- ---------------------------------------------------------------- -->
+    <section id="step-upload" class="wizard-step wizard-step--active">
+        <h2>1. Upload Files</h2>
+        <p>Upload 2&ndash;10 gene expression files (CSV, TSV, or TXT). All files must share the same column layout.</p>
+
+        <div id="batch-error-upload" class="batch-error"></div>
+
+        <!-- Drag-and-drop zone -->
+        <div class="drop-zone" id="batch-drop-zone" role="button" tabindex="0"
+             aria-label="Drag and drop files here or click to select">
+            <div class="drop-zone__icon">&#8613;</div>
+            <p class="drop-zone__text">Drag files here or click to select</p>
+            <p class="drop-zone__hint">CSV, TSV, TXT &mdash; max 10 files, 10 MB each</p>
+            <input type="file" id="batch-file-input" multiple accept=".csv,.tsv,.txt" style="display:none">
+        </div>
+
+        <!-- File queue -->
+        <div id="file-list" class="file-list"></div>
+
+        <!-- Cisplatin demo picker -->
+        <details class="demo-picker">
+            <summary>Or select demo cisplatin files</summary>
+            <div class="demo-picker-content">
+                <p style="font-size: 13px; color: #555; margin-bottom: 12px;">
+                    Select multiple dose/timepoint combinations from the Cisplatin Kidney dataset.
+                    Condition metadata will be auto-populated from filenames.
+                </p>
+                {% for group in cisplatin_demos %}
+                <div class="demo-group">
+                    <h4>{{ group.timepoint }}</h4>
+                    {% for f in group.files %}
+                    <label>
+                        <input type="checkbox" class="demo-cb" data-path="{{ f.path }}"
+                               data-label="{{ parse_filename(f.label).condition_label }}"
+                               data-dose="{{ parse_filename(f.label).dose }}"
+                               data-timepoint="{{ parse_filename(f.label).timepoint }}">
+                        {{ f.dose }}
+                    </label>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </details>
+
+        <div class="wizard-nav">
+            <button id="btn-next-tag" class="btn btn--primary" disabled>Next: Tag Conditions</button>
+            <span id="file-count-hint" style="font-size: 13px; color: #777; align-self: center;"></span>
+        </div>
+    </section>
+
+    <!-- ---------------------------------------------------------------- -->
+    <!-- Step 2: Tag Conditions                                             -->
+    <!-- ---------------------------------------------------------------- -->
+    <section id="step-tag" class="wizard-step">
+        <h2>2. Tag Conditions</h2>
+        <p>Assign a condition label to each file. Dose and timepoint are optional but help with downstream comparison.</p>
+
+        <div id="batch-error-tag" class="batch-error"></div>
+
+        <!-- Column mapping (shared for all files) -->
+        <div style="padding: 12px 16px; border: 1px solid #d0d0e0; border-radius: 6px; background: #f0f4fa; margin-bottom: 20px; font-size: 14px;">
+            <strong style="color: #29235C;">Column Mapping</strong>
+            <p style="margin: 6px 0 10px 0; color: #555; font-size: 13px;">
+                Specify the columns shared across all files. These will be detected automatically from the first file.
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                <div class="settings-field">
+                    <label for="col-id">Gene ID column</label>
+                    <input type="text" id="col-id" name="id_col" placeholder="e.g. GeneSymbol" required>
+                </div>
+                <div class="settings-field">
+                    <label for="col-fc">log2FC column</label>
+                    <input type="text" id="col-fc" name="fc_col" placeholder="e.g. logFC" required>
+                </div>
+                <div class="settings-field">
+                    <label for="col-pval">p-value column</label>
+                    <input type="text" id="col-pval" name="pval_col" placeholder="e.g. P.Value" required>
+                </div>
+            </div>
+        </div>
+
+        <div id="tag-form-container"></div>
+
+        <div class="wizard-nav">
+            <button id="btn-back-upload" class="btn btn--secondary">Back</button>
+            <button id="btn-next-metadata" class="btn btn--primary">Next: Analysis Settings</button>
+        </div>
+    </section>
+
+    <!-- ---------------------------------------------------------------- -->
+    <!-- Step 3: Analysis Settings                                          -->
+    <!-- ---------------------------------------------------------------- -->
+    <section id="step-metadata" class="wizard-step">
+        <h2>3. Analysis Settings</h2>
+
+        <div id="batch-error-meta" class="batch-error"></div>
+        <div id="batch-warning-harmonised" class="batch-warning"></div>
+
+        <!-- Batch metadata -->
+        <h3>Batch Information</h3>
+        <div class="settings-grid">
+            <div class="settings-row">
+                <div class="settings-field">
+                    <label for="batch-name">Batch Name</label>
+                    <input type="text" id="batch-name" name="batch_name"
+                           placeholder="Auto-generated if left blank">
+                </div>
+                <div class="settings-field">
+                    <label for="batch-owner">Owner / Contact</label>
+                    <input type="text" id="batch-owner" name="owner"
+                           placeholder="e.g. Dr Smith">
+                </div>
+            </div>
+            <div class="settings-field">
+                <label for="batch-desc">Description (optional)</label>
+                <textarea id="batch-desc" name="description"
+                          placeholder="Additional notes about this batch..."></textarea>
+            </div>
+        </div>
+
+        <!-- AOP selection -->
+        <h3>AOP Selection</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Select the Adverse Outcome Pathway to use for all conditions in this batch.
+        </p>
+        <div class="typeahead-wrapper" style="margin-bottom: 24px;">
+            <input type="text" id="aop-search" placeholder="Search AOPs by name or ID..."
+                   autocomplete="off">
+            <input type="hidden" id="aop-hidden" name="aop_selection">
+            <ul id="aop-suggestions" class="typeahead-dropdown" hidden></ul>
+        </div>
+
+        <!-- Threshold controls -->
+        <h3>Log2FC Threshold</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Minimum absolute log2 fold change for a gene to be considered significant.
+            Applied equally to all conditions.
+        </p>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
+            <label for="logfc-threshold" style="font-weight: 600; color: #29235C; font-size: 14px;">
+                log2FC threshold:
+            </label>
+            <input type="number" id="logfc-threshold" name="logfc_threshold"
+                   value="0.0" step="0.1" min="0"
+                   style="width: 80px; display: inline-block; margin: 0; padding: 6px 8px;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(0)">0</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(0.5)">0.5</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(1.0)">1.0</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(1.5)">1.5</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(2.0)">2.0</button>
+            </div>
+        </div>
+
+        <div class="wizard-nav">
+            <button id="btn-back-tag" class="btn btn--secondary">Back</button>
+            <button id="btn-analyze" class="btn btn--primary">Start Batch Analysis</button>
+        </div>
+    </section>
+</div>
+
+<!-- Progress modal (shown during analysis, hidden initially) -->
+<div id="batch-progress-modal" class="batch-modal" style="display:none;" role="dialog"
+     aria-modal="true" aria-label="Batch analysis in progress">
+    <div class="batch-modal__content">
+        <h2>Batch Analysis in Progress</h2>
+        <p style="color: #555; font-size: 14px; margin-bottom: 20px;">
+            Analysing each condition sequentially. This may take several minutes.
+        </p>
+        <div id="batch-progress-container"></div>
+        <div style="margin-top: 20px;">
+            <button id="btn-cancel-batch" class="btn btn--secondary" type="button">Cancel</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+
+// -------------------------------------------------------------------------
+// State
+// -------------------------------------------------------------------------
+const MAX_FILES = 10;
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+/** @type {Array<{name: string, size: number, isDemo: boolean, path?: string, meta?: object}>} */
+let fileQueue = [];
+/** batch_uuid returned by /batch/upload */
+let batchUuid = null;
+/** Polling interval handle */
+let pollHandle = null;
+
+// -------------------------------------------------------------------------
+// Helpers
+// -------------------------------------------------------------------------
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function showError(id, msg) {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+function hideError(id) {
+    const el = document.getElementById(id);
+    if (el) { el.style.display = 'none'; }
+}
+
+function setLogfcThreshold(val) {
+    document.getElementById('logfc-threshold').value = val;
+}
+
+// -------------------------------------------------------------------------
+// Step indicator
+// -------------------------------------------------------------------------
+function showStep(n) {
+    document.querySelectorAll('.wizard-step').forEach(function(s) {
+        s.classList.remove('wizard-step--active');
+    });
+    document.getElementById('step-' + ['upload', 'tag', 'metadata'][n - 1])
+        .classList.add('wizard-step--active');
+
+    document.querySelectorAll('.wizard-step-ind').forEach(function(ind) {
+        const stepNum = parseInt(ind.dataset.step);
+        ind.classList.remove('wizard-steps-indicator__item--active',
+                             'wizard-steps-indicator__item--done');
+        if (stepNum === n) {
+            ind.classList.add('wizard-steps-indicator__item--active');
+        } else if (stepNum < n) {
+            ind.classList.add('wizard-steps-indicator__item--done');
+        }
+    });
+}
+
+// -------------------------------------------------------------------------
+// File queue rendering
+// -------------------------------------------------------------------------
+function renderFileList() {
+    const container = document.getElementById('file-list');
+    container.innerHTML = '';
+    fileQueue.forEach(function(entry, idx) {
+        const card = document.createElement('div');
+        card.className = 'file-card';
+
+        const icon = document.createElement('span');
+        icon.className = 'file-card__icon';
+        icon.textContent = entry.isDemo ? '&#128203;' : '&#128196;';
+        icon.innerHTML = entry.isDemo ? '&#128203;' : '&#128196;';
+
+        const info = document.createElement('div');
+        info.className = 'file-card__info';
+
+        const name = document.createElement('div');
+        name.className = 'file-card__name';
+        name.textContent = entry.name;
+
+        const meta = document.createElement('div');
+        meta.className = 'file-card__meta';
+        if (entry.isDemo) {
+            meta.textContent = 'Demo file';
+        } else {
+            meta.textContent = formatBytes(entry.size);
+        }
+
+        info.appendChild(name);
+        info.appendChild(meta);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'file-card__remove';
+        removeBtn.setAttribute('aria-label', 'Remove ' + entry.name);
+        removeBtn.innerHTML = '&times;';
+        removeBtn.type = 'button';
+        removeBtn.dataset.idx = idx;
+        removeBtn.addEventListener('click', function() {
+            // Un-check demo checkbox if applicable
+            if (fileQueue[idx].isDemo) {
+                const cbs = document.querySelectorAll('.demo-cb');
+                cbs.forEach(function(cb) {
+                    if (cb.dataset.path === fileQueue[idx].path) cb.checked = false;
+                });
+            }
+            fileQueue.splice(idx, 1);
+            renderFileList();
+            updateNextTagButton();
+        });
+
+        card.appendChild(icon);
+        card.appendChild(info);
+        card.appendChild(removeBtn);
+        container.appendChild(card);
+    });
+
+    // Update count hint
+    const hint = document.getElementById('file-count-hint');
+    if (hint) {
+        hint.textContent = fileQueue.length > 0
+            ? fileQueue.length + ' file' + (fileQueue.length !== 1 ? 's' : '') + ' selected (max 10)'
+            : '';
+    }
+}
+
+function updateNextTagButton() {
+    const btn = document.getElementById('btn-next-tag');
+    btn.disabled = fileQueue.length < 1;  // Allow 1+ for testing; plan says 2-10
+}
+
+function addFiles(files) {
+    let errMsg = '';
+    Array.from(files).forEach(function(file) {
+        if (fileQueue.length >= MAX_FILES) {
+            errMsg = 'Maximum ' + MAX_FILES + ' files allowed.';
+            return;
+        }
+        // Check for duplicate filename
+        const exists = fileQueue.some(function(e) { return e.name === file.name; });
+        if (exists) return;
+        fileQueue.push({ name: file.name, size: file.size, isDemo: false, fileObj: file });
+    });
+    if (errMsg) showError('batch-error-upload', errMsg);
+    renderFileList();
+    updateNextTagButton();
+}
+
+// -------------------------------------------------------------------------
+// Drop zone
+// -------------------------------------------------------------------------
+(function() {
+    var dz = document.getElementById('batch-drop-zone');
+    var fi = document.getElementById('batch-file-input');
+    if (!dz || !fi) return;
+
+    dz.addEventListener('click', function() { fi.click(); });
+    dz.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fi.click(); }
+    });
+    dz.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dz.classList.add('drop-zone--active');
+    });
+    dz.addEventListener('dragleave', function() {
+        dz.classList.remove('drop-zone--active');
+    });
+    dz.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dz.classList.remove('drop-zone--active');
+        addFiles(e.dataTransfer.files);
+    });
+    fi.addEventListener('change', function() {
+        addFiles(fi.files);
+        fi.value = '';  // Reset so same files can be re-selected
+    });
+})();
+
+// -------------------------------------------------------------------------
+// Demo checkboxes
+// -------------------------------------------------------------------------
+document.querySelectorAll('.demo-cb').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+        if (cb.checked) {
+            if (fileQueue.length >= MAX_FILES) {
+                showError('batch-error-upload', 'Maximum ' + MAX_FILES + ' files allowed.');
+                cb.checked = false;
+                return;
+            }
+            hideError('batch-error-upload');
+            const fileName = cb.dataset.path.split('/').pop();
+            fileQueue.push({
+                name: fileName,
+                size: 0,
+                isDemo: true,
+                path: cb.dataset.path,
+                meta: {
+                    condition_label: cb.dataset.label,
+                    dose: cb.dataset.dose,
+                    timepoint: cb.dataset.timepoint,
+                },
+            });
+        } else {
+            fileQueue = fileQueue.filter(function(e) { return e.path !== cb.dataset.path; });
+        }
+        renderFileList();
+        updateNextTagButton();
+    });
+});
+
+// -------------------------------------------------------------------------
+// Step 1 → Step 2: Upload files to server, get column suggestions
+// -------------------------------------------------------------------------
+document.getElementById('btn-next-tag').addEventListener('click', function() {
+    hideError('batch-error-upload');
+    if (fileQueue.length === 0) {
+        showError('batch-error-upload', 'Please add at least one file.');
+        return;
+    }
+
+    const btn = document.getElementById('btn-next-tag');
+    btn.disabled = true;
+    btn.textContent = 'Uploading...';
+
+    const formData = new FormData();
+    formData.append('csrf_token', CSRF_TOKEN);
+
+    // Append real files
+    fileQueue.forEach(function(entry) {
+        if (!entry.isDemo && entry.fileObj) {
+            formData.append('files[]', entry.fileObj, entry.name);
+        }
+    });
+
+    // Append demo paths
+    fileQueue.forEach(function(entry) {
+        if (entry.isDemo) {
+            formData.append('demo_files[]', entry.path);
+        }
+    });
+
+    fetch('/batch/upload', {
+        method: 'POST',
+        body: formData,
+    })
+    .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error(t); });
+        return resp.json();
+    })
+    .then(function(data) {
+        batchUuid = data.batch_uuid;
+
+        // Update file queue with server-side info (row counts, column suggestions)
+        data.files.forEach(function(serverFile) {
+            const entry = fileQueue.find(function(e) { return e.name === serverFile.filename; });
+            if (entry) {
+                entry.rowCount = serverFile.row_count;
+                entry.columns = serverFile.columns;
+                entry.suggestions = serverFile.suggestions;
+            }
+        });
+
+        // Auto-populate column fields from first file's suggestions
+        const firstSuggestions = data.files[0] && data.files[0].suggestions;
+        if (firstSuggestions) {
+            if (firstSuggestions.id_col) document.getElementById('col-id').value = firstSuggestions.id_col;
+            if (firstSuggestions.fc_col) document.getElementById('col-fc').value = firstSuggestions.fc_col;
+            if (firstSuggestions.pval_col) document.getElementById('col-pval').value = firstSuggestions.pval_col;
+        }
+
+        // Re-render file cards with row counts
+        renderFileList();
+
+        // Build tagging form
+        buildTagForm();
+
+        showStep(2);
+        btn.disabled = false;
+        btn.textContent = 'Next: Tag Conditions';
+    })
+    .catch(function(err) {
+        showError('batch-error-upload', 'Upload failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Next: Tag Conditions';
+        updateNextTagButton();
+    });
+});
+
+// -------------------------------------------------------------------------
+// Build tagging form (Step 2)
+// -------------------------------------------------------------------------
+function buildTagForm() {
+    const container = document.getElementById('tag-form-container');
+    container.innerHTML = '';
+
+    fileQueue.forEach(function(entry, idx) {
+        const row = document.createElement('div');
+        row.className = 'tag-row';
+        row.dataset.idx = idx;
+
+        const fname = document.createElement('div');
+        fname.className = 'tag-row__filename';
+        fname.textContent = entry.name +
+            (entry.rowCount != null ? '  \u2014  ' + entry.rowCount + ' rows' : '');
+        row.appendChild(fname);
+
+        // Condition label (required)
+        const condField = document.createElement('div');
+        condField.className = 'tag-field';
+        const condLabel = document.createElement('label');
+        condLabel.textContent = 'Condition label *';
+        condLabel.setAttribute('for', 'cond-label-' + idx);
+        const condInput = document.createElement('input');
+        condInput.type = 'text';
+        condInput.id = 'cond-label-' + idx;
+        condInput.name = 'condition_labels[]';
+        condInput.required = true;
+        condInput.placeholder = 'e.g. Treatment A';
+        if (entry.meta && entry.meta.condition_label) condInput.value = entry.meta.condition_label;
+        condField.appendChild(condLabel);
+        condField.appendChild(condInput);
+
+        // Dose (optional)
+        const doseField = document.createElement('div');
+        doseField.className = 'tag-field';
+        const doseLabel = document.createElement('label');
+        doseLabel.textContent = 'Dose (optional)';
+        doseLabel.setAttribute('for', 'dose-' + idx);
+        const doseInput = document.createElement('input');
+        doseInput.type = 'text';
+        doseInput.id = 'dose-' + idx;
+        doseInput.name = 'doses[]';
+        doseInput.placeholder = 'e.g. 10uM';
+        if (entry.meta && entry.meta.dose) doseInput.value = entry.meta.dose;
+        doseField.appendChild(doseLabel);
+        doseField.appendChild(doseInput);
+
+        // Timepoint (optional)
+        const tpField = document.createElement('div');
+        tpField.className = 'tag-field';
+        const tpLabel = document.createElement('label');
+        tpLabel.textContent = 'Timepoint (optional)';
+        tpLabel.setAttribute('for', 'tp-' + idx);
+        const tpInput = document.createElement('input');
+        tpInput.type = 'text';
+        tpInput.id = 'tp-' + idx;
+        tpInput.name = 'timepoints[]';
+        tpInput.placeholder = 'e.g. 24hr';
+        if (entry.meta && entry.meta.timepoint) tpInput.value = entry.meta.timepoint;
+        tpField.appendChild(tpLabel);
+        tpField.appendChild(tpInput);
+
+        row.appendChild(condField);
+        row.appendChild(doseField);
+        row.appendChild(tpField);
+        container.appendChild(row);
+    });
+}
+
+// -------------------------------------------------------------------------
+// Step navigation: back buttons
+// -------------------------------------------------------------------------
+document.getElementById('btn-back-upload').addEventListener('click', function() { showStep(1); });
+document.getElementById('btn-back-tag').addEventListener('click', function() { showStep(2); });
+
+// -------------------------------------------------------------------------
+// Step 2 → Step 3
+// -------------------------------------------------------------------------
+document.getElementById('btn-next-metadata').addEventListener('click', function() {
+    hideError('batch-error-tag');
+
+    // Validate all condition labels are filled
+    const labels = document.querySelectorAll('[name="condition_labels[]"]');
+    let valid = true;
+    labels.forEach(function(lbl) {
+        if (!lbl.value.trim()) { valid = false; }
+    });
+    if (!valid) {
+        showError('batch-error-tag', 'Please provide a condition label for each file.');
+        return;
+    }
+
+    // Validate column names are set
+    const idCol = document.getElementById('col-id').value.trim();
+    const fcCol = document.getElementById('col-fc').value.trim();
+    const pvalCol = document.getElementById('col-pval').value.trim();
+    if (!idCol || !fcCol || !pvalCol) {
+        showError('batch-error-tag', 'Please specify all three column names (Gene ID, log2FC, p-value).');
+        return;
+    }
+
+    showStep(3);
+});
+
+// -------------------------------------------------------------------------
+// Step 3: Start Batch Analysis
+// -------------------------------------------------------------------------
+document.getElementById('btn-analyze').addEventListener('click', function() {
+    hideError('batch-error-meta');
+
+    const aopId = document.getElementById('aop-hidden').value.trim();
+    if (!aopId) {
+        showError('batch-error-meta', 'Please select an AOP before starting analysis.');
+        return;
+    }
+
+    if (!batchUuid) {
+        showError('batch-error-meta', 'Session expired — please go back to Step 1 and re-upload files.');
+        return;
+    }
+
+    const btn = document.getElementById('btn-analyze');
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    // Collect condition labels, doses, timepoints from tagging form
+    const conditionLabels = Array.from(document.querySelectorAll('[name="condition_labels[]"]'))
+        .map(function(el) { return el.value.trim(); });
+    const doses = Array.from(document.querySelectorAll('[name="doses[]"]'))
+        .map(function(el) { return el.value.trim(); });
+    const timepoints = Array.from(document.querySelectorAll('[name="timepoints[]"]'))
+        .map(function(el) { return el.value.trim(); });
+    const filenames = fileQueue.map(function(e) { return e.name; });
+
+    const payload = new FormData();
+    payload.append('csrf_token', CSRF_TOKEN);
+    payload.append('batch_uuid', batchUuid);
+    payload.append('aop_selection', aopId);
+    payload.append('logfc_threshold', document.getElementById('logfc-threshold').value);
+    payload.append('batch_name', document.getElementById('batch-name').value.trim());
+    payload.append('owner', document.getElementById('batch-owner').value.trim());
+    payload.append('description', document.getElementById('batch-desc').value.trim());
+    payload.append('id_col', document.getElementById('col-id').value.trim());
+    payload.append('fc_col', document.getElementById('col-fc').value.trim());
+    payload.append('pval_col', document.getElementById('col-pval').value.trim());
+
+    filenames.forEach(function(n) { payload.append('filenames[]', n); });
+    conditionLabels.forEach(function(v) { payload.append('condition_labels[]', v); });
+    doses.forEach(function(v) { payload.append('doses[]', v); });
+    timepoints.forEach(function(v) { payload.append('timepoints[]', v); });
+
+    fetch('/batch/analyze', {
+        method: 'POST',
+        body: payload,
+    })
+    .then(function(resp) {
+        if (!resp.ok) return resp.text().then(function(t) { throw new Error(t); });
+        return resp.json();
+    })
+    .then(function(data) {
+        if (data.warning_low_genes) {
+            document.getElementById('batch-warning-harmonised').textContent = data.warning_low_genes;
+            document.getElementById('batch-warning-harmonised').style.display = 'block';
+        }
+        // Show progress modal and start polling
+        showProgressModal(data.batch_uuid, data.conditions || filenames);
+    })
+    .catch(function(err) {
+        showError('batch-error-meta', 'Analysis failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Start Batch Analysis';
+    });
+});
+
+// -------------------------------------------------------------------------
+// Progress modal + polling
+// -------------------------------------------------------------------------
+function showProgressModal(uuid, conditionNames) {
+    const modal = document.getElementById('batch-progress-modal');
+    const container = document.getElementById('batch-progress-container');
+
+    // Render initial pending items
+    container.innerHTML = '';
+    conditionNames.forEach(function(name) {
+        const item = document.createElement('div');
+        item.className = 'progress-item progress-item--pending';
+        item.dataset.name = name;
+        item.innerHTML = '<span class="progress-item__status">&#9711;</span>' +
+                         '<span>' + escapeHtml(name) + '</span>';
+        container.appendChild(item);
+    });
+
+    modal.style.display = 'flex';
+
+    // Poll /batch/<uuid>/status every 3 seconds
+    pollHandle = setInterval(function() {
+        fetch('/batch/' + uuid + '/status')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            updateProgressModal(data);
+            if (data.status === 'complete' || data.status === 'failed' || data.status === 'cancelled') {
+                clearInterval(pollHandle);
+                if (data.status === 'complete') {
+                    // Redirect to batch results page
+                    window.location.href = '/batch/' + uuid + '/results';
+                }
+            }
+        })
+        .catch(function() {
+            // Silently ignore transient poll errors
+        });
+    }, 3000);
+}
+
+function updateProgressModal(data) {
+    const container = document.getElementById('batch-progress-container');
+    if (!data.conditions) return;
+
+    data.conditions.forEach(function(cond) {
+        const item = container.querySelector('[data-name="' + CSS.escape(cond.condition_label) + '"]');
+        if (!item) return;
+
+        item.className = 'progress-item progress-item--' + cond.status;
+        let icon = '&#9711;'; // pending
+        if (cond.status === 'running') icon = '<span class="spinner-sm"></span>';
+        else if (cond.status === 'complete') icon = '&#10003;';
+        else if (cond.status === 'failed') icon = '&#10007;';
+
+        item.innerHTML = '<span class="progress-item__status">' + icon + '</span>' +
+                         '<span>' + escapeHtml(cond.condition_label) + '</span>';
+        if (cond.status === 'failed' && cond.error_message) {
+            const err = document.createElement('span');
+            err.style.color = '#EB5B25';
+            err.style.fontSize = '12px';
+            err.style.marginLeft = '8px';
+            err.textContent = '— ' + cond.error_message;
+            item.appendChild(err);
+        }
+    });
+}
+
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
+// Cancel button
+document.getElementById('btn-cancel-batch').addEventListener('click', function() {
+    if (!batchUuid) return;
+    clearInterval(pollHandle);
+    fetch('/batch/' + batchUuid + '/cancel', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
+    }).finally(function() {
+        document.getElementById('batch-progress-modal').style.display = 'none';
+        document.getElementById('btn-analyze').disabled = false;
+        document.getElementById('btn-analyze').textContent = 'Start Batch Analysis';
+    });
+});
+
+// -------------------------------------------------------------------------
+// AOP typeahead — reused from index.html pattern
+// -------------------------------------------------------------------------
+(function() {
+    var searchInput = document.getElementById('aop-search');
+    var hiddenInput = document.getElementById('aop-hidden');
+    var suggestions = document.getElementById('aop-suggestions');
+
+    if (!searchInput || !hiddenInput || !suggestions) return;
+
+    var debounceTimer;
+
+    function formatLabel(aop) {
+        var mappedInfo = aop.mapped_ke_count > 0
+            ? ' -- ' + aop.mapped_ke_count + '/' + aop.ke_count + ' KEs mapped'
+            : '';
+        return aop.aop_id + ': ' + aop.title + ' (' + aop.ke_count + ' KEs' + mappedInfo + ')';
+    }
+
+    function renderSuggestions(aops) {
+        suggestions.innerHTML = '';
+
+        if (!Array.isArray(aops) && aops.error) {
+            var li = document.createElement('li');
+            li.textContent = aops.error;
+            li.style.color = '#EB5B25';
+            li.style.cursor = 'default';
+            suggestions.appendChild(li);
+            suggestions.hidden = false;
+            return;
+        }
+
+        if (!Array.isArray(aops) || aops.length === 0) {
+            suggestions.hidden = true;
+            return;
+        }
+
+        aops.forEach(function(aop) {
+            var li = document.createElement('li');
+            var mainText = document.createElement('span');
+            mainText.textContent = aop.aop_id + ': ' + aop.title + ' (' + aop.ke_count + ' KEs)';
+            li.appendChild(mainText);
+
+            if (aop.mapped_ke_count > 0) {
+                var info = document.createElement('span');
+                info.className = 'mapped-info';
+                info.textContent = ' -- ' + aop.mapped_ke_count + '/' + aop.ke_count + ' KEs mapped';
+                li.appendChild(info);
+            }
+
+            li.dataset.id = aop.aop_id;
+            li.addEventListener('click', function() {
+                hiddenInput.value = aop.aop_id;
+                searchInput.value = formatLabel(aop);
+                suggestions.hidden = true;
+            });
+            suggestions.appendChild(li);
+        });
+        suggestions.hidden = false;
+    }
+
+    function fetchSuggestions(q) {
+        fetch('/api/aops?q=' + encodeURIComponent(q))
+            .then(function(r) { return r.json(); })
+            .then(renderSuggestions)
+            .catch(function(e) { renderSuggestions({ error: 'Failed to load AOPs: ' + e.message }); });
+    }
+
+    searchInput.addEventListener('input', function() {
+        hiddenInput.value = '';
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+            fetchSuggestions(searchInput.value.trim());
+        }, 250);
+    });
+
+    searchInput.addEventListener('focus', function() {
+        if (!searchInput.value.trim()) fetchSuggestions('');
+    });
+
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.typeahead-wrapper')) suggestions.hidden = true;
+    });
+})();
+</script>
+{% endblock %}
