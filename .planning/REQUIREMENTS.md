@@ -40,7 +40,7 @@ Requirements for v2.0 Batch Analysis & Dynamic AOPs milestone. Each maps to road
 - [ ] **BATC-01**: User can upload multiple files (2-10) in a sequential queue
 - [ ] **BATC-02**: User can tag each file with condition label (dose, timepoint, treatment)
 - [ ] **BATC-03**: Per-file progress indicator during batch analysis
-- [ ] **BATC-04**: Batch state persisted in SQLite (not session cookies)
+- [x] **BATC-04**: Batch state persisted in SQLite (not session cookies)
 - [ ] **BATC-05**: Background gene set harmonisation across conditions for valid comparison
 
 ### Comparison Visualisation
@@ -104,7 +104,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BATC-01 | Phase 6 | Pending |
 | BATC-02 | Phase 6 | Pending |
 | BATC-03 | Phase 6 | Pending |
-| BATC-04 | Phase 6 | Pending |
+| BATC-04 | Phase 6 | Complete |
 | BATC-05 | Phase 6 | Pending |
 | COMP-01 | Phase 7 | Pending |
 | COMP-02 | Phase 7 | Pending |
