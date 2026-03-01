@@ -149,6 +149,16 @@ class Config:
     CACHE_DIR = os.environ.get('CACHE_DIR', '/tmp/molaop_cache')
     CACHE_TTL = 3600  # 1 hour
 
+    # Batch analysis settings
+    BATCH_MAX_FILES = 10
+    BATCH_MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100 MB total batch limit
+    BATCH_RETENTION_DAYS = 14  # Auto-clean batches older than 14 days
+    BATCH_MIN_HARMONISED_GENES = 1000  # Minimum viable background for Fisher's test
+
+    # Cisplatin batch demo files grouped by timepoint
+    CISPLATIN_TIMEPOINTS = ['4hr', '8hr', '16hr', '24hr', '48hr', '72hr']
+    CISPLATIN_DOSES = ['0.1uM', '0.5uM', '1uM', '2.5uM', '5uM', '10uM', '20uM', '30uM', '50uM']
+
     @classmethod
     def validate_data_files(cls):
         """Validate that all required data files exist."""
