@@ -992,7 +992,8 @@ def batch_upload():
     Returns:
         JSON with keys:
           batch_uuid (str): UUID for this batch session
-          files (list): Per-file dicts with filename, row_count, columns, suggestions
+          files (list): Per-file dicts with filename, row_count, columns, suggestions, head_rows
+            head_rows: first 5 data rows as list of dicts (key=column name, value=cell value)
     """
     import shutil as _shutil
 
@@ -1017,7 +1018,9 @@ def batch_upload():
         f.save(dest)
         try:
             df_head = pd.read_csv(dest, sep=None, engine='python', nrows=200)
-            row_count = len(df_head)
+            # Count total rows using fast byte-level line count (subtract 1 for header)
+            with open(dest, 'rb') as _f:
+                row_count = sum(1 for _ in _f) - 1
             columns = df_head.columns.tolist()
             try:
                 suggestions_obj = column_detector.detect_columns(df_head)
@@ -1036,6 +1039,7 @@ def batch_upload():
             'row_count': row_count,
             'columns': columns,
             'suggestions': suggestions,
+            'head_rows': df_head.head(5).to_dict(orient='records'),
         })
 
     # Copy demo files from data/ to batch dir
@@ -1051,7 +1055,9 @@ def batch_upload():
         _shutil.copy2(src, dest)
         try:
             df_head = pd.read_csv(dest, sep=None, engine='python', nrows=200)
-            row_count = len(df_head)
+            # Count total rows using fast byte-level line count (subtract 1 for header)
+            with open(dest, 'rb') as _f:
+                row_count = sum(1 for _ in _f) - 1
             columns = df_head.columns.tolist()
             try:
                 suggestions_obj = column_detector.detect_columns(df_head)
@@ -1070,6 +1076,7 @@ def batch_upload():
             'row_count': row_count,
             'columns': columns,
             'suggestions': suggestions,
+            'head_rows': df_head.head(5).to_dict(orient='records'),
         })
 
     logger.info(f'batch_upload: created batch {batch_uuid} with {len(file_previews)} files')
