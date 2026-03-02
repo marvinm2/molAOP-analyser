@@ -1040,7 +1040,7 @@ def batch_upload():
             'row_count': row_count,
             'columns': columns,
             'suggestions': suggestions,
-            'head_rows': df_head.head(5).where(df_head.head(5).notna(), None).to_dict(orient='records'),
+            'head_rows': json.loads(df_head.head(5).to_json(orient='records')),
         })
 
     # Copy demo files from data/ to batch dir
@@ -1077,7 +1077,7 @@ def batch_upload():
             'row_count': row_count,
             'columns': columns,
             'suggestions': suggestions,
-            'head_rows': df_head.head(5).where(df_head.head(5).notna(), None).to_dict(orient='records'),
+            'head_rows': json.loads(df_head.head(5).to_json(orient='records')),
         })
 
     logger.info(f'batch_upload: created batch {batch_uuid} with {len(file_previews)} files')
