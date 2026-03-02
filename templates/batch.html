@@ -666,11 +666,30 @@ function renderFileList() {
 
         const meta = document.createElement('div');
         meta.className = 'file-card__meta';
+
+        // Base info: size or demo label
+        var parts = [];
         if (entry.isDemo) {
-            meta.textContent = 'Demo file';
+            parts.push('Demo file');
         } else {
-            meta.textContent = formatBytes(entry.size);
+            parts.push(formatBytes(entry.size));
         }
+
+        // Row count (populated after upload)
+        if (entry.rowCount != null) {
+            parts.push(entry.rowCount + ' rows');
+        }
+
+        // Detected columns (populated after upload)
+        if (entry.suggestions) {
+            var cols = [];
+            if (entry.suggestions.id_col) cols.push('ID: ' + entry.suggestions.id_col);
+            if (entry.suggestions.fc_col) cols.push('FC: ' + entry.suggestions.fc_col);
+            if (entry.suggestions.pval_col) cols.push('p: ' + entry.suggestions.pval_col);
+            if (cols.length > 0) parts.push(cols.join(', '));
+        }
+
+        meta.textContent = parts.join('  \u2014  ');
 
         info.appendChild(name);
         info.appendChild(meta);
