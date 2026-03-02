@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: unknown
-last_updated: "2026-03-02T11:14:06.000Z"
+status: active
+last_updated: "2026-03-02T12:00:00.000Z"
 progress:
   total_phases: 3
   completed_phases: 3
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Project State
@@ -18,16 +18,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 6 — Batch Analysis
+**Current focus:** Phase 7 — Comparison Visualisation
 
 ## Current Position
 
-Phase: 6 of 7 (Batch Analysis)
-Plan: 3 of 3 in current phase (COMPLETE)
+Phase: 7 of 7 (Comparison Visualisation)
+Plan: 1 of 3 in current phase (COMPLETE)
 Status: Active
-Last activity: 2026-03-02 — 06-GAP2 UAT gap closure: true row count via byte-level scan, head preview table in batch file cards
+Last activity: 2026-03-02 — 07-01 comparison data service, GET /batch/<uuid>/compare route, compare.html scaffold with tabs and condition colour legend
 
-Progress: [████████░░] 71%
+Progress: [█████████░] 78%
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ Progress: [████████░░] 71%
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
 | 05 (Network Interactivity) | 2/2 | 8m | 4m |
 | 06 (Batch Analysis) | 4/4 | 16m | 4m |
+| 07 (Comparison Visualisation) | 1/3 | 8m | 8m |
 
 *Updated after each plan completion*
 
@@ -84,6 +85,9 @@ Recent decisions affecting current work:
 - [06-GAP]: file-card__meta uses parts array joined with em-dash (U+2014) — matches tagging step separator style; rowCount != null handles both null and undefined
 - [06-GAP2]: byte-level line count (open rb + sum) gives true row count without full CSV parse; nrows=200 kept for column detection performance
 - [06-GAP2]: head_rows uses orient='records' — list of dicts enables JS Object.keys/Object.values rendering without manual column index management
+- [07-01]: CONDITION_PALETTE colours assigned in fixed order by upload position — alphabetical sort prevented by explicit pivot column reindex after pivot_table()
+- [07-01]: FDR significance threshold at 0.05 for -log10 transform; non-significant cells return None for JSON-safe serialisation
+- [07-01]: compare.html dispatches CustomEvent('modechange') so Plans 07-02/03 can listen without coupling
 
 ### Pending Todos
 
@@ -99,5 +103,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 06-GAP2-PLAN.md — UAT gap closure: true row count (byte scan) and head preview table in batch file cards. Phase 06 fully complete.
+Stopped at: Completed 07-01-PLAN.md — comparison data service, GET /batch/<uuid>/compare route, compare.html scaffold with tabs, control bar, and condition colour legend.
 Resume file: None

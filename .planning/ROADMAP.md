@@ -105,4 +105,4 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 4. Shareable URLs + AOP Discovery | v2.0 | 0/2 | Not started | - |
 | 5. Network Interactivity + Responsive Layout | 2/2 | Complete   | 2026-02-28 | - |
 | 6. Batch Analysis | 5/5 | Complete   | 2026-03-02 | 2026-03-01 |
-| 7. Comparison Visualisation | v2.0 | 0/3 | Not started | - |
+| 7. Comparison Visualisation | 1/3 | In Progress|  | - |
