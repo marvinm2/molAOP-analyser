@@ -112,7 +112,7 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 **Goal:** Polish the comparison visualisation UI: fix KE detail drawer sizing/overlap and missing AOP-Wiki link, reconsider pie chart slice sizing to use equal percentage per condition with FDR < 0.05 threshold, and improve delta mode network clarity
 **Requirements**: POLISH-01, POLISH-02, POLISH-03
 **Depends on:** Phase 7
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 08-01: Drawer CSS/HTML unification — migrate compare drawer to .ke-drawer class hierarchy, responsive width override, AOP-Wiki link styling

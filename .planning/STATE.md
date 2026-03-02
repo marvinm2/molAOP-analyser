@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: unknown
-last_updated: "2026-03-02T12:48:32.530Z"
+status: in_progress
+last_updated: "2026-03-02T16:29:00.000Z"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
+  total_plans: 13
+  completed_plans: 13
 ---
 
 # Project State
@@ -18,14 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-27)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 7 — Comparison Visualisation
+**Current focus:** Phase 8 — Comparison UI Polish
 
 ## Current Position
 
-Phase: 7 of 7 (Comparison Visualisation)
-Plan: 3 of 3 in current phase (COMPLETE)
-Status: Complete — all 12 plans executed
-Last activity: 2026-03-02 — 07-03 Cytoscape comparison network with pie-chart nodes, KE detail panel, delta mode integration
+Phase: 8 of 8 (Comparison UI Polish)
+Plan: 1 of 1 in current phase (COMPLETE)
+Status: Phase 8 plan 01 complete
+Last activity: 2026-03-02 — 08-01 Compare drawer unified with .ke-drawer class hierarchy, responsive width via clamp()
 
 Progress: [██████████] 100%
 
@@ -44,6 +44,7 @@ Progress: [██████████] 100%
 | 05 (Network Interactivity) | 2/2 | 8m | 4m |
 | 06 (Batch Analysis) | 4/4 | 16m | 4m |
 | 07 (Comparison Visualisation) | 3/3 | 14m | 4.7m |
+| 08 (Comparison UI Polish) | 1/1 | 1m | 1m |
 
 *Updated after each plan completion*
 
@@ -93,6 +94,13 @@ Recent decisions affecting current work:
 - [07-03]: Pie slice sizes normalised as equal shares — each condition gets 100/N percent; slices sized by min(val,10)/10 * sliceMax
 - [07-03]: Gene node exclusion in comparison network: skip nodes where ke_type is undefined AND keId not in ke_labels
 - [07-03]: KE detail drawer reads live currentMode and ref-condition at tap time to avoid stale closures
+- [08-01]: compare drawer inherits .ke-drawer class hierarchy — no duplicate CSS rules needed, only a single ID-scoped width override
+- [08-01]: clamp(320px, 30vw, 500px) for responsive drawer width; calc(-1 * clamp(...)) for seamless hidden-state transition
+- [08-01]: Mobile bottom-sheet behaviour inherited automatically from .ke-drawer @media query — no duplicate @media block required
+
+### Roadmap Evolution
+
+- Phase 8 added: Comparison UI Polish — fix KE detail drawer sizing/overlap, missing AOP-Wiki link, pie chart slice sizing, delta mode network clarity
 
 ### Pending Todos
 
@@ -108,5 +116,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 07-03-PLAN.md — Cytoscape comparison network with pie-chart nodes, KE detail drawer, and full delta mode integration. All 12 plans complete.
+Stopped at: Completed 08-01-PLAN.md — Compare drawer unified with .ke-drawer class hierarchy; responsive clamp() width override in style.css.
 Resume file: None
