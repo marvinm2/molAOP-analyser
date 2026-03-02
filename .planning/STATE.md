@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
 status: unknown
-last_updated: "2026-03-02T10:35:43Z"
+last_updated: "2026-03-02T11:14:06.000Z"
 progress:
   total_phases: 3
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 8
+  completed_plans: 8
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 Phase: 6 of 7 (Batch Analysis)
 Plan: 3 of 3 in current phase (COMPLETE)
 Status: Active
-Last activity: 2026-03-02 — 06-GAP UAT gap closure: htmx CDN loaded globally, file card metadata with row count and detected columns
+Last activity: 2026-03-02 — 06-GAP2 UAT gap closure: true row count via byte-level scan, head preview table in batch file cards
 
 Progress: [████████░░] 71%
 
@@ -82,6 +82,8 @@ Recent decisions affecting current work:
 - [06-03]: results.html breadcrumb uses metadata.batch_uuid presence check — zero overhead for single-analysis results
 - [06-GAP]: htmx loaded from unpkg CDN with SRI hash in base.html before {% block scripts %} — makes htmx global for all child templates
 - [06-GAP]: file-card__meta uses parts array joined with em-dash (U+2014) — matches tagging step separator style; rowCount != null handles both null and undefined
+- [06-GAP2]: byte-level line count (open rb + sum) gives true row count without full CSV parse; nrows=200 kept for column detection performance
+- [06-GAP2]: head_rows uses orient='records' — list of dicts enables JS Object.keys/Object.values rendering without manual column index management
 
 ### Pending Todos
 
@@ -96,6 +98,6 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-01
-Stopped at: Completed 06-GAP-PLAN.md — UAT gap closure: htmx 2.0.4 CDN in base.html, file card row count and detected columns. Phase 06 fully complete.
+Last session: 2026-03-02
+Stopped at: Completed 06-GAP2-PLAN.md — UAT gap closure: true row count (byte scan) and head preview table in batch file cards. Phase 06 fully complete.
 Resume file: None
