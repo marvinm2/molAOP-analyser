@@ -55,6 +55,11 @@ os.makedirs(app.config['TEMP_FOLDER'], exist_ok=True)
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
 
+# Initialize database at module level — runs under all WSGI servers (gunicorn, waitress)
+# as well as python app.py. Must run before any route handler accesses db_manager.get_session().
+if not init_database():
+    logger.warning("Database initialization failed - continuing without persistence")
+
 @app.context_processor
 def inject_csrf_token():
     """Make CSRF token available in all templates."""
@@ -1490,16 +1495,7 @@ if __name__ == '__main__':
         # Validate required data files exist
         Config.validate_data_files()
         logger.info("All required data files validated successfully")
-        
-        # Initialize database
-        if init_database():
-            logger.info("Database initialized successfully")
-        else:
-            logger.warning("Database initialization failed - continuing without persistence")
-        
-        # Start the application
         app.run(debug=True, host='0.0.0.0', port=5000)
-        
     except FileNotFoundError as e:
         logger.error(f"Startup failed: {e}")
         raise
