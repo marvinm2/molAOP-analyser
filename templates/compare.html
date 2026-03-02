@@ -644,9 +644,65 @@
   var singleConditionIndex = 0;
 
   /**
+   * Compute pie slice size and opacity data for a single KE node.
+   * Implements binary fill: a slice is either fully visible (FDR < 0.05)
+   * or absent (not significant). In delta mode, negative deltas appear as
+   * muted gray slices (opacity 0.25) to preserve that signal rather than
+   * hiding it entirely. The reference condition slice is forced to size 0
+   * in delta mode because the self-referential delta is meaningless.
+   *
+   * @param {number} rowIdx         - KE row index into fdr_matrix and valueMatrix.
+   * @param {string} mode           - 'absolute' or 'delta'.
+   * @param {number} refIndex       - 0-based reference condition index (delta mode only).
+   * @param {number} conditionCount - Total number of conditions.
+   * @param {Array}  valueMatrix    - neg_log10 matrix (absolute) or delta matrix (delta).
+   * @returns {Object} Object with pie_size_N and pie_opacity_N keys for all N conditions.
+   */
+  function computeSliceData(rowIdx, mode, refIndex, conditionCount, valueMatrix) {
+    var sliceMax = Math.round(100 / conditionCount);
+    var result = {};
+    for (var i = 0; i < conditionCount; i++) {
+      var fdrVal = (comparisonData.fdr_matrix[rowIdx] || [])[i];
+      var isSig = fdrVal != null && fdrVal < 0.05;
+      var sliceSize, opacity;
+
+      if (mode === 'delta') {
+        // Reference condition: force to 0 — self-referential delta is meaningless.
+        if (i === refIndex) {
+          sliceSize = 0;
+          opacity = 1;
+        } else {
+          var val = (valueMatrix[rowIdx] || [])[i];
+          if (!isSig || val == null) {
+            // Not significant or missing: no slice.
+            sliceSize = 0;
+            opacity = 1;
+          } else if (val < 0) {
+            // Negative delta: less significant than reference — show muted gray slice.
+            sliceSize = sliceMax;
+            opacity = 0.25;
+          } else {
+            // Positive delta: more significant than reference — full colored slice.
+            sliceSize = sliceMax;
+            opacity = 1;
+          }
+        }
+      } else {
+        // Absolute mode: binary fill — full slice if FDR < 0.05, else 0.
+        sliceSize = isSig ? sliceMax : 0;
+        opacity = 1;
+      }
+
+      result['pie_size_' + (i + 1)] = sliceSize;
+      result['pie_opacity_' + (i + 1)] = opacity;
+    }
+    return result;
+  }
+
+  /**
    * Build the Cytoscape elements array for the given mode and reference.
-   * KE nodes carry pie_size_1…pie_size_N data attributes that drive the
-   * pie-chart stylesheet. KER edges are included unchanged.
+   * KE nodes carry pie_size_1…pie_size_N and pie_opacity_1…pie_opacity_N data
+   * attributes that drive the pie-chart stylesheet. KER edges are included unchanged.
    *
    * @param {string} mode     - 'absolute' or 'delta'.
    * @param {number} refIndex - 0-based reference column index (used in delta mode).
@@ -656,7 +712,6 @@
     if (!networkData || !hasData()) return [];
 
     var conditionCount = comparisonData.condition_labels.length;
-    var sliceMax = 100 / conditionCount;      // equal share of 360° per condition
     var nodes = networkData.nodes || [];
     var edges = networkData.edges || [];
 
@@ -689,25 +744,13 @@
       var pieData = {};
 
       if (rowIdx !== undefined) {
-        var row = valueMatrix[rowIdx] || [];
-        for (var i = 0; i < conditionCount; i++) {
-          var val = row[i];
-          var sliceSize;
-          if (val === null || val === undefined) {
-            sliceSize = 0;
-          } else if (mode === 'delta') {
-            // Delta mode: clamp negative deltas to 0 (less significant than reference).
-            var absDelta = Math.max(0, val);
-            sliceSize = Math.round(Math.min(absDelta, 10) / 10 * sliceMax);
-          } else {
-            sliceSize = Math.round(Math.min(val, 10) / 10 * sliceMax);
-          }
-          pieData['pie_size_' + (i + 1)] = sliceSize;
-        }
+        // Use shared helper for binary pie logic and opacity data.
+        pieData = computeSliceData(rowIdx, mode, refIndex, conditionCount, valueMatrix);
       } else {
-        // KE present in the AOP skeleton but absent from enrichment results.
+        // KE present in the AOP skeleton but absent from enrichment results — all slices off.
         for (var j = 0; j < conditionCount; j++) {
           pieData['pie_size_' + (j + 1)] = 0;
+          pieData['pie_opacity_' + (j + 1)] = 1;
         }
       }
 
@@ -773,13 +816,15 @@
     ];
 
     // Add one pie-slice style object per condition.
-    // Cytoscape.js pie-chart properties: pie-1-background-color, pie-1-background-size,
-    // pie-1-background-opacity (up to 16 slices supported).
+    // Cytoscape.js pie-chart properties: pie-N-background-color, pie-N-background-size,
+    // pie-N-background-opacity (up to 16 slices supported).
+    // Opacity is driven by data(pie_opacity_N) so that muted gray deltas (opacity 0.25)
+    // can be rendered without changing the slice colour.
     for (var i = 1; i <= conditionCount; i++) {
       var pieStyle = {};
       pieStyle['pie-' + i + '-background-color'] = comparisonData.condition_colors[i - 1] || '#ccc';
       pieStyle['pie-' + i + '-background-size'] = 'data(pie_size_' + i + ')';
-      pieStyle['pie-' + i + '-background-opacity'] = 1;
+      pieStyle['pie-' + i + '-background-opacity'] = 'data(pie_opacity_' + i + ')';
       styles.push({ selector: 'node', style: pieStyle });
     }
 
@@ -870,27 +915,17 @@
     comparisonData.ke_labels.forEach(function (keId, idx) {
       keIndexMap[keId] = idx;
     });
-    var sliceMax = 100 / conditionCount;
 
     cyInstance.batch(function () {
       cyInstance.nodes().forEach(function (node) {
         var keId = node.id();
         var rowIdx = keIndexMap[keId];
         if (rowIdx === undefined) return;
-        var row = valueMatrix[rowIdx] || [];
-        for (var i = 0; i < conditionCount; i++) {
-          var val = row[i];
-          var sliceSize;
-          if (val === null || val === undefined) {
-            sliceSize = 0;
-          } else if (mode === 'delta') {
-            var absDelta = Math.max(0, val);
-            sliceSize = Math.round(Math.min(absDelta, 10) / 10 * sliceMax);
-          } else {
-            sliceSize = Math.round(Math.min(val, 10) / 10 * sliceMax);
-          }
-          node.data('pie_size_' + (i + 1), sliceSize);
-        }
+        // Use shared helper for binary pie logic and opacity data.
+        var pieData = computeSliceData(rowIdx, mode, refIndex, conditionCount, valueMatrix);
+        Object.keys(pieData).forEach(function (key) {
+          node.data(key, pieData[key]);
+        });
       });
     });
 
