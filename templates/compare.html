@@ -43,6 +43,16 @@
     }
 
     /* KE detail drawer — styling handled by .ke-drawer in style.css; width override in style.css #compare-ke-drawer */
+
+    /* Delta mode banner — displayed above the Cytoscape canvas when in delta mode */
+    .compare-delta-banner {
+      background: #f0f4ff;
+      border-left: 3px solid #307BBF;
+      padding: 6px 12px;
+      font-size: 13px;
+      color: #29235C;
+      margin-bottom: 6px;
+    }
   </style>
 {% endblock %}
 
@@ -113,6 +123,10 @@
         <select id="single-condition-select" style="display:none">
           <!-- Populated from condition_labels by JS -->
         </select>
+      </div>
+      <!-- Delta mode banner — shows which condition is used as the reference baseline -->
+      <div id="delta-mode-banner" class="compare-delta-banner" style="display:none">
+        Showing delta vs <strong id="delta-ref-label"></strong>
       </div>
       <div id="cy-compare" style="width:100%;height:600px;border:1px solid #ccc;background:#fafafa;"></div>
     </div>
@@ -1142,6 +1156,18 @@
     // Update network if it has been initialised.
     if (cyInitialised && cyInstance) {
       updateNetwork(mode, refIndex);
+    }
+
+    // Show or hide the delta mode banner above the network canvas.
+    // This must live in the modechange listener (not just setMode) so it also
+    // updates when the reference dropdown changes while already in delta mode.
+    var banner = document.getElementById('delta-mode-banner');
+    var refLabel = document.getElementById('delta-ref-label');
+    if (e.detail.mode === 'delta') {
+      banner.style.display = '';
+      if (refLabel) refLabel.textContent = e.detail.ref || '';
+    } else {
+      banner.style.display = 'none';
     }
   });
 
