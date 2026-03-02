@@ -16,7 +16,7 @@
 
 </details>
 
-### ✅ v2.0 Batch Analysis & Dynamic AOPs (Completed 2026-03-02)
+### v2.0 Batch Analysis & Dynamic AOPs
 
 **Milestone Goal:** Enable multi-dataset comparison and dynamic AOP discovery, transforming the tool from single-dataset analysis to cross-condition investigation.
 
@@ -24,6 +24,8 @@
 - [x] **Phase 5: Network Interactivity + Responsive Layout** - Expand-all toggle, KE detail panel, FDR filter slider, and responsive CSS for tablet/laptop (completed 2026-02-28)
 - [x] **Phase 6: Batch Analysis** - Sequential multi-file upload with condition tagging, SQLite state persistence, and harmonised background gene sets (completed 2026-03-01)
 - [x] **Phase 7: Comparison Visualisation** - Side-by-side heatmap, comparison table, multi-condition AOP network overlay, and delta mode (completed 2026-03-02)
+- [x] **Phase 8: Comparison UI Polish** - KE drawer unification, binary pie charts, delta mode banner (completed 2026-03-02)
+- [ ] **Phase 9: Deployment Hardening** - Batch nav link + DB init under WSGI (gap closure)
 
 ## Phase Details
 
@@ -107,6 +109,7 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 6. Batch Analysis | 5/5 | Complete   | 2026-03-02 | 2026-03-01 |
 | 7. Comparison Visualisation | v2.0 | 3/3 | Complete | 2026-03-02 |
 | 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
+| 9. Deployment Hardening | v2.0 | 0/0 | Not started | - |
 
 ### Phase 8: Comparison UI Polish
 
@@ -118,3 +121,11 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 Plans:
 - [x] 08-01: Drawer CSS/HTML unification — migrate compare drawer to .ke-drawer class hierarchy, responsive width override, AOP-Wiki link styling
 - [x] 08-02: Binary pie charts + delta mode — equal-sized binary pie slices (FDR < 0.05), negative-delta gray slices, delta mode banner
+
+### Phase 9: Deployment Hardening
+
+**Goal:** Close integration gaps from v2.0 audit — add batch analysis navigation entry point and fix database initialisation to work under any WSGI server (gunicorn, waitress, etc.)
+**Requirements**: BATC-01 (discoverability), SHAR-01, BATC-04 (deployment robustness)
+**Depends on:** Phase 8
+**Gap Closure:** Closes NAV-BATCH and DB-INIT-GUNICORN from v2.0-MILESTONE-AUDIT.md
+**Plans:** TBD
