@@ -116,6 +116,36 @@
         margin-top: 2px;
     }
 
+    /* File head preview table — shown after upload for column verification */
+    .file-card__head {
+        margin-top: 8px;
+        overflow-x: auto;
+        max-height: 120px;
+        overflow-y: auto;
+    }
+    .file-card__head table {
+        border-collapse: collapse;
+        font-size: 0.72rem;
+        color: #444;
+        width: max-content;
+        min-width: 100%;
+    }
+    .file-card__head th,
+    .file-card__head td {
+        border: 1px solid #ddd;
+        padding: 2px 6px;
+        white-space: nowrap;
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .file-card__head th {
+        background: #f5f5f5;
+        font-weight: 600;
+        position: sticky;
+        top: 0;
+    }
+
     .file-card__remove {
         background: none;
         border: none;
@@ -694,6 +724,40 @@ function renderFileList() {
         info.appendChild(name);
         info.appendChild(meta);
 
+        // Head preview table (populated after upload, absent pre-upload)
+        if (entry.headRows && entry.headRows.length > 0) {
+            var headWrap = document.createElement('div');
+            headWrap.className = 'file-card__head';
+
+            var tbl = document.createElement('table');
+            // Header row from first entry's keys
+            var thead = document.createElement('thead');
+            var hrow = document.createElement('tr');
+            Object.keys(entry.headRows[0]).forEach(function(col) {
+                var th = document.createElement('th');
+                th.textContent = col;
+                hrow.appendChild(th);
+            });
+            thead.appendChild(hrow);
+            tbl.appendChild(thead);
+
+            // Data rows
+            var tbody = document.createElement('tbody');
+            entry.headRows.forEach(function(row) {
+                var tr = document.createElement('tr');
+                Object.values(row).forEach(function(val) {
+                    var td = document.createElement('td');
+                    td.textContent = val === null || val === undefined ? '' : String(val);
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            tbl.appendChild(tbody);
+
+            headWrap.appendChild(tbl);
+            info.appendChild(headWrap);
+        }
+
         const removeBtn = document.createElement('button');
         removeBtn.className = 'file-card__remove';
         removeBtn.setAttribute('aria-label', 'Remove ' + entry.name);
@@ -854,13 +918,14 @@ document.getElementById('btn-next-tag').addEventListener('click', function() {
     .then(function(data) {
         batchUuid = data.batch_uuid;
 
-        // Update file queue with server-side info (row counts, column suggestions)
+        // Update file queue with server-side info (row counts, column suggestions, head preview)
         data.files.forEach(function(serverFile) {
             const entry = fileQueue.find(function(e) { return e.name === serverFile.filename; });
             if (entry) {
                 entry.rowCount = serverFile.row_count;
                 entry.columns = serverFile.columns;
                 entry.suggestions = serverFile.suggestions;
+                entry.headRows = serverFile.head_rows || [];
             }
         });
 
