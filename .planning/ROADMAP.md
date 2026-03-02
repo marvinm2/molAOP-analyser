@@ -106,14 +106,15 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 5. Network Interactivity + Responsive Layout | 2/2 | Complete   | 2026-02-28 | - |
 | 6. Batch Analysis | 5/5 | Complete   | 2026-03-02 | 2026-03-01 |
 | 7. Comparison Visualisation | v2.0 | 3/3 | Complete | 2026-03-02 |
+| 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
 
 ### Phase 8: Comparison UI Polish
 
 **Goal:** Polish the comparison visualisation UI: fix KE detail drawer sizing/overlap and missing AOP-Wiki link, reconsider pie chart slice sizing to use equal percentage per condition with FDR < 0.05 threshold, and improve delta mode network clarity
 **Requirements**: POLISH-01, POLISH-02, POLISH-03
 **Depends on:** Phase 7
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans executed (COMPLETE)
 
 Plans:
-- [ ] 08-01: Drawer CSS/HTML unification — migrate compare drawer to .ke-drawer class hierarchy, responsive width override, AOP-Wiki link styling
-- [ ] 08-02: Binary pie charts + delta mode — equal-sized binary pie slices (FDR < 0.05), negative-delta gray slices, delta mode banner
+- [x] 08-01: Drawer CSS/HTML unification — migrate compare drawer to .ke-drawer class hierarchy, responsive width override, AOP-Wiki link styling
+- [x] 08-02: Binary pie charts + delta mode — equal-sized binary pie slices (FDR < 0.05), negative-delta gray slices, delta mode banner

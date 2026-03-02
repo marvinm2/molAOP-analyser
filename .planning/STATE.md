@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
 status: in_progress
-last_updated: "2026-03-02T16:29:00.000Z"
+last_updated: "2026-03-02T16:35:23Z"
 progress:
   total_phases: 5
-  completed_phases: 4
-  total_plans: 13
-  completed_plans: 13
+  completed_phases: 5
+  total_plans: 14
+  completed_plans: 14
 ---
 
 # Project State
@@ -23,9 +23,9 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 8 of 8 (Comparison UI Polish)
-Plan: 1 of 1 in current phase (COMPLETE)
-Status: Phase 8 plan 01 complete
-Last activity: 2026-03-02 — 08-01 Compare drawer unified with .ke-drawer class hierarchy, responsive width via clamp()
+Plan: 2 of 2 in current phase (COMPLETE)
+Status: Phase 8 complete — all plans done
+Last activity: 2026-03-02 — 08-02 Binary pie chart logic (computeSliceData), delta mode banner
 
 Progress: [██████████] 100%
 
@@ -97,6 +97,10 @@ Recent decisions affecting current work:
 - [08-01]: compare drawer inherits .ke-drawer class hierarchy — no duplicate CSS rules needed, only a single ID-scoped width override
 - [08-01]: clamp(320px, 30vw, 500px) for responsive drawer width; calc(-1 * clamp(...)) for seamless hidden-state transition
 - [08-01]: Mobile bottom-sheet behaviour inherited automatically from .ke-drawer @media query — no duplicate @media block required
+- [08-02]: computeSliceData() takes valueMatrix as parameter — caller controls absolute vs delta matrix; helper stays pure
+- [08-02]: Negative delta slices rendered at opacity 0.25 (muted gray) not hidden — preserves directional signal
+- [08-02]: Delta banner update in modechange listener not setMode() — reference dropdown dispatches modechange without going through setMode()
+- [08-02]: pie_opacity_N mapped via data(pie_opacity_N) in stylesheet so opacity survives Cytoscape style updates
 
 ### Roadmap Evolution
 
@@ -116,5 +120,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 08-01-PLAN.md — Compare drawer unified with .ke-drawer class hierarchy; responsive clamp() width override in style.css.
+Stopped at: Completed 08-02-PLAN.md — Binary pie chart logic via computeSliceData() helper; delta mode banner above Cytoscape canvas.
 Resume file: None
