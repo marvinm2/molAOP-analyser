@@ -1461,11 +1461,25 @@ def batch_compare(batch_uuid_str):
         comparison_data = build_comparison_matrix(conditions)
         comparison_data_json = json.dumps(comparison_data)
 
+        # Extract the first complete condition's network_json for the comparison network.
+        # This provides the KE-level AOP skeleton (KE nodes + KER edges) needed by
+        # the Cytoscape pie-chart overlay in Plan 07-03.
+        first_network = None
+        for cond in conditions:
+            if cond.network_json:
+                try:
+                    first_network = json.loads(cond.network_json)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+                if first_network:
+                    break
+
         return render_template(
             'compare.html',
             batch=batch,
             conditions=conditions,
             comparison_data_json=comparison_data_json,
+            network_json=json.dumps(first_network) if first_network else 'null',
         )
     finally:
         session_db.close()

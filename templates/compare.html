@@ -31,6 +31,42 @@
     .compare-table tr:nth-child(even) { background-color: #f9f9f9; }
     .compare-table tr:hover { background-color: #f0f4ff; }
     .compare-table__sig { font-weight: 700; }
+
+    /* Network controls bar */
+    .compare-network-controls {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0;
+      border-bottom: 1px solid #e0e0e0; margin-bottom: 8px;
+    }
+    .compare-network-controls label { font-weight: 600; font-size: 14px; }
+    .compare-network-controls select {
+      padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc;
+    }
+
+    /* KE detail drawer — slides in from the right on desktop */
+    .compare-ke-drawer {
+      position: fixed; right: -380px; top: 60px; bottom: 0; width: 360px;
+      background: #fff; box-shadow: -2px 0 8px rgba(0,0,0,0.15);
+      z-index: 50; padding: 20px; overflow-y: auto;
+      transition: right 0.25s ease;
+    }
+    .compare-ke-drawer--open { right: 0; }
+    .compare-ke-drawer__close {
+      position: absolute; top: 12px; right: 12px; background: none; border: none;
+      font-size: 24px; cursor: pointer; color: #666; line-height: 1;
+    }
+    .compare-ke-drawer__close:hover { color: #29235C; }
+    .compare-ke-drawer h3 {
+      margin: 0 32px 12px 0; font-size: 14px; color: #29235C; line-height: 1.4;
+    }
+
+    /* Mobile: drawer slides up from the bottom */
+    @media (max-width: 768px) {
+      .compare-ke-drawer {
+        right: auto; bottom: -100%; left: 0; top: auto; width: 100%; height: 60vh;
+        border-radius: 16px 16px 0 0; transition: bottom 0.25s ease;
+      }
+      .compare-ke-drawer--open { bottom: 0; right: auto; }
+    }
   </style>
 {% endblock %}
 
@@ -93,8 +129,27 @@
 
     <!-- Network panel -->
     <div id="tab-network" class="compare-tab-panel" style="display:none">
-      <div id="cy-compare" style="width:100%;height:600px;border:1px solid #ccc;"></div>
-      <!-- TODO Plan 07-03: Network rendering -->
+      <!-- View mode controls: Comparison (all conditions as pie chart) vs Single Condition -->
+      <div class="compare-network-controls">
+        <label>View:</label>
+        <button id="btn-comparison-view" class="btn btn--small btn--primary" disabled>Comparison</button>
+        <button id="btn-single-view" class="btn btn--small btn--outline">Single Condition</button>
+        <select id="single-condition-select" style="display:none">
+          <!-- Populated from condition_labels by JS -->
+        </select>
+      </div>
+      <div id="cy-compare" style="width:100%;height:600px;border:1px solid #ccc;background:#fafafa;"></div>
+    </div>
+
+    <!-- KE detail drawer (outside tab panels, fixed position) -->
+    <div id="compare-ke-drawer" class="compare-ke-drawer">
+      <button class="compare-ke-drawer__close" id="close-ke-drawer">&times;</button>
+      <h3 id="ke-drawer-title"></h3>
+      <div id="ke-drawer-barchart"></div>
+      <a id="ke-drawer-wiki-link" href="#" target="_blank" rel="noopener"
+         class="btn btn--small btn--outline" style="margin-top:12px;display:inline-block;">
+        View on AOP-Wiki
+      </a>
     </div>
 
   </div><!-- /.compare-tab-panels -->
@@ -246,10 +301,9 @@
         }
       }
 
-      // Lazy-init network on first switch to network tab.
+      // Lazy-init network on first switch to network tab (avoids dagre on 0x0 container).
       if (targetId === 'tab-network' && !cyInitialised) {
-        cyInitialised = true;
-        // TODO Plan 07-03: Network rendering — initialise Cytoscape here.
+        initComparisonNetwork();
       }
     });
   });
@@ -579,7 +633,491 @@
   });
 
   // ---------------------------------------------------------------------------
-  // modechange listener — updates both heatmap and table
+  // Network rendering (Plan 07-03: COMP-03, COMP-04, COMP-05)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * AOP network skeleton data passed from the Flask route.
+   * Contains 'nodes' and 'edges' arrays from build_cytoscape_network() for the
+   * first complete condition.  Null if no condition has a network yet.
+   */
+  var networkData = {{ network_json | safe }};
+
+  /**
+   * Cytoscape.js instance for the comparison network (created once on first
+   * tab activation, then reused for all subsequent mode switches).
+   */
+  var cyInstance = null;
+
+  /**
+   * Saved node positions after the initial dagre layout run.
+   * Reused to restore positions after data updates, keeping the layout locked.
+   */
+  var savedPositions = {};
+
+  /**
+   * Current network view mode: 'comparison' (pie charts) or 'single' (solid fill).
+   */
+  var networkViewMode = 'comparison';
+
+  /**
+   * Index of the condition selected in single-condition view.
+   */
+  var singleConditionIndex = 0;
+
+  /**
+   * Build the Cytoscape elements array for the given mode and reference.
+   * KE nodes carry pie_size_1…pie_size_N data attributes that drive the
+   * pie-chart stylesheet. KER edges are included unchanged.
+   *
+   * @param {string} mode     - 'absolute' or 'delta'.
+   * @param {number} refIndex - 0-based reference column index (used in delta mode).
+   * @returns {Array} Cytoscape elements array.
+   */
+  function buildComparisonElements(mode, refIndex) {
+    if (!networkData || !hasData()) return [];
+
+    var conditionCount = comparisonData.condition_labels.length;
+    var sliceMax = 100 / conditionCount;      // equal share of 360° per condition
+    var nodes = networkData.nodes || [];
+    var edges = networkData.edges || [];
+
+    // Determine values to use for sizing: absolute neg-log10 or delta.
+    var valueMatrix;
+    if (mode === 'delta') {
+      valueMatrix = computeDeltaMatrix(refIndex);
+    } else {
+      valueMatrix = comparisonData.neg_log10_matrix;
+    }
+
+    // Build map of KE ID → row index for fast lookup.
+    var keIndexMap = {};
+    comparisonData.ke_labels.forEach(function (keId, idx) {
+      keIndexMap[keId] = idx;
+    });
+
+    // Build node elements: KE nodes only (skip gene nodes which have type 'gene').
+    var elements = [];
+    nodes.forEach(function (node) {
+      var nodeData = node.data || {};
+      var keId = nodeData.id;
+      // Skip gene nodes — only include KE nodes in the comparison network.
+      if (nodeData.ke_type === undefined && !keIndexMap.hasOwnProperty(keId)) {
+        // Gene-level node: skip.
+        return;
+      }
+
+      var rowIdx = keIndexMap[keId];
+      var pieData = {};
+
+      if (rowIdx !== undefined) {
+        var row = valueMatrix[rowIdx] || [];
+        for (var i = 0; i < conditionCount; i++) {
+          var val = row[i];
+          var sliceSize;
+          if (val === null || val === undefined) {
+            sliceSize = 0;
+          } else if (mode === 'delta') {
+            // Delta mode: clamp negative deltas to 0 (less significant than reference).
+            var absDelta = Math.max(0, val);
+            sliceSize = Math.round(Math.min(absDelta, 10) / 10 * sliceMax);
+          } else {
+            sliceSize = Math.round(Math.min(val, 10) / 10 * sliceMax);
+          }
+          pieData['pie_size_' + (i + 1)] = sliceSize;
+        }
+      } else {
+        // KE present in the AOP skeleton but absent from enrichment results.
+        for (var j = 0; j < conditionCount; j++) {
+          pieData['pie_size_' + (j + 1)] = 0;
+        }
+      }
+
+      // Truncate long titles to 25 characters.
+      var rawLabel = nodeData.label || keId;
+      var label = rawLabel.length > 25 ? rawLabel.slice(0, 25) + '...' : rawLabel;
+
+      elements.push({
+        data: Object.assign({}, pieData, {
+          id: keId,
+          label: label,
+          ke_type: nodeData.ke_type || 'intermediate'
+        })
+      });
+    });
+
+    // Include KER edges (KE-to-KE relationships).
+    edges.forEach(function (edge) {
+      var edgeData = edge.data || {};
+      elements.push({ data: { id: edgeData.id, source: edgeData.source, target: edgeData.target } });
+    });
+
+    return elements;
+  }
+
+  /**
+   * Build the Cytoscape stylesheet for comparison pie-chart nodes.
+   * Creates base node/edge styles and one pie-slice style block per condition.
+   *
+   * @param {number} conditionCount - Number of conditions in the comparison.
+   * @returns {Array} Cytoscape stylesheet array.
+   */
+  function buildComparisonStylesheet(conditionCount) {
+    var styles = [
+      {
+        selector: 'node',
+        style: {
+          'pie-size': '100%',
+          'background-color': '#ddd',   // grey shows through for non-significant portions
+          'label': 'data(label)',
+          'font-size': 10,
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-wrap': 'ellipsis',
+          'text-max-width': '80px',
+          'width': 55,
+          'height': 55,
+          'border-width': 1,
+          'border-color': '#999'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 1.5,
+          'line-color': '#aaa',
+          'target-arrow-color': '#aaa',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 0.8
+        }
+      }
+    ];
+
+    // Add one pie-slice style object per condition.
+    // Cytoscape.js pie-chart properties: pie-1-background-color, pie-1-background-size,
+    // pie-1-background-opacity (up to 16 slices supported).
+    for (var i = 1; i <= conditionCount; i++) {
+      var pieStyle = {};
+      pieStyle['pie-' + i + '-background-color'] = comparisonData.condition_colors[i - 1] || '#ccc';
+      pieStyle['pie-' + i + '-background-size'] = 'data(pie_size_' + i + ')';
+      pieStyle['pie-' + i + '-background-opacity'] = 1;
+      styles.push({ selector: 'node', style: pieStyle });
+    }
+
+    return styles;
+  }
+
+  /**
+   * Build a Cytoscape stylesheet for single-condition view.
+   * Disables pie rendering; nodes show a solid fill based on the selected
+   * condition's significance (palette colour if significant, grey if not).
+   *
+   * @param {number} condIdx - 0-based index of the selected condition.
+   * @returns {Array} Cytoscape stylesheet array.
+   */
+  function buildSingleConditionStylesheet(condIdx) {
+    if (!hasData()) return [];
+    var conditionCount = comparisonData.condition_labels.length;
+
+    // Build a map of KE ID → background colour for the selected condition.
+    // Build the stylesheet with per-node colour selectors.
+    var styles = [
+      {
+        selector: 'node',
+        style: {
+          'pie-size': '0%',            // disable pie rendering entirely
+          'background-color': '#ddd',  // default: not significant / no data
+          'label': 'data(label)',
+          'font-size': 10,
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-wrap': 'ellipsis',
+          'text-max-width': '80px',
+          'width': 55,
+          'height': 55,
+          'border-width': 1,
+          'border-color': '#999'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 1.5,
+          'line-color': '#aaa',
+          'target-arrow-color': '#aaa',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 0.8
+        }
+      }
+    ];
+
+    // Add per-node significant colour selector.
+    var condColor = comparisonData.condition_colors[condIdx] || '#ccc';
+    comparisonData.ke_labels.forEach(function (keId, rowIdx) {
+      var fdrVal = comparisonData.fdr_matrix[rowIdx]
+        ? comparisonData.fdr_matrix[rowIdx][condIdx]
+        : null;
+      if (fdrVal !== null && fdrVal !== undefined && fdrVal < 0.05) {
+        styles.push({
+          selector: 'node[id = "' + keId + '"]',
+          style: { 'background-color': condColor }
+        });
+      }
+    });
+
+    return styles;
+  }
+
+  /**
+   * Update the comparison network for a mode or reference change.
+   * Rebuilds pie data in the existing Cytoscape instance without re-running dagre.
+   *
+   * @param {string} mode     - 'absolute' or 'delta'.
+   * @param {number} refIndex - 0-based reference column index (used in delta mode).
+   */
+  function updateNetwork(mode, refIndex) {
+    if (!cyInstance || !hasData()) return;
+
+    var conditionCount = comparisonData.condition_labels.length;
+    var valueMatrix;
+    if (mode === 'delta') {
+      valueMatrix = computeDeltaMatrix(refIndex);
+    } else {
+      valueMatrix = comparisonData.neg_log10_matrix;
+    }
+
+    var keIndexMap = {};
+    comparisonData.ke_labels.forEach(function (keId, idx) {
+      keIndexMap[keId] = idx;
+    });
+    var sliceMax = 100 / conditionCount;
+
+    cyInstance.batch(function () {
+      cyInstance.nodes().forEach(function (node) {
+        var keId = node.id();
+        var rowIdx = keIndexMap[keId];
+        if (rowIdx === undefined) return;
+        var row = valueMatrix[rowIdx] || [];
+        for (var i = 0; i < conditionCount; i++) {
+          var val = row[i];
+          var sliceSize;
+          if (val === null || val === undefined) {
+            sliceSize = 0;
+          } else if (mode === 'delta') {
+            var absDelta = Math.max(0, val);
+            sliceSize = Math.round(Math.min(absDelta, 10) / 10 * sliceMax);
+          } else {
+            sliceSize = Math.round(Math.min(val, 10) / 10 * sliceMax);
+          }
+          node.data('pie_size_' + (i + 1), sliceSize);
+        }
+      });
+    });
+
+    // If in single-condition view, refresh the stylesheet for current selection.
+    if (networkViewMode === 'single') {
+      cyInstance.style(buildSingleConditionStylesheet(singleConditionIndex)).update();
+    } else {
+      // Restore saved positions and update pie-chart stylesheet.
+      cyInstance.nodes().forEach(function (n) {
+        if (savedPositions[n.id()]) n.position(savedPositions[n.id()]);
+      });
+      cyInstance.style(buildComparisonStylesheet(conditionCount)).update();
+    }
+
+    // If the detail drawer is open, refresh its bar chart for the new mode.
+    var drawer = document.getElementById('compare-ke-drawer');
+    if (drawer && drawer.classList.contains('compare-ke-drawer--open')) {
+      var drawerTitle = document.getElementById('ke-drawer-title').textContent;
+      var rowIdx = comparisonData.ke_titles.indexOf(drawerTitle);
+      if (rowIdx >= 0) {
+        var openKeId = comparisonData.ke_labels[rowIdx];
+        openKeDrawer(openKeId, mode, refIndex);
+      }
+    }
+  }
+
+  /**
+   * Initialise the Cytoscape comparison network on first tab activation.
+   * Runs the dagre layout once, then saves node positions for all subsequent
+   * mode switches (so the layout stays fixed when toggling modes).
+   */
+  function initComparisonNetwork() {
+    if (cyInitialised) return;
+    cyInitialised = true;
+
+    if (!hasData() || !networkData) {
+      document.getElementById('cy-compare').innerHTML =
+        '<p style="color:#888;padding:24px;">No network data available for this batch.</p>';
+      return;
+    }
+
+    var conditionCount = comparisonData.condition_labels.length;
+    var mode = currentMode;
+    var refIndex = 0;
+
+    cyInstance = cytoscape({
+      container: document.getElementById('cy-compare'),
+      elements: buildComparisonElements(mode, refIndex),
+      style: buildComparisonStylesheet(conditionCount),
+      layout: { name: 'dagre', rankDir: 'LR', nodeSep: 50, rankSep: 80 }
+    });
+
+    // Lock dagre: save positions after layout completes.
+    cyInstance.on('layoutstop', function () {
+      cyInstance.nodes().forEach(function (n) {
+        savedPositions[n.id()] = { x: n.position('x'), y: n.position('y') };
+      });
+    });
+
+    // KE node tap — open detail drawer using live currentMode and ref selection.
+    cyInstance.on('tap', 'node', function (evt) {
+      var liveRef = document.getElementById('ref-condition').value || null;
+      var liveRefIndex = comparisonData.condition_labels.indexOf(liveRef);
+      if (liveRefIndex < 0) liveRefIndex = 0;
+      openKeDrawer(evt.target.id(), currentMode, liveRefIndex);
+    });
+
+    // Background tap — close drawer.
+    cyInstance.on('tap', function (evt) {
+      if (evt.target === cyInstance) {
+        closeKeDrawer();
+      }
+    });
+
+    // Populate single-condition selector and wire up view toggle buttons.
+    var singleSel = document.getElementById('single-condition-select');
+    comparisonData.condition_labels.forEach(function (label, i) {
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = label;
+      singleSel.appendChild(opt);
+    });
+
+    document.getElementById('btn-comparison-view').addEventListener('click', function () {
+      networkViewMode = 'comparison';
+      singleSel.style.display = 'none';
+      this.disabled = true;
+      this.className = 'btn btn--small btn--primary';
+      document.getElementById('btn-single-view').disabled = false;
+      document.getElementById('btn-single-view').className = 'btn btn--small btn--outline';
+      // Restore comparison pie-chart stylesheet.
+      cyInstance.style(buildComparisonStylesheet(conditionCount)).update();
+      cyInstance.nodes().forEach(function (n) {
+        if (savedPositions[n.id()]) n.position(savedPositions[n.id()]);
+      });
+    });
+
+    document.getElementById('btn-single-view').addEventListener('click', function () {
+      networkViewMode = 'single';
+      singleSel.style.display = '';
+      singleConditionIndex = parseInt(singleSel.value, 10) || 0;
+      this.disabled = true;
+      this.className = 'btn btn--small btn--primary';
+      document.getElementById('btn-comparison-view').disabled = false;
+      document.getElementById('btn-comparison-view').className = 'btn btn--small btn--outline';
+      cyInstance.style(buildSingleConditionStylesheet(singleConditionIndex)).update();
+    });
+
+    singleSel.addEventListener('change', function () {
+      singleConditionIndex = parseInt(this.value, 10) || 0;
+      if (networkViewMode === 'single') {
+        cyInstance.style(buildSingleConditionStylesheet(singleConditionIndex)).update();
+      }
+    });
+  }
+
+  // Close KE drawer button.
+  document.getElementById('close-ke-drawer').addEventListener('click', closeKeDrawer);
+
+  /**
+   * Open the KE detail drawer for the given KE, rendering a per-condition
+   * horizontal bar chart with -log10(FDR) or delta values.
+   *
+   * @param {string} keId     - KE identifier (e.g. 'KE:1234').
+   * @param {string} mode     - Current display mode ('absolute' or 'delta').
+   * @param {number} refIndex - 0-based reference column index.
+   */
+  function openKeDrawer(keId, mode, refIndex) {
+    if (!hasData()) return;
+
+    var rowIdx = comparisonData.ke_labels.indexOf(keId);
+    if (rowIdx < 0) return;  // KE not in comparison data
+
+    var keTitle = comparisonData.ke_titles[rowIdx] || keId;
+    document.getElementById('ke-drawer-title').textContent = keTitle;
+
+    // Build AOP-Wiki link (strip 'KE:' prefix, keep numeric part).
+    var keNum = keId.replace(/^KE:?/i, '');
+    document.getElementById('ke-drawer-wiki-link').href =
+      'https://aopwiki.org/events/' + keNum;
+
+    // Determine bar values.
+    var xValues, xAxisTitle, thresholdX, thresholdLabel;
+    if (mode === 'delta') {
+      var deltaMatrix = computeDeltaMatrix(refIndex);
+      xValues = (deltaMatrix[rowIdx] || []).map(function (v) {
+        return v === null ? 0 : v;
+      });
+      xAxisTitle = 'Delta -log10(FDR)';
+      thresholdX = 0;
+      thresholdLabel = 'Reference';
+    } else {
+      xValues = (comparisonData.neg_log10_matrix[rowIdx] || []).map(function (v) {
+        return v === null ? 0 : v;
+      });
+      xAxisTitle = '-log10(FDR)';
+      thresholdX = 1.301;   // -log10(0.05)
+      thresholdLabel = 'FDR=0.05';
+    }
+
+    var condCount = comparisonData.condition_labels.length;
+    var chartHeight = Math.max(200, condCount * 35 + 60);
+
+    Plotly.newPlot('ke-drawer-barchart', [{
+      type: 'bar',
+      orientation: 'h',
+      y: comparisonData.condition_labels,
+      x: xValues,
+      marker: { color: comparisonData.condition_colors },
+      hovertemplate: '%{y}: %{x:.2f}<extra></extra>'
+    }], {
+      shapes: [{
+        type: 'line',
+        x0: thresholdX,
+        x1: thresholdX,
+        y0: -0.5,
+        y1: condCount - 0.5,
+        line: { color: '#333', width: 1.5, dash: 'dash' }
+      }],
+      annotations: [{
+        x: thresholdX,
+        y: condCount - 0.3,
+        text: thresholdLabel,
+        showarrow: false,
+        font: { size: 10, color: '#666' }
+      }],
+      margin: { l: 140, r: 20, t: 10, b: 30 },
+      xaxis: { title: { text: xAxisTitle, font: { size: 11 } } },
+      height: chartHeight,
+      paper_bgcolor: 'transparent',
+      plot_bgcolor: 'transparent'
+    }, { responsive: true, displayModeBar: false });
+
+    document.getElementById('compare-ke-drawer').classList.add('compare-ke-drawer--open');
+  }
+
+  /**
+   * Close the KE detail drawer.
+   */
+  function closeKeDrawer() {
+    document.getElementById('compare-ke-drawer').classList.remove('compare-ke-drawer--open');
+  }
+
+  // ---------------------------------------------------------------------------
+  // modechange listener — updates heatmap, table, and network
   // ---------------------------------------------------------------------------
   document.addEventListener('modechange', function (e) {
     var mode = e.detail.mode;
@@ -588,6 +1126,10 @@
     if (refIndex < 0) refIndex = 0;
     updateHeatmap(mode, refIndex);
     updateTable(mode, refIndex);
+    // Update network if it has been initialised.
+    if (cyInitialised && cyInstance) {
+      updateNetwork(mode, refIndex);
+    }
   });
 
   // ---------------------------------------------------------------------------
