@@ -1161,6 +1161,48 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   COMPARISON PAGE
+   ========================================================================== */
+
+.compare-subtitle { color: #666; margin-top: 4px; margin-bottom: 16px; }
+
+.compare-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
+  padding: 12px 0; border-bottom: 1px solid #e0e0e0; margin-bottom: 16px;
+}
+.compare-controls__mode { display: flex; align-items: center; gap: 8px; }
+.compare-controls__mode label { font-weight: 600; font-size: 14px; }
+.compare-controls__ref { display: flex; align-items: center; gap: 8px; }
+.compare-controls__ref label { font-weight: 600; font-size: 14px; }
+.compare-controls__ref select { padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; }
+
+.compare-legend {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-left: auto;
+}
+.compare-legend__item { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.compare-legend__swatch {
+  width: 14px; height: 14px; border-radius: 3px; display: inline-block; flex-shrink: 0;
+}
+
+.compare-tabs {
+  display: flex; gap: 0; border-bottom: 2px solid #e0e0e0; margin-bottom: 0;
+}
+.compare-tab {
+  padding: 10px 24px; border: none; background: transparent; cursor: pointer;
+  font-size: 15px; font-weight: 500; color: #666; border-bottom: 2px solid transparent;
+  margin-bottom: -2px; transition: color 0.15s, border-color 0.15s;
+}
+.compare-tab:hover { color: #29235C; }
+.compare-tab--active {
+  color: #29235C; border-bottom-color: #E6007E; font-weight: 600;
+}
+
+.compare-tab-panels { padding-top: 16px; }
+.compare-tab-panel { /* visible by default; hidden via inline style or JS */ }
+
+.batch-summary-actions { margin-top: 24px; text-align: center; }
+
+/* ==========================================================================
    RESPONSIVE LAYOUT
    ========================================================================== */
 
@@ -1247,6 +1289,11 @@ select option[data-suggested="true"] {
         flex-wrap: wrap;
         justify-content: flex-start;
     }
+
+    /* Comparison page: stack controls vertically */
+    .compare-controls { flex-direction: column; align-items: flex-start; }
+    .compare-legend { margin-left: 0; }
+    .compare-tab { padding: 8px 16px; font-size: 14px; }
 }
 
 /* ==========================================================================

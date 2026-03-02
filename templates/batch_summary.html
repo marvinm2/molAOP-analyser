@@ -49,5 +49,10 @@
     </div>
     {% endfor %}
   </div>
+
+  <!-- Compare All button — only shown for completed batches (route guards non-complete status) -->
+  <div class="batch-summary-actions" style="margin-top:24px;text-align:center;">
+    <a href="/batch/{{ batch.uuid }}/compare" class="btn btn--primary">Compare All Conditions</a>
+  </div>
 </div>
 {% endblock %}

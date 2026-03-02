@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}Compare Conditions &mdash; molAOP Analyser{% endblock %}
+
+{% block head_extra %}
+  <!-- Plotly.js for heatmap -->
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+
+  <!-- Cytoscape core -->
+  <script src="https://unpkg.com/cytoscape@3.33.1/dist/cytoscape.min.js"></script>
+
+  <!-- Dagre layout extension — must follow Cytoscape and Dagre in this order -->
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+
+  <script>
+    cytoscape.use(window.cytoscapeDagre);
+  </script>
+
+  <style>
+    /* Compare page — minor layout overrides; main classes in style.css */
+    .compare-tab-panel {
+      min-height: 60px;
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb navigation -->
+<nav class="breadcrumb">
+  <a href="/batch/{{ batch.uuid }}/summary" class="breadcrumb-link">Batch Summary</a>
+  &rsaquo; Compare All
+</nav>
+
+<div class="card card--wide">
+  <!-- Page title -->
+  <h1>Comparison: {{ batch.batch_name or 'Batch Analysis' }}</h1>
+  <p class="compare-subtitle">{{ batch.aop_label }} &mdash; {{ conditions|length }} condition{{ 's' if conditions|length != 1 else '' }}</p>
+
+  <!-- Top control bar: mode toggle, reference condition selector, condition colour legend -->
+  <div class="compare-controls">
+
+    <!-- Absolute / Delta mode toggle -->
+    <div class="compare-controls__mode">
+      <label>Mode:</label>
+      <button id="btn-absolute" class="btn btn--small btn--primary" disabled>Absolute</button>
+      <button id="btn-delta" class="btn btn--small btn--outline">Delta</button>
+    </div>
+
+    <!-- Reference condition selector — hidden in absolute mode -->
+    <div class="compare-controls__ref" id="ref-selector-wrap" style="display:none">
+      <label for="ref-condition">Reference:</label>
+      <select id="ref-condition">
+        <!-- Populated by JS from comparisonData.condition_labels -->
+      </select>
+    </div>
+
+    <!-- Condition colour legend — horizontal pill row, populated by JS -->
+    <div class="compare-legend" id="condition-legend">
+      <!-- JS inserts swatch + label elements here -->
+    </div>
+
+  </div><!-- /.compare-controls -->
+
+  <!-- Tab bar -->
+  <div class="compare-tabs">
+    <button class="compare-tab compare-tab--active" data-target="tab-heatmap">Heatmap</button>
+    <button class="compare-tab" data-target="tab-table">Table</button>
+    <button class="compare-tab" data-target="tab-network">Network</button>
+  </div>
+
+  <!-- Tab panels -->
+  <div class="compare-tab-panels">
+
+    <!-- Heatmap panel (default visible) -->
+    <div id="tab-heatmap" class="compare-tab-panel compare-tab-panel--active">
+      <div id="heatmap-div" style="width:100%;min-height:400px;"></div>
+      <!-- TODO Plan 07-02: Heatmap rendering -->
+    </div>
+
+    <!-- Table panel -->
+    <div id="tab-table" class="compare-tab-panel" style="display:none">
+      <div id="comparison-table-wrap"></div>
+      <!-- TODO Plan 07-02: Table rendering -->
+    </div>
+
+    <!-- Network panel -->
+    <div id="tab-network" class="compare-tab-panel" style="display:none">
+      <div id="cy-compare" style="width:100%;height:600px;border:1px solid #ccc;"></div>
+      <!-- TODO Plan 07-03: Network rendering -->
+    </div>
+
+  </div><!-- /.compare-tab-panels -->
+
+</div><!-- /.card -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------------
+  // Data
+  // ---------------------------------------------------------------------------
+  const comparisonData = {{ comparison_data_json | safe }};
+
+  // ---------------------------------------------------------------------------
+  // Global state
+  // ---------------------------------------------------------------------------
+  let currentMode = 'absolute';
+  let cyInitialised = false;
+
+  // ---------------------------------------------------------------------------
+  // Empty-state helper
+  // ---------------------------------------------------------------------------
+  function hasData() {
+    return comparisonData && Array.isArray(comparisonData.ke_labels) && comparisonData.ke_labels.length > 0;
+  }
+
+  function showEmptyState() {
+    const noDataMsg = '<p style="color:#888;padding:24px 0;">No enrichment results to compare.</p>';
+    document.getElementById('heatmap-div').innerHTML = noDataMsg;
+    document.getElementById('comparison-table-wrap').innerHTML = noDataMsg;
+    document.getElementById('cy-compare').innerHTML = noDataMsg;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Condition colour legend
+  // ---------------------------------------------------------------------------
+  function renderLegend() {
+    if (!hasData()) return;
+    const legend = document.getElementById('condition-legend');
+    const labels = comparisonData.condition_labels;
+    const colors = comparisonData.condition_colors;
+    legend.innerHTML = '';
+    labels.forEach(function (label, i) {
+      const item = document.createElement('span');
+      item.className = 'compare-legend__item';
+
+      const swatch = document.createElement('span');
+      swatch.className = 'compare-legend__swatch';
+      swatch.style.backgroundColor = colors[i] || '#ccc';
+
+      const text = document.createElement('span');
+      text.textContent = label;
+
+      item.appendChild(swatch);
+      item.appendChild(text);
+      legend.appendChild(item);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reference condition selector
+  // ---------------------------------------------------------------------------
+  function populateRefSelector() {
+    if (!hasData()) return;
+    const sel = document.getElementById('ref-condition');
+    sel.innerHTML = '';
+    comparisonData.condition_labels.forEach(function (label) {
+      const opt = document.createElement('option');
+      opt.value = label;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mode toggle (Absolute / Delta)
+  // ---------------------------------------------------------------------------
+  function setMode(mode) {
+    currentMode = mode;
+    const refWrap = document.getElementById('ref-selector-wrap');
+    const btnAbs  = document.getElementById('btn-absolute');
+    const btnDelta = document.getElementById('btn-delta');
+
+    if (mode === 'delta') {
+      refWrap.style.display = '';
+      btnAbs.disabled = false;
+      btnAbs.className = 'btn btn--small btn--outline';
+      btnDelta.disabled = true;
+      btnDelta.className = 'btn btn--small btn--primary';
+    } else {
+      refWrap.style.display = 'none';
+      btnAbs.disabled = true;
+      btnAbs.className = 'btn btn--small btn--primary';
+      btnDelta.disabled = false;
+      btnDelta.className = 'btn btn--small btn--outline';
+    }
+
+    // Notify visualisation panels so they can re-render when implemented.
+    const ref = document.getElementById('ref-condition').value || null;
+    document.dispatchEvent(new CustomEvent('modechange', { detail: { mode: mode, ref: ref } }));
+  }
+
+  document.getElementById('btn-absolute').addEventListener('click', function () { setMode('absolute'); });
+  document.getElementById('btn-delta').addEventListener('click',   function () { setMode('delta'); });
+
+  // Also re-dispatch on reference dropdown change.
+  document.getElementById('ref-condition').addEventListener('change', function () {
+    if (currentMode === 'delta') {
+      document.dispatchEvent(new CustomEvent('modechange', {
+        detail: { mode: 'delta', ref: this.value }
+      }));
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tab switching
+  // ---------------------------------------------------------------------------
+  const tabButtons = document.querySelectorAll('.compare-tab');
+  const tabPanels  = document.querySelectorAll('.compare-tab-panel');
+
+  tabButtons.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const targetId = btn.getAttribute('data-target');
+
+      // Update button active state.
+      tabButtons.forEach(function (b) { b.classList.remove('compare-tab--active'); });
+      btn.classList.add('compare-tab--active');
+
+      // Show target panel, hide others.
+      tabPanels.forEach(function (panel) {
+        if (panel.id === targetId) {
+          panel.style.display = '';
+          panel.classList.add('compare-tab-panel--active');
+        } else {
+          panel.style.display = 'none';
+          panel.classList.remove('compare-tab-panel--active');
+        }
+      });
+
+      // Fix Plotly sizing if switching to heatmap (Plotly render-in-hidden fix).
+      if (targetId === 'tab-heatmap') {
+        const heatmapDiv = document.getElementById('heatmap-div');
+        if (heatmapDiv && typeof Plotly !== 'undefined') {
+          Plotly.Plots.resize(heatmapDiv);
+        }
+      }
+
+      // Lazy-init network on first switch to network tab.
+      if (targetId === 'tab-network' && !cyInitialised) {
+        cyInitialised = true;
+        // TODO Plan 07-03: Network rendering — initialise Cytoscape here.
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Initialise on load
+  // ---------------------------------------------------------------------------
+  if (!hasData()) {
+    showEmptyState();
+  } else {
+    renderLegend();
+    populateRefSelector();
+  }
+
+})();
+</script>
+{% endblock %}
