@@ -1,25 +1,32 @@
-# Use slim base image for size and security
-FROM python:3.11-slim
+FROM python:3.11-bookworm
 
-# Set working directory
-WORKDIR /app
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    pkg-config \
+    gfortran \
+    libopenblas-dev \
+    libffi-dev \
+    libssl-dev \
+    libcairo2 \
     libcairo2-dev \
+    libpango-1.0-0 \
+    libpango1.0-dev \
+    libgdk-pixbuf-2.0-0 \
+    libgdk-pixbuf-2.0-dev \
+    shared-mime-info \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
+WORKDIR /app
+
 COPY requirements.txt .
+
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
 COPY . .
 
-# Expose port Flask will run on
 EXPOSE 5000
 
-# Run the app
 CMD ["python", "app.py"]
