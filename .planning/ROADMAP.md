@@ -85,12 +85,12 @@ Plans:
   3. User can click a toggle to switch between single-condition and comparison view on the AOP network, with KE nodes coloured by the condition palette
   4. User can select a reference condition and the heatmap and network switch to delta mode showing change relative to that baseline
   5. A condition colour legend using VHP4Safety palette colours is visible on the comparison page
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: Comparison service + route — `comparison_service.py` pandas pivot, `GET /compare/<batch_id>` route, `compare.html` template scaffold
-- [ ] 07-02: Comparison heatmap + table — Plotly heatmap (KE × condition, -log10 FDR), comparison enrichment table, condition colour legend
-- [ ] 07-03: Comparison network overlay — multi-condition Cytoscape.js node styling on shared KE skeleton, single/comparison toggle, delta mode, locked dagre layout
+- [ ] 07-01: Comparison service + route — `comparison_service.py` pandas pivot, Flask route, `compare.html` tabbed scaffold with control bar and VHP4Safety condition legend
+- [ ] 07-02: Heatmap + table — Plotly.js heatmap (KE x condition, -log10 FDR), sortable comparison table, absolute/delta mode for both views
+- [ ] 07-03: Network overlay — Cytoscape.js pie-chart KE nodes, single/comparison toggle, KE detail panel with bar chart, delta mode for network
 
 ## Progress
 

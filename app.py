@@ -35,6 +35,7 @@ from services.batch_service import (
     parse_cisplatin_filename, create_batch_upload_dir, cleanup_batch_upload_dir,
     get_cisplatin_demo_files, validate_batch_columns, harmonise_backgrounds, run_batch,
 )
+from services.comparison_service import build_comparison_matrix, CONDITION_PALETTE
 
 # Configure logging
 logging.basicConfig(
@@ -1422,6 +1423,50 @@ def batch_cancel(batch_uuid_str):
     except Exception as exc:
         session_db.rollback()
         return jsonify({'error': str(exc)}), 500
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/compare')
+def batch_compare(batch_uuid_str):
+    """Render the multi-condition comparison page for a completed batch.
+
+    Builds a KE × condition comparison matrix from enrichment results and
+    serialises it as JSON for use by the client-side heatmap, table, and
+    network visualisations.
+
+    Args:
+        batch_uuid_str: UUID string identifying the batch.
+
+    Returns:
+        Rendered compare.html (200), 404 for unknown UUIDs, or a redirect to
+        /batch for batches that are not yet complete.
+    """
+    session_db = db_manager.get_session()
+    try:
+        batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
+        if not batch:
+            abort(404)
+        if batch.status != 'complete':
+            return redirect('/batch')
+
+        conditions = (
+            session_db.query(ConditionRecord)
+            .filter_by(batch_id=batch.id)
+            .order_by(ConditionRecord.position)
+            .all()
+        )
+
+        # Build comparison matrix while session is still open (conditions bound to session).
+        comparison_data = build_comparison_matrix(conditions)
+        comparison_data_json = json.dumps(comparison_data)
+
+        return render_template(
+            'compare.html',
+            batch=batch,
+            conditions=conditions,
+            comparison_data_json=comparison_data_json,
+        )
     finally:
         session_db.close()
 
