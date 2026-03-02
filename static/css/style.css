@@ -854,6 +854,15 @@ select option[data-suggested="true"] {
     font-weight: 500;
 }
 
+/* Compare page drawer: percentage-based responsive width */
+#compare-ke-drawer {
+    width: clamp(320px, 30vw, 500px);
+    right: calc(-1 * clamp(320px, 30vw, 500px));
+}
+#compare-ke-drawer.ke-drawer--open {
+    right: 0;
+}
+
 /* Bottom sheet on narrow screens */
 @media (max-width: 767px) {
     .ke-drawer {
