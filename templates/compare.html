@@ -339,7 +339,7 @@
    *
    * @param {string} mode     - 'absolute' or 'delta'.
    * @param {number} refIndex - 0-based column index of the reference condition (used in delta mode).
-   * @returns {{ trace: Object, layout: Object, config: Object }}
+   * @returns {Object} with keys trace, layout, and config
    */
   function buildHeatmapData(mode, refIndex) {
     var zData, xLabels, colorscale, zmin, zmax, zmid, reversescale, hovertmpl;
