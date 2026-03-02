@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-3 (shipped 2026-02-27)
-- 🚧 **v2.0 Batch Analysis & Dynamic AOPs** — Phases 4-7 (in progress)
+- ✅ **v2.0 Batch Analysis & Dynamic AOPs** — Phases 4-7 (completed 2026-03-02)
 
 ## Phases
 
@@ -16,14 +16,14 @@
 
 </details>
 
-### 🚧 v2.0 Batch Analysis & Dynamic AOPs (In Progress)
+### ✅ v2.0 Batch Analysis & Dynamic AOPs (Completed 2026-03-02)
 
 **Milestone Goal:** Enable multi-dataset comparison and dynamic AOP discovery, transforming the tool from single-dataset analysis to cross-condition investigation.
 
 - [x] **Phase 4: Shareable URLs + AOP Discovery** - UUID-based result sharing and SPARQL-driven dynamic AOP list replace hardcoded config (completed 2026-02-27)
 - [x] **Phase 5: Network Interactivity + Responsive Layout** - Expand-all toggle, KE detail panel, FDR filter slider, and responsive CSS for tablet/laptop (completed 2026-02-28)
 - [x] **Phase 6: Batch Analysis** - Sequential multi-file upload with condition tagging, SQLite state persistence, and harmonised background gene sets (completed 2026-03-01)
-- [ ] **Phase 7: Comparison Visualisation** - Side-by-side heatmap, comparison table, multi-condition AOP network overlay, and delta mode
+- [x] **Phase 7: Comparison Visualisation** - Side-by-side heatmap, comparison table, multi-condition AOP network overlay, and delta mode (completed 2026-03-02)
 
 ## Phase Details
 
@@ -88,9 +88,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: Comparison service + route — `comparison_service.py` pandas pivot, Flask route, `compare.html` tabbed scaffold with control bar and VHP4Safety condition legend
-- [ ] 07-02: Heatmap + table — Plotly.js heatmap (KE x condition, -log10 FDR), sortable comparison table, absolute/delta mode for both views
-- [ ] 07-03: Network overlay — Cytoscape.js pie-chart KE nodes, single/comparison toggle, KE detail panel with bar chart, delta mode for network
+- [x] 07-01: Comparison service + route — `comparison_service.py` pandas pivot, Flask route, `compare.html` tabbed scaffold with control bar and VHP4Safety condition legend
+- [x] 07-02: Heatmap + table — Plotly.js heatmap (KE x condition, -log10 FDR), sortable comparison table, absolute/delta mode for both views
+- [x] 07-03: Network overlay — Cytoscape.js pie-chart KE nodes, single/comparison toggle, KE detail panel with bar chart, delta mode for network
 
 ## Progress
 
@@ -105,4 +105,4 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 4. Shareable URLs + AOP Discovery | v2.0 | 0/2 | Not started | - |
 | 5. Network Interactivity + Responsive Layout | 2/2 | Complete   | 2026-02-28 | - |
 | 6. Batch Analysis | 5/5 | Complete   | 2026-03-02 | 2026-03-01 |
-| 7. Comparison Visualisation | 2/3 | In Progress|  | - |
+| 7. Comparison Visualisation | v2.0 | 3/3 | Complete | 2026-03-02 |

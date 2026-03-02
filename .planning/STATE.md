@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: unknown
-last_updated: "2026-03-02T12:32:40.911Z"
+status: complete
+last_updated: "2026-03-02T12:38:00Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 12
-  completed_plans: 11
+  completed_plans: 12
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 7 of 7 (Comparison Visualisation)
-Plan: 2 of 3 in current phase (COMPLETE)
-Status: Active
-Last activity: 2026-03-02 — 07-02 Plotly heatmap and sortable comparison table with absolute/delta mode support
+Plan: 3 of 3 in current phase (COMPLETE)
+Status: Complete — all 12 plans executed
+Last activity: 2026-03-02 — 07-03 Cytoscape comparison network with pie-chart nodes, KE detail panel, delta mode integration
 
-Progress: [█████████░] 85%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Progress: [█████████░] 85%
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
 | 05 (Network Interactivity) | 2/2 | 8m | 4m |
 | 06 (Batch Analysis) | 4/4 | 16m | 4m |
-| 07 (Comparison Visualisation) | 2/3 | 11m | 5.5m |
+| 07 (Comparison Visualisation) | 3/3 | 14m | 4.7m |
 
 *Updated after each plan completion*
 
@@ -90,6 +90,9 @@ Recent decisions affecting current work:
 - [07-01]: compare.html dispatches CustomEvent('modechange') so Plans 07-02/03 can listen without coupling
 - [Phase 07]: Plotly.newPlot for initial heatmap render, Plotly.react for mode updates — avoids DOM re-creation
 - [Phase 07]: data-col carries rendered column index not original condition index so sort works correctly when reference column is hidden in delta mode
+- [07-03]: Pie slice sizes normalised as equal shares — each condition gets 100/N percent; slices sized by min(val,10)/10 * sliceMax
+- [07-03]: Gene node exclusion in comparison network: skip nodes where ke_type is undefined AND keId not in ke_labels
+- [07-03]: KE detail drawer reads live currentMode and ref-condition at tap time to avoid stale closures
 
 ### Pending Todos
 
@@ -99,11 +102,11 @@ None.
 
 - [Phase 4]: SPARQL cold-fetch latency for `fetch_all_aops()` unmeasured under production load — implement progressive enhancement (static list server-side, dynamic list on fetch success) as first step
 - [Phase 6]: File lifetime management: UUID-scoped directories under uploads/<batch_uuid>/ resolved in 06-01 (create_batch_upload_dir / cleanup_batch_upload_dir)
-- [Phase 7]: Cytoscape.js multi-condition node styling method (pie-chart vs border-colour) not yet determined — prototype required in Phase 7 planning before committing
+- [Phase 7]: Cytoscape.js multi-condition node styling confirmed as pie-chart (pie-N-background-color/-size/-opacity) — resolved in 07-03
 - [Ongoing]: Builder API bulk export endpoint needs live verification; rate limit scope unclear for multi-worker production
 
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 07-02-PLAN.md — Plotly heatmap and sortable comparison table with absolute/delta mode support.
+Stopped at: Completed 07-03-PLAN.md — Cytoscape comparison network with pie-chart nodes, KE detail drawer, and full delta mode integration. All 12 plans complete.
 Resume file: None
