@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: active
-last_updated: "2026-03-01T19:10:00Z"
+status: unknown
+last_updated: "2026-03-02T10:35:43Z"
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
   completed_plans: 7
 ---
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 Phase: 6 of 7 (Batch Analysis)
 Plan: 3 of 3 in current phase (COMPLETE)
 Status: Active
-Last activity: 2026-03-01 — 06-03 Batch progress polling, summary page, and condition results complete
+Last activity: 2026-03-02 — 06-GAP UAT gap closure: htmx CDN loaded globally, file card metadata with row count and detected columns
 
 Progress: [████████░░] 71%
 
@@ -42,7 +42,7 @@ Progress: [████████░░] 71%
 |-------|-------|-------|----------|
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
 | 05 (Network Interactivity) | 2/2 | 8m | 4m |
-| 06 (Batch Analysis) | 3/3 | 15m | 5m |
+| 06 (Batch Analysis) | 4/4 | 16m | 4m |
 
 *Updated after each plan completion*
 
@@ -80,6 +80,8 @@ Recent decisions affecting current work:
 - [06-03]: batch.html switches from JS setInterval polling to htmx.process() on dynamically injected hx-get element
 - [06-03]: Cancel clears htmx attributes then re-processes container to deactivate htmx before sending cancel POST
 - [06-03]: results.html breadcrumb uses metadata.batch_uuid presence check — zero overhead for single-analysis results
+- [06-GAP]: htmx loaded from unpkg CDN with SRI hash in base.html before {% block scripts %} — makes htmx global for all child templates
+- [06-GAP]: file-card__meta uses parts array joined with em-dash (U+2014) — matches tagging step separator style; rowCount != null handles both null and undefined
 
 ### Pending Todos
 
@@ -95,5 +97,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Completed 06-03-PLAN.md — Batch progress polling (htmx), summary page, condition results drill-through complete. Phase 06 complete.
+Stopped at: Completed 06-GAP-PLAN.md — UAT gap closure: htmx 2.0.4 CDN in base.html, file card row count and detected columns. Phase 06 fully complete.
 Resume file: None
