@@ -21,6 +21,16 @@
     .compare-tab-panel {
       min-height: 60px;
     }
+
+    /* Comparison table */
+    .compare-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .compare-table th, .compare-table td { border: 1px solid #ddd; padding: 8px 12px; text-align: center; }
+    .compare-table th { background-color: #29235C; color: #fff; cursor: pointer; user-select: none; white-space: nowrap; }
+    .compare-table th:first-child { text-align: left; cursor: default; }
+    .compare-table td:first-child { text-align: left; font-weight: 500; white-space: nowrap; }
+    .compare-table tr:nth-child(even) { background-color: #f9f9f9; }
+    .compare-table tr:hover { background-color: #f0f4ff; }
+    .compare-table__sig { font-weight: 700; }
   </style>
 {% endblock %}
 
@@ -74,13 +84,11 @@
     <!-- Heatmap panel (default visible) -->
     <div id="tab-heatmap" class="compare-tab-panel compare-tab-panel--active">
       <div id="heatmap-div" style="width:100%;min-height:400px;"></div>
-      <!-- TODO Plan 07-02: Heatmap rendering -->
     </div>
 
     <!-- Table panel -->
     <div id="tab-table" class="compare-tab-panel" style="display:none">
       <div id="comparison-table-wrap"></div>
-      <!-- TODO Plan 07-02: Table rendering -->
     </div>
 
     <!-- Network panel -->
@@ -247,6 +255,342 @@
   });
 
   // ---------------------------------------------------------------------------
+  // Heatmap rendering (Plan 07-02: COMP-01)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compute the delta -log10(FDR) matrix relative to a reference condition column.
+   * For each KE row: delta[ke][cond] = neg_log10[ke][cond] - neg_log10[ke][refIndex].
+   * If either value is null the delta cell is null.
+   *
+   * @param {number} refIndex - 0-based column index of the reference condition.
+   * @returns {Array<Array<number|null>>} Delta matrix (rows=KEs, cols=conditions).
+   */
+  function computeDeltaMatrix(refIndex) {
+    return comparisonData.neg_log10_matrix.map(function (row) {
+      return row.map(function (val, colIdx) {
+        var refVal = row[refIndex];
+        if (val === null || refVal === null) return null;
+        return val - refVal;
+      });
+    });
+  }
+
+  /** Track whether the heatmap has been initialised with Plotly.newPlot. */
+  var heatmapInitialised = false;
+
+  /**
+   * Build heatmap trace and layout objects for the given mode and reference condition.
+   * Used by both the initial render (Plotly.newPlot) and subsequent updates (Plotly.react).
+   *
+   * @param {string} mode     - 'absolute' or 'delta'.
+   * @param {number} refIndex - 0-based column index of the reference condition (used in delta mode).
+   * @returns {{ trace: Object, layout: Object, config: Object }}
+   */
+  function buildHeatmapData(mode, refIndex) {
+    var zData, xLabels, colorscale, zmin, zmax, zmid, reversescale, hovertmpl;
+    var conditionCount = comparisonData.condition_labels.length;
+
+    if (mode === 'absolute') {
+      zData   = comparisonData.neg_log10_matrix;
+      xLabels = comparisonData.condition_labels;
+      colorscale = [
+        [0,    '#ffffcc'],
+        [0.25, '#feb24c'],
+        [0.5,  '#fd8d3c'],
+        [0.75, '#e31a1c'],
+        [1,    '#800026']
+      ];
+      var flatVals = comparisonData.neg_log10_matrix.reduce(function (acc, row) {
+        return acc.concat(row.filter(function (v) { return v !== null; }));
+      }, []);
+      zmin = 0;
+      zmax = flatVals.length > 0 ? Math.max.apply(null, flatVals.concat([5])) : 5;
+      zmid = undefined;
+      reversescale = false;
+      hovertmpl = '<b>%{y}</b><br>%{x}: %{z:.2f} (-log10 FDR)<extra></extra>';
+    } else {
+      // Delta mode — subtract reference column; optionally hide reference column when >= 3 conditions.
+      var deltaMatrix = computeDeltaMatrix(refIndex);
+      if (conditionCount >= 3) {
+        // Hide the reference column from the heatmap (cleaner visual when multiple conditions available).
+        xLabels = comparisonData.condition_labels.filter(function (_, i) { return i !== refIndex; });
+        zData = deltaMatrix.map(function (row) {
+          return row.filter(function (_, i) { return i !== refIndex; });
+        });
+      } else {
+        // 2-condition case: keep reference column as a zero column.
+        xLabels = comparisonData.condition_labels;
+        zData   = deltaMatrix;
+      }
+      colorscale  = 'RdBu';
+      reversescale = true; // red = more significant than ref (positive delta)
+      zmin = undefined;
+      zmax = undefined;
+      zmid = 0;
+      hovertmpl = '<b>%{y}</b><br>%{x}: %{z:+.2f} (delta -log10 FDR)<extra></extra>';
+    }
+
+    var trace = {
+      type: 'heatmap',
+      z: zData,
+      x: xLabels,
+      y: comparisonData.ke_titles,
+      colorscale: colorscale,
+      connectgaps: false,
+      hovertemplate: hovertmpl,
+      showscale: true,
+      colorbar: { title: { text: mode === 'delta' ? 'delta -log10(FDR)' : '-log10(FDR)', font: { size: 12 } } }
+    };
+
+    if (mode === 'absolute') {
+      trace.zmin = zmin;
+      trace.zmax = zmax;
+    } else {
+      trace.zmid = zmid;
+      trace.reversescale = reversescale;
+    }
+
+    var layout = {
+      margin: { l: 200, r: 60, t: 40, b: 120 },
+      xaxis: { tickangle: -30, tickfont: { size: 12 } },
+      yaxis: { autorange: 'reversed', tickfont: { size: 11 } },
+      plot_bgcolor: '#f0f0f0',
+      paper_bgcolor: '#ffffff'
+    };
+
+    var config = {
+      responsive: true,
+      displayModeBar: true,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d']
+    };
+
+    return { trace: trace, layout: layout, config: config };
+  }
+
+  /**
+   * Render or update the Plotly heatmap for the given mode and reference condition.
+   * Uses Plotly.newPlot on first call, Plotly.react for subsequent updates.
+   *
+   * @param {string} mode     - 'absolute' or 'delta'.
+   * @param {number} refIndex - 0-based column index of the reference condition (used in delta mode).
+   */
+  function updateHeatmap(mode, refIndex) {
+    var hd = buildHeatmapData(mode, refIndex);
+    if (!heatmapInitialised) {
+      // Initial render — create the Plotly figure from scratch.
+      Plotly.newPlot('heatmap-div', [hd.trace], hd.layout, hd.config);
+      heatmapInitialised = true;
+    } else {
+      // Subsequent updates — efficiently patch the existing figure without full re-create.
+      Plotly.react('heatmap-div', [hd.trace], hd.layout);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Table rendering (Plan 07-02: COMP-02)
+  // ---------------------------------------------------------------------------
+
+  /** Current sort state for the comparison table. */
+  var tableSortState = { colIdx: -1, ascending: true };
+
+  /**
+   * Convert a hex colour string (#rrggbb) to an rgba() CSS string.
+   *
+   * @param {string} hex   - Hex colour string, e.g. '#E6007E'.
+   * @param {number} alpha - Opacity value between 0 and 1.
+   * @returns {string} CSS rgba() string.
+   */
+  function hexToRgba(hex, alpha) {
+    var r = parseInt(hex.slice(1, 3), 16);
+    var g = parseInt(hex.slice(3, 5), 16);
+    var b = parseInt(hex.slice(5, 7), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+  }
+
+  /**
+   * Render the comparison enrichment table for the given mode and reference condition.
+   * Builds an HTML table and inserts it into #comparison-table-wrap.
+   *
+   * @param {string} mode     - 'absolute' or 'delta'.
+   * @param {number} refIndex - 0-based column index of the reference condition (used in delta mode).
+   */
+  function renderComparisonTable(mode, refIndex) {
+    var wrap = document.getElementById('comparison-table-wrap');
+    var conditionCount = comparisonData.condition_labels.length;
+    var keCount = comparisonData.ke_titles.length;
+
+    // Determine which columns to include.
+    // In delta mode with >= 3 conditions, hide the reference column.
+    var includeCol = comparisonData.condition_labels.map(function (_, i) {
+      if (mode === 'delta' && conditionCount >= 3 && i === refIndex) return false;
+      return true;
+    });
+
+    // Build header row.
+    // data-col carries the rendered column index (1-based, matching cells[] position in the row)
+    // so that sortTableByColumn can access cells[colIdx] without knowing about hidden columns.
+    var headerCells = '<th>Key Event</th>';
+    var renderedColIdx = 0; // tracks position in the rendered table (not original condition index)
+    comparisonData.condition_labels.forEach(function (label, i) {
+      if (!includeCol[i]) return;
+      renderedColIdx += 1;
+      headerCells += '<th class="compare-table__cond-header" data-col="' + renderedColIdx + '">' + escapeHtml(label) + '</th>';
+    });
+
+    // Build body rows.
+    var bodyRows = '';
+    for (var ke = 0; ke < keCount; ke++) {
+      var rowCells = '<td>' + escapeHtml(comparisonData.ke_titles[ke]) + '</td>';
+      for (var col = 0; col < conditionCount; col++) {
+        if (!includeCol[col]) continue;
+
+        var displayVal, sortVal, isSig, cellStyle = '', cellClass = '';
+        var fdrVal = comparisonData.fdr_matrix[ke] ? comparisonData.fdr_matrix[ke][col] : null;
+        var neg10Val = comparisonData.neg_log10_matrix[ke] ? comparisonData.neg_log10_matrix[ke][col] : null;
+
+        if (mode === 'absolute') {
+          if (fdrVal === null || fdrVal === undefined) {
+            displayVal = '&mdash;';
+            sortVal = 'Infinity';
+            isSig = false;
+          } else {
+            displayVal = fdrVal.toExponential(2);
+            sortVal = String(fdrVal);
+            isSig = fdrVal < 0.05;
+          }
+        } else {
+          // Delta mode: delta = neg_log10[ke][col] - neg_log10[ke][refIndex]
+          var refNeg10 = comparisonData.neg_log10_matrix[ke] ? comparisonData.neg_log10_matrix[ke][refIndex] : null;
+          if (neg10Val === null || neg10Val === undefined || refNeg10 === null || refNeg10 === undefined) {
+            displayVal = '&mdash;';
+            sortVal = 'Infinity';
+            isSig = false;
+          } else {
+            var delta = neg10Val - refNeg10;
+            var sign = delta >= 0 ? '+' : '';
+            displayVal = sign + delta.toFixed(2);
+            sortVal = String(delta);
+            isSig = false; // significance styling not applied in delta mode
+          }
+        }
+
+        if (isSig) {
+          var condColor = comparisonData.condition_colors[col] || '#ccc';
+          cellStyle = 'style="background:' + hexToRgba(condColor, 0.15) + '"';
+          cellClass = ' class="compare-table__sig"';
+        }
+
+        rowCells += '<td data-sort="' + sortVal + '" ' + cellStyle + cellClass + '>' + displayVal + '</td>';
+      }
+      bodyRows += '<tr>' + rowCells + '</tr>';
+    }
+
+    var tableHtml = '<table class="compare-table" id="compare-tbl">'
+      + '<thead><tr>' + headerCells + '</tr></thead>'
+      + '<tbody>' + bodyRows + '</tbody>'
+      + '</table>';
+
+    wrap.innerHTML = tableHtml;
+
+    // Re-apply sort indicator if a column was previously sorted.
+    tableSortState = { colIdx: -1, ascending: true };
+  }
+
+  /**
+   * Sort the comparison table by the given column index (1-based, matching data-col attributes).
+   * Toggles ascending/descending on repeated clicks.
+   *
+   * @param {number} colIdx - 1-based column index corresponding to data-col attribute.
+   */
+  function sortTableByColumn(colIdx) {
+    var tbl = document.getElementById('compare-tbl');
+    if (!tbl) return;
+
+    var tbody = tbl.querySelector('tbody');
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+
+    // Toggle sort direction if same column clicked again.
+    var ascending;
+    if (tableSortState.colIdx === colIdx) {
+      ascending = !tableSortState.ascending;
+    } else {
+      ascending = true; // default: ascending (most significant first = lowest FDR)
+    }
+    tableSortState = { colIdx: colIdx, ascending: ascending };
+
+    rows.sort(function (a, b) {
+      // data-col is 1-based relative to all table columns (KE column at cells[0],
+      // first condition at cells[1], etc.), so colIdx maps directly to cells[colIdx].
+      var aVal = parseFloat(a.cells[colIdx].dataset.sort);
+      var bVal = parseFloat(b.cells[colIdx].dataset.sort);
+      // NaN / Infinity sorts last regardless of direction.
+      if (isNaN(aVal) || !isFinite(aVal)) return 1;
+      if (isNaN(bVal) || !isFinite(bVal)) return -1;
+      return ascending ? aVal - bVal : bVal - aVal;
+    });
+
+    // Re-append sorted rows.
+    rows.forEach(function (row) { tbody.appendChild(row); });
+
+    // Update sort indicator on headers.
+    var headers = tbl.querySelectorAll('.compare-table__cond-header');
+    headers.forEach(function (th) {
+      var thCol = parseInt(th.getAttribute('data-col'), 10);
+      var baseText = th.textContent.replace(/\s*[▲▼]$/, '');
+      if (thCol === colIdx) {
+        th.textContent = baseText + (ascending ? ' ▲' : ' ▼');
+      } else {
+        th.textContent = baseText;
+      }
+    });
+  }
+
+  /**
+   * Rebuild the comparison table (called when mode or reference condition changes).
+   *
+   * @param {string} mode     - 'absolute' or 'delta'.
+   * @param {number} refIndex - 0-based column index of the reference condition.
+   */
+  function updateTable(mode, refIndex) {
+    renderComparisonTable(mode, refIndex);
+  }
+
+  /**
+   * Escape HTML special characters to prevent XSS in dynamically inserted content.
+   *
+   * @param {string} str - Raw string to escape.
+   * @returns {string} HTML-safe string.
+   */
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Event delegation for column header clicks (table is dynamically rebuilt).
+  document.getElementById('comparison-table-wrap').addEventListener('click', function (e) {
+    var th = e.target.closest('.compare-table__cond-header');
+    if (!th) return;
+    var colIdx = parseInt(th.getAttribute('data-col'), 10);
+    sortTableByColumn(colIdx);
+  });
+
+  // ---------------------------------------------------------------------------
+  // modechange listener — updates both heatmap and table
+  // ---------------------------------------------------------------------------
+  document.addEventListener('modechange', function (e) {
+    var mode = e.detail.mode;
+    var ref  = e.detail.ref;
+    var refIndex = comparisonData.condition_labels.indexOf(ref);
+    if (refIndex < 0) refIndex = 0;
+    updateHeatmap(mode, refIndex);
+    updateTable(mode, refIndex);
+  });
+
+  // ---------------------------------------------------------------------------
   // Initialise on load
   // ---------------------------------------------------------------------------
   if (!hasData()) {
@@ -254,6 +598,9 @@
   } else {
     renderLegend();
     populateRefSelector();
+    // Render heatmap and table in absolute mode on page load.
+    updateHeatmap('absolute', 0);
+    renderComparisonTable('absolute', 0);
   }
 
 })();
