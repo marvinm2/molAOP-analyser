@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v2.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: in_progress
-last_updated: "2026-03-02T16:35:23Z"
+status: unknown
+last_updated: "2026-03-02T18:50:21.200Z"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 14
-  completed_plans: 14
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 15
+  completed_plans: 15
 ---
 
 # Project State
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 8 of 8 (Comparison UI Polish)
-Plan: 2 of 2 in current phase (COMPLETE)
-Status: Phase 8 complete — all plans done
-Last activity: 2026-03-02 — 08-02 Binary pie chart logic (computeSliceData), delta mode banner
+Phase: 9 of 9 (Deployment Hardening)
+Plan: 1 of 1 in current phase (COMPLETE)
+Status: Phase 9 complete — all plans done
+Last activity: 2026-03-02 — 09-01 Batch Analysis nav link; init_database() moved to module level
 
 Progress: [██████████] 100%
 
@@ -101,6 +101,8 @@ Recent decisions affecting current work:
 - [08-02]: Negative delta slices rendered at opacity 0.25 (muted gray) not hidden — preserves directional signal
 - [08-02]: Delta banner update in modechange listener not setMode() — reference dropdown dispatches modechange without going through setMode()
 - [08-02]: pie_opacity_N mapped via data(pie_opacity_N) in stylesheet so opacity survives Cytoscape style updates
+- [Phase 09-deployment-hardening]: init_database() called at module level after csrf setup — runs under gunicorn/waitress/python app.py without double-initialisation
+- [Phase 09-deployment-hardening]: Batch Analysis nav link uses url_for('batch_page') — no hardcoded /batch path, consistent with other nav items
 
 ### Roadmap Evolution
 
@@ -120,5 +122,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 08-02-PLAN.md — Binary pie chart logic via computeSliceData() helper; delta mode banner above Cytoscape canvas.
+Stopped at: Completed 09-01-PLAN.md — Batch Analysis nav link and module-level init_database() for WSGI compatibility.
 Resume file: None

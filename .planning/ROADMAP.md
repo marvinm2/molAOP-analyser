@@ -25,7 +25,7 @@
 - [x] **Phase 6: Batch Analysis** - Sequential multi-file upload with condition tagging, SQLite state persistence, and harmonised background gene sets (completed 2026-03-01)
 - [x] **Phase 7: Comparison Visualisation** - Side-by-side heatmap, comparison table, multi-condition AOP network overlay, and delta mode (completed 2026-03-02)
 - [x] **Phase 8: Comparison UI Polish** - KE drawer unification, binary pie charts, delta mode banner (completed 2026-03-02)
-- [ ] **Phase 9: Deployment Hardening** - Batch nav link + DB init under WSGI (gap closure)
+- [x] **Phase 9: Deployment Hardening** - Batch nav link + DB init under WSGI (gap closure) (completed 2026-03-02)
 
 ## Phase Details
 
@@ -109,7 +109,7 @@ Phases execute in numeric order: 4 → 5 → 6 → 7
 | 6. Batch Analysis | 5/5 | Complete   | 2026-03-02 | 2026-03-01 |
 | 7. Comparison Visualisation | v2.0 | 3/3 | Complete | 2026-03-02 |
 | 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
-| 9. Deployment Hardening | v2.0 | 0/0 | Not started | - |
+| 9. Deployment Hardening | 1/1 | Complete   | 2026-03-02 | - |
 
 ### Phase 8: Comparison UI Polish
 
@@ -128,4 +128,4 @@ Plans:
 **Requirements**: BATC-01 (discoverability), SHAR-01, BATC-04 (deployment robustness)
 **Depends on:** Phase 8
 **Gap Closure:** Closes NAV-BATCH and DB-INIT-GUNICORN from v2.0-MILESTONE-AUDIT.md
-**Plans:** TBD
+**Plans:** 1/1 plans complete
