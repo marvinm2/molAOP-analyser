@@ -45,12 +45,12 @@ Requirements for v2.0 Batch Analysis & Dynamic AOPs milestone. Each maps to road
 
 ### Comparison Visualisation
 
-- [ ] **COMP-01**: KE × condition heatmap showing -log10(FDR) significance
-- [ ] **COMP-02**: Comparison enrichment table (rows = KEs, columns = conditions)
+- [x] **COMP-01**: KE × condition heatmap showing -log10(FDR) significance
+- [x] **COMP-02**: Comparison enrichment table (rows = KEs, columns = conditions)
 - [ ] **COMP-03**: Multi-condition AOP network overlay on shared KE skeleton
 - [ ] **COMP-04**: User can toggle between single-condition and comparison view
 - [ ] **COMP-05**: Delta mode showing change relative to user-selected reference condition
-- [ ] **COMP-06**: Condition colour legend using VHP4Safety palette
+- [x] **COMP-06**: Condition colour legend using VHP4Safety palette
 
 ## Future Requirements
 
@@ -106,12 +106,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BATC-03 | Phase 6 | Complete |
 | BATC-04 | Phase 6 | Complete |
 | BATC-05 | Phase 6 | Complete |
-| COMP-01 | Phase 7 | Pending |
-| COMP-02 | Phase 7 | Pending |
+| COMP-01 | Phase 7 | Complete |
+| COMP-02 | Phase 7 | Complete |
 | COMP-03 | Phase 7 | Pending |
 | COMP-04 | Phase 7 | Pending |
 | COMP-05 | Phase 7 | Pending |
-| COMP-06 | Phase 7 | Pending |
+| COMP-06 | Phase 7 | Complete |
 
 **Coverage:**
 - v2.0 requirements: 27 total

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Batch Analysis & Dynamic AOPs
-status: active
-last_updated: "2026-03-02T12:00:00.000Z"
+status: unknown
+last_updated: "2026-03-02T12:32:40.911Z"
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
-  total_plans: 10
-  completed_plans: 10
+  total_plans: 12
+  completed_plans: 11
 ---
 
 # Project State
@@ -23,11 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 ## Current Position
 
 Phase: 7 of 7 (Comparison Visualisation)
-Plan: 1 of 3 in current phase (COMPLETE)
+Plan: 2 of 3 in current phase (COMPLETE)
 Status: Active
-Last activity: 2026-03-02 — 07-01 comparison data service, GET /batch/<uuid>/compare route, compare.html scaffold with tabs and condition colour legend
+Last activity: 2026-03-02 — 07-02 Plotly heatmap and sortable comparison table with absolute/delta mode support
 
-Progress: [█████████░] 78%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -43,7 +43,7 @@ Progress: [█████████░] 78%
 | 04 (Shareable URLs) | 2/2 | 12m | 6m |
 | 05 (Network Interactivity) | 2/2 | 8m | 4m |
 | 06 (Batch Analysis) | 4/4 | 16m | 4m |
-| 07 (Comparison Visualisation) | 1/3 | 8m | 8m |
+| 07 (Comparison Visualisation) | 2/3 | 11m | 5.5m |
 
 *Updated after each plan completion*
 
@@ -88,6 +88,8 @@ Recent decisions affecting current work:
 - [07-01]: CONDITION_PALETTE colours assigned in fixed order by upload position — alphabetical sort prevented by explicit pivot column reindex after pivot_table()
 - [07-01]: FDR significance threshold at 0.05 for -log10 transform; non-significant cells return None for JSON-safe serialisation
 - [07-01]: compare.html dispatches CustomEvent('modechange') so Plans 07-02/03 can listen without coupling
+- [Phase 07]: Plotly.newPlot for initial heatmap render, Plotly.react for mode updates — avoids DOM re-creation
+- [Phase 07]: data-col carries rendered column index not original condition index so sort works correctly when reference column is hidden in delta mode
 
 ### Pending Todos
 
@@ -103,5 +105,5 @@ None.
 ## Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 07-01-PLAN.md — comparison data service, GET /batch/<uuid>/compare route, compare.html scaffold with tabs, control bar, and condition colour legend.
+Stopped at: Completed 07-02-PLAN.md — Plotly heatmap and sortable comparison table with absolute/delta mode support.
 Resume file: None
