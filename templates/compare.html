@@ -42,31 +42,7 @@
       padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc;
     }
 
-    /* KE detail drawer — slides in from the right on desktop */
-    .compare-ke-drawer {
-      position: fixed; right: -380px; top: 60px; bottom: 0; width: 360px;
-      background: #fff; box-shadow: -2px 0 8px rgba(0,0,0,0.15);
-      z-index: 50; padding: 20px; overflow-y: auto;
-      transition: right 0.25s ease;
-    }
-    .compare-ke-drawer--open { right: 0; }
-    .compare-ke-drawer__close {
-      position: absolute; top: 12px; right: 12px; background: none; border: none;
-      font-size: 24px; cursor: pointer; color: #666; line-height: 1;
-    }
-    .compare-ke-drawer__close:hover { color: #29235C; }
-    .compare-ke-drawer h3 {
-      margin: 0 32px 12px 0; font-size: 14px; color: #29235C; line-height: 1.4;
-    }
-
-    /* Mobile: drawer slides up from the bottom */
-    @media (max-width: 768px) {
-      .compare-ke-drawer {
-        right: auto; bottom: -100%; left: 0; top: auto; width: 100%; height: 60vh;
-        border-radius: 16px 16px 0 0; transition: bottom 0.25s ease;
-      }
-      .compare-ke-drawer--open { bottom: 0; right: auto; }
-    }
+    /* KE detail drawer — styling handled by .ke-drawer in style.css; width override in style.css #compare-ke-drawer */
   </style>
 {% endblock %}
 
@@ -142,14 +118,16 @@
     </div>
 
     <!-- KE detail drawer (outside tab panels, fixed position) -->
-    <div id="compare-ke-drawer" class="compare-ke-drawer">
-      <button class="compare-ke-drawer__close" id="close-ke-drawer">&times;</button>
-      <h3 id="ke-drawer-title"></h3>
-      <div id="ke-drawer-barchart"></div>
-      <a id="ke-drawer-wiki-link" href="#" target="_blank" rel="noopener"
-         class="btn btn--small btn--outline" style="margin-top:12px;display:inline-block;">
-        View on AOP-Wiki
-      </a>
+    <div id="compare-ke-drawer" class="ke-drawer" role="complementary" aria-label="Key Event Details">
+      <div class="ke-drawer__header">
+        <h3 class="ke-drawer__title" id="ke-drawer-title">Key Event Details</h3>
+        <button class="ke-drawer__close" id="close-ke-drawer" aria-label="Close">&times;</button>
+      </div>
+      <div class="ke-drawer__body">
+        <div id="ke-drawer-barchart"></div>
+        <a id="ke-drawer-wiki-link" href="#" target="_blank" rel="noopener"
+           class="ke-drawer__wiki-link">View on AOP-Wiki &rarr;</a>
+      </div>
     </div>
 
   </div><!-- /.compare-tab-panels -->
@@ -929,7 +907,7 @@
 
     // If the detail drawer is open, refresh its bar chart for the new mode.
     var drawer = document.getElementById('compare-ke-drawer');
-    if (drawer && drawer.classList.contains('compare-ke-drawer--open')) {
+    if (drawer && drawer.classList.contains('ke-drawer--open')) {
       var drawerTitle = document.getElementById('ke-drawer-title').textContent;
       var rowIdx = comparisonData.ke_titles.indexOf(drawerTitle);
       if (rowIdx >= 0) {
@@ -1106,14 +1084,14 @@
       plot_bgcolor: 'transparent'
     }, { responsive: true, displayModeBar: false });
 
-    document.getElementById('compare-ke-drawer').classList.add('compare-ke-drawer--open');
+    document.getElementById('compare-ke-drawer').classList.add('ke-drawer--open');
   }
 
   /**
    * Close the KE detail drawer.
    */
   function closeKeDrawer() {
-    document.getElementById('compare-ke-drawer').classList.remove('compare-ke-drawer--open');
+    document.getElementById('compare-ke-drawer').classList.remove('ke-drawer--open');
   }
 
   // ---------------------------------------------------------------------------
