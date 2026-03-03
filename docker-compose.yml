@@ -10,5 +10,5 @@ services:
       - .:/app
     environment:
       - FLASK_ENV=development
-      - BUILDER_API_URL=
+      - BUILDER_API_URL=https://molaop-builder.vhp4safety.nl/
       - SPARQL_ENDPOINT=https://aopwiki.rdf.bigcat-bioinformatics.org/sparql/
