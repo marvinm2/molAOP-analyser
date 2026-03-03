@@ -1,0 +1,199 @@
+<div class="card card--wide batch-wizard">
+    <h1>Batch Analysis</h1>
+    <p style="color: #555; margin-bottom: 24px;">
+        Upload 2&ndash;10 gene expression files, tag each with condition metadata, and run
+        enrichment analysis with a harmonised gene background across all files.
+    </p>
+
+    <!-- Step indicator -->
+    <div class="wizard-steps-indicator" id="step-indicator">
+        <div class="wizard-steps-indicator__item wizard-step-ind wizard-step-ind--1 wizard-steps-indicator__item--active" data-step="1">
+            <span class="wizard-steps-indicator__num">1</span> Upload Files
+        </div>
+        <div class="wizard-steps-indicator__sep">&rsaquo;</div>
+        <div class="wizard-steps-indicator__item wizard-step-ind wizard-step-ind--2" data-step="2">
+            <span class="wizard-steps-indicator__num">2</span> Tag Conditions
+        </div>
+        <div class="wizard-steps-indicator__sep">&rsaquo;</div>
+        <div class="wizard-steps-indicator__item wizard-step-ind wizard-step-ind--3" data-step="3">
+            <span class="wizard-steps-indicator__num">3</span> Analysis Settings
+        </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <!-- Step 1: Upload Files                                               -->
+    <!-- ---------------------------------------------------------------- -->
+    <section id="step-upload" class="wizard-step wizard-step--active">
+        <h2>1. Upload Files</h2>
+        <p>Upload 2&ndash;10 gene expression files (CSV, TSV, or TXT). All files must share the same column layout.</p>
+
+        <div id="batch-error-upload" class="batch-error"></div>
+
+        <!-- Drag-and-drop zone -->
+        <div class="drop-zone" id="batch-drop-zone" role="button" tabindex="0"
+             aria-label="Drag and drop files here or click to select">
+            <div class="drop-zone__icon">&#8613;</div>
+            <p class="drop-zone__text">Drag files here or click to select</p>
+            <p class="drop-zone__hint">CSV, TSV, TXT &mdash; max 10 files, 10 MB each</p>
+            <input type="file" id="batch-file-input" multiple accept=".csv,.tsv,.txt" style="display:none">
+        </div>
+
+        <!-- File queue -->
+        <div id="file-list" class="file-list"></div>
+
+        <!-- Cisplatin demo picker -->
+        <details class="demo-picker">
+            <summary>Or select demo cisplatin files</summary>
+            <div class="demo-picker-content">
+                <p style="font-size: 13px; color: #555; margin-bottom: 12px;">
+                    Select multiple dose/timepoint combinations from the Cisplatin Kidney dataset.
+                    Condition metadata will be auto-populated from filenames.
+                </p>
+                {% for group in cisplatin_demos %}
+                <div class="demo-group">
+                    <h4>{{ group.timepoint }}</h4>
+                    {% for f in group.files %}
+                    <label>
+                        <input type="checkbox" class="demo-cb" data-path="{{ f.path }}"
+                               data-label="{{ parse_filename(f.label).condition_label }}"
+                               data-dose="{{ parse_filename(f.label).dose }}"
+                               data-timepoint="{{ parse_filename(f.label).timepoint }}">
+                        {{ f.dose }}
+                    </label>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+        </details>
+
+        <div class="wizard-nav">
+            <button id="btn-next-tag" class="btn btn--primary" disabled>Next: Tag Conditions</button>
+            <span id="file-count-hint" style="font-size: 13px; color: #777; align-self: center;"></span>
+        </div>
+    </section>
+
+    <!-- ---------------------------------------------------------------- -->
+    <!-- Step 2: Tag Conditions                                             -->
+    <!-- ---------------------------------------------------------------- -->
+    <section id="step-tag" class="wizard-step">
+        <h2>2. Tag Conditions</h2>
+        <p>Assign a condition label to each file. Dose and timepoint are optional but help with downstream comparison.</p>
+
+        <div id="batch-error-tag" class="batch-error"></div>
+
+        <!-- Column mapping (shared for all files) -->
+        <div style="padding: 12px 16px; border: 1px solid #d0d0e0; border-radius: 6px; background: #f0f4fa; margin-bottom: 20px; font-size: 14px;">
+            <strong style="color: #29235C;">Column Mapping</strong>
+            <p style="margin: 6px 0 10px 0; color: #555; font-size: 13px;">
+                Specify the columns shared across all files. These will be detected automatically from the first file.
+            </p>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                <div class="settings-field">
+                    <label for="col-id">Gene ID column</label>
+                    <input type="text" id="col-id" name="id_col" placeholder="e.g. GeneSymbol" required>
+                </div>
+                <div class="settings-field">
+                    <label for="col-fc">log2FC column</label>
+                    <input type="text" id="col-fc" name="fc_col" placeholder="e.g. logFC" required>
+                </div>
+                <div class="settings-field">
+                    <label for="col-pval">p-value column</label>
+                    <input type="text" id="col-pval" name="pval_col" placeholder="e.g. P.Value" required>
+                </div>
+            </div>
+        </div>
+
+        <div id="tag-form-container"></div>
+
+        <div class="wizard-nav">
+            <button id="btn-back-upload" class="btn btn--secondary">Back</button>
+            <button id="btn-next-metadata" class="btn btn--primary">Next: Analysis Settings</button>
+        </div>
+    </section>
+
+    <!-- ---------------------------------------------------------------- -->
+    <!-- Step 3: Analysis Settings                                          -->
+    <!-- ---------------------------------------------------------------- -->
+    <section id="step-metadata" class="wizard-step">
+        <h2>3. Analysis Settings</h2>
+
+        <div id="batch-error-meta" class="batch-error"></div>
+        <div id="batch-warning-harmonised" class="batch-warning"></div>
+
+        <!-- Batch metadata -->
+        <h3>Batch Information</h3>
+        <div class="settings-grid">
+            <div class="settings-row">
+                <div class="settings-field">
+                    <label for="batch-name">Batch Name</label>
+                    <input type="text" id="batch-name" name="batch_name"
+                           placeholder="Auto-generated if left blank">
+                </div>
+                <div class="settings-field">
+                    <label for="batch-owner">Owner / Contact</label>
+                    <input type="text" id="batch-owner" name="owner"
+                           placeholder="e.g. Dr Smith">
+                </div>
+            </div>
+            <div class="settings-field">
+                <label for="batch-desc">Description (optional)</label>
+                <textarea id="batch-desc" name="description"
+                          placeholder="Additional notes about this batch..."></textarea>
+            </div>
+        </div>
+
+        <!-- AOP selection -->
+        <h3>AOP Selection</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Select the Adverse Outcome Pathway to use for all conditions in this batch.
+        </p>
+        <div class="typeahead-wrapper" style="margin-bottom: 24px;">
+            <input type="text" id="aop-search" placeholder="Search AOPs by name or ID..."
+                   autocomplete="off">
+            <input type="hidden" id="aop-hidden" name="aop_selection">
+            <ul id="aop-suggestions" class="typeahead-dropdown" hidden></ul>
+        </div>
+
+        <!-- Threshold controls -->
+        <h3>Log2FC Threshold</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Minimum absolute log2 fold change for a gene to be considered significant.
+            Applied equally to all conditions.
+        </p>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
+            <label for="logfc-threshold" style="font-weight: 600; color: #29235C; font-size: 14px;">
+                log2FC threshold:
+            </label>
+            <input type="number" id="logfc-threshold" name="logfc_threshold"
+                   value="0.0" step="0.1" min="0"
+                   style="width: 80px; display: inline-block; margin: 0; padding: 6px 8px;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(0)">0</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(0.5)">0.5</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(1.0)">1.0</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(1.5)">1.5</button>
+                <button type="button" class="btn--option" onclick="setLogfcThreshold(2.0)">2.0</button>
+            </div>
+        </div>
+
+        <div class="wizard-nav">
+            <button id="btn-back-tag" class="btn btn--secondary">Back</button>
+            <button id="btn-analyze" class="btn btn--primary">Start Batch Analysis</button>
+        </div>
+    </section>
+</div>
+
+<!-- Progress modal (shown during analysis, hidden initially) -->
+<div id="batch-progress-modal" class="batch-modal" style="display:none;" role="dialog"
+     aria-modal="true" aria-label="Batch analysis in progress">
+    <div class="batch-modal__content">
+        <h2>Batch Analysis in Progress</h2>
+        <p style="color: #555; font-size: 14px; margin-bottom: 20px;">
+            Analysing each condition sequentially. This may take several minutes.
+        </p>
+        <div id="batch-progress-container"></div>
+        <div style="margin-top: 20px;">
+            <button id="btn-cancel-batch" class="btn btn--secondary" type="button">Cancel</button>
+        </div>
+    </div>
+</div>

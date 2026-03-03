@@ -13,13 +13,22 @@ class TestFlaskRoutes:
     """Test Flask application routes."""
     
     def test_index_route(self, flask_client):
-        """Test main index page loads correctly."""
+        """Test main index page loads correctly with both tabs."""
         response = flask_client.get('/')
-        
+
         assert response.status_code == 200
         assert b'molAOP Analyser' in response.data
         assert b'Select Demo Dataset' in response.data
         assert b'Experiment Information' in response.data  # Metadata form
+        assert b'Single Analysis' in response.data  # Single tab
+        assert b'Batch Analysis' in response.data  # Batch tab
+
+    def test_batch_route_redirects(self, flask_client):
+        """Test that /batch redirects to /?tab=batch."""
+        response = flask_client.get('/batch')
+
+        assert response.status_code == 302
+        assert '/?tab=batch' in response.headers['Location']
     
     def test_preview_route_with_demo_file(self, flask_client):
         """Test preview route with demo file selection."""

@@ -8,12 +8,21 @@ This web application allows users to upload or select gene expression datasets a
 
 ### Data Processing & Analysis
 
-- Upload differential expression results or use demo datasets  
+- Upload differential expression results or use demo datasets
 - **Auto-detection** of gene ID, log2FC, and p-value columns with confidence indicators
 - Interactive volcano plot visualization with customizable thresholds
 - **Quick threshold options**: 0, 0.5, 1.0, 1.5, 2.0, Top 10%, Top 20% genes
 - KE enrichment analysis using Fisher's exact test with FDR correction
 - Support for multiple gene ID formats and duplicate handling
+
+### Batch Analysis
+
+- Analyse multiple datasets in a single session using the batch wizard
+- Upload up to 10 files at once or select from demo datasets
+- Tag each file with condition labels, timepoints, and doses
+- Shared analysis settings (AOP, threshold, p-value cutoff) applied across all files
+- Per-file progress tracking with real-time status updates
+- **Comparison view** for cross-condition analysis with heatmap and table views
 
 ### Visualization & Interactivity
 
@@ -36,63 +45,238 @@ This web application allows users to upload or select gene expression datasets a
 
 ---
 
-## Getting Started (Docker Compose)
+## Architecture Overview
 
-### 1. Clone the repository
+The application is built on a **Flask + Jinja2 + HTMX** stack:
+
+- **Backend**: Flask (Python) handles routing, data processing, and enrichment analysis
+- **Frontend**: Jinja2 templates with HTMX for dynamic partial updates (e.g., batch progress polling)
+- **Visualization**: Cytoscape.js for interactive AOP network graphs, Plotly.js for volcano plots
+- **Database**: SQLite via SQLAlchemy for experiment persistence and analysis history
+- **Styling**: Custom CSS using the VHP4Safety house style colour palette
+
+### Service Architecture
+
+The backend is organized into modular services under `services/`:
+
+| Module | Responsibility |
+|---|---|
+| `enrichment_service.py` | Fisher's exact test, FDR correction, enrichment statistics |
+| `network_service.py` | Cytoscape.js network graph generation |
+| `report_service.py` | PDF and HTML report generation |
+| `data_service.py` | Data loading, normalization, and validation |
+| `column_detector.py` | Auto-detection of gene ID, log2FC, and p-value columns |
+| `gene_id_validator.py` | Gene symbol validation and normalization |
+| `batch_service.py` | Multi-file batch analysis orchestration |
+| `comparison_service.py` | Cross-condition comparison and heatmap generation |
+| `aop_discovery_service.py` | AOP search and typeahead suggestions |
+| `sparql_service.py` | SPARQL queries for AOP-Wiki data |
+| `api_service.py` | REST API endpoints for programmatic access |
+
+### Data Flow
+
+1. **Reference Set Loading**: `helpers.py` merges KE-WP mappings, WP-gene edges, and node attributes into KE-to-gene dictionaries
+2. **Gene Expression Processing**: User data is normalized (uppercase symbols, duplicates combined via Fisher's method for p-values)
+3. **Enrichment Analysis**: Fisher's exact test on 2x2 contingency tables (significant/non-significant x in-KE/not-in-KE)
+4. **Network Visualization**: Results formatted as Cytoscape.js nodes and edges for interactive AOP pathway display
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.11+
+- pip (Python package manager)
+- Optionally: Docker and Docker Compose
+
+### Local Development Setup
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/marvinm2/molAOP-analyser.git
+cd molAOP-analyser
+
+# 2. Create and activate a virtual environment
+python -m venv venv
+source venv/bin/activate        # Linux/macOS
+# venv\Scripts\activate         # Windows
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Run the application
+python app.py
+```
+
+The app will be available at <http://localhost:5000>.
+
+### Docker Compose (Recommended)
 
 ```bash
 git clone https://github.com/marvinm2/molAOP-analyser.git
 cd molAOP-analyser
-```
-
-### 2. Build and run the app
-
-```bash
 docker-compose up --build
 ```
 
-### 3. Open in your browser
-
-Go to: <http://localhost:5000>
+Open <http://localhost:5000> in your browser.
 
 ---
 
 ## Project Structure
 
-```bash
-├── app.py                      # Flask app entry point
-├── helpers.py                 # Utility functions
-├── templates/                 # HTML templates
-│   ├── index.html
-│   └── results.html
+```
+molAOP-analyser/
+├── app.py                          # Flask app — routes, request handling
+├── config.py                       # Configuration (upload limits, demo datasets, AOP case studies)
+├── database.py                     # SQLAlchemy models and database manager (SQLite)
+├── helpers.py                      # Reference set loading (KE→gene mappings)
+├── cache_manager.py                # Caching layer for reference data and results
+├── validation.py                   # Input validation for datasets and parameters
+├── exceptions.py                   # Custom exception classes
+├── utils.py                        # Utility functions
+│
+├── services/                       # Modular service classes
+│   ├── enrichment_service.py       # Fisher's exact test, FDR correction
+│   ├── network_service.py          # Cytoscape.js network generation
+│   ├── report_service.py           # PDF/HTML report generation
+│   ├── data_service.py             # Data processing and normalization
+│   ├── column_detector.py          # Auto-detect gene ID, FC, p-value columns
+│   ├── gene_id_validator.py        # Gene symbol validation
+│   ├── batch_service.py            # Batch analysis orchestration
+│   ├── comparison_service.py       # Cross-condition comparison
+│   ├── aop_discovery_service.py    # AOP search and typeahead
+│   ├── sparql_service.py           # SPARQL queries for AOP-Wiki
+│   └── api_service.py              # REST API endpoints
+│
+├── templates/                      # Jinja2 templates
+│   ├── base.html                   # Base layout (nav, footer, HTMX)
+│   ├── index.html                  # Landing page (tabbed: single + batch)
+│   ├── _single_analysis.html       # Single analysis form partial
+│   ├── _single_analysis_scripts.html
+│   ├── _batch_analysis.html        # Batch wizard partial
+│   ├── _batch_analysis_scripts.html
+│   ├── results.html                # Analysis results display
+│   ├── compare.html                # Batch comparison view
+│   ├── batch_progress.html         # HTMX progress partial
+│   ├── batch_summary.html          # Batch results summary
+│   ├── documentation.html          # In-app documentation
+│   └── about.html                  # About page
+│
 ├── static/
-│   ├── css/style.css
-│   └── img/logo.png
-├── data/                      # Input mapping and demo datasets
-│   └── *.csv, *.tsv, *.xgmml
-├── uploads/                   # Temporary user uploads
-├── requirements.txt           # Python dependencies
-├── Dockerfile                 # Container build
-└── docker-compose.yml         # Service orchestration
+│   ├── css/style.css               # Application styles (VHP4Safety palette)
+│   └── img/logo.png                # VHP4Safety logo
+│
+├── data/                           # Reference data and demo datasets
+│   ├── aop_ke_map.csv              # AOP → KE ID mappings
+│   ├── aop_ker_edges.csv           # KE relationship edges within AOPs
+│   ├── KE-WP.csv                   # KE → WikiPathways ID links
+│   ├── edges_wpid_to_gene.csv      # WikiPathways → gene ID mappings
+│   ├── node_attributes.csv         # Gene ID → symbol mappings
+│   ├── ke_metadata.csv             # KE titles and type classifications
+│   ├── wikipathways_hsa_20240410.xgmml  # WikiPathways network data
+│   ├── GSE90122_SR12813.tsv        # PXR agonist demo dataset 1
+│   ├── GSE90122_TO90137.tsv        # PXR agonist demo dataset 2
+│   └── Cisplatin_Kidney/           # 42 cisplatin toxicity datasets
+│       └── CSP_{time}_{dose}.csv   # (4–72 hr, 0.1–50 uM)
+│
+├── tests/                          # Pytest test suite
+│   ├── conftest.py                 # Fixtures (Flask client, test data)
+│   ├── test_flask_routes.py        # Integration tests for web routes
+│   ├── test_column_detector.py     # Unit tests for column auto-detection
+│   ├── test_database.py            # Database model tests
+│   ├── test_report_service.py      # Report generation tests
+│   ├── test_aop_discovery.py       # AOP search tests
+│   └── test_shared_results.py      # Shared results feature tests
+│
+├── uploads/                        # Temporary user uploads (gitignored)
+├── molAOP_analyser.db              # SQLite database (auto-created)
+├── requirements.txt                # Python dependencies
+├── Dockerfile                      # Container build definition
+├── docker-compose.yml              # Service orchestration
+└── pytest.ini                      # Pytest configuration
 ```
 
 ---
 
 ## Demo Datasets
 
-The app includes preloaded differential expression datasets simulating chemical exposure:
+The app includes preloaded differential expression datasets:
 
-`GSE90122_TO90137.tsv`: PXR agonist 1
+### PXR Agonists
 
-`GSE90122_SR12813.tsv`: PXR agonist 2
+- `GSE90122_TO90137.tsv` — PXR agonist TO901317 gene expression data
+- `GSE90122_SR12813.tsv` — PXR agonist SR12813 gene expression data
+
+### Cisplatin Kidney Toxicity
+
+42 datasets covering cisplatin exposure in kidney cells across:
+
+- **Timepoints**: 4, 8, 16, 24, 48, 72 hours
+- **Doses**: 0.1, 0.5, 1, 2.5, 5, 10, 20, 30, 50 uM
+
+Naming pattern: `CSP_{timepoint}_{dose}.csv`
 
 ---
 
-## Development
-
-To run locally without Docker:
+## Testing
 
 ```bash
-pip install -r requirements.txt
-python app.py
+# Run all tests
+pytest
+
+# Run a specific test file
+pytest tests/test_flask_routes.py
+
+# Verbose output
+pytest -v
+
+# With coverage report
+pytest --cov
 ```
+
+### Test Files
+
+| File | Scope |
+|---|---|
+| `test_flask_routes.py` | Integration tests for all web routes and the full analysis workflow |
+| `test_column_detector.py` | Unit tests for auto-detection of gene ID, FC, and p-value columns |
+| `test_database.py` | SQLAlchemy model and database manager tests |
+| `test_report_service.py` | PDF and HTML report generation |
+| `test_aop_discovery.py` | AOP typeahead search functionality |
+| `test_shared_results.py` | Shared/public results link feature |
+
+---
+
+## Deployment
+
+### Docker Compose
+
+The recommended deployment method uses Docker Compose:
+
+```bash
+docker-compose up --build -d
+```
+
+This starts the application on port 5000 with Gunicorn as the WSGI server.
+
+### Data Directory
+
+The `data/` directory contains all reference datasets and must be present at runtime. It is included in the Docker image during build.
+
+### Database
+
+The SQLite database (`molAOP_analyser.db`) is auto-created on first run. For persistent storage in Docker deployments, mount it as a volume:
+
+```yaml
+volumes:
+  - ./molAOP_analyser.db:/app/molAOP_analyser.db
+```
+
+### Environment Variables
+
+The application reads configuration from `config.py`. Key settings:
+
+- `MAX_CONTENT_LENGTH`: Upload size limit (default 10 MB)
+- `UPLOAD_FOLDER`: Directory for temporary file storage
+- `SECRET_KEY`: Flask session secret (set via environment variable in production)

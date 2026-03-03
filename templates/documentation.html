@@ -92,6 +92,9 @@
             <li><a href="#input-format">Input File Format Specification</a></li>
             <li><a href="#statistical-methods">Statistical Methods</a></li>
             <li><a href="#interpreting-results">Interpreting Results</a></li>
+            <li><a href="#batch-analysis">Batch Analysis Tutorial</a></li>
+            <li><a href="#comparison-feature">Comparison Feature Guide</a></li>
+            <li><a href="#faq">Frequently Asked Questions</a></li>
         </ul>
     </div>
 
@@ -255,6 +258,167 @@ CYP3A4         3.21             0.00001   0.0001
             <li><strong>Download PNG:</strong> Export network visualization</li>
             <li><strong>Download Network:</strong> Export Cytoscape JSON file for further analysis</li>
         </ul>
+    </div>
+
+    <!-- Section 4: Batch Analysis Tutorial -->
+    <div class="doc-section" id="batch-analysis">
+        <h2>Batch Analysis Tutorial</h2>
+
+        <p>
+            Batch analysis lets you analyse multiple gene expression datasets in a single session, then compare
+            enrichment results across conditions. This is useful for dose&ndash;response or time-course experiments.
+        </p>
+
+        <h3>Step 1: Upload Files</h3>
+        <p>Click the <strong>Batch Analysis</strong> tab on the home page. You can add files in two ways:</p>
+        <ul>
+            <li><strong>Upload your own:</strong> Drag and drop up to 10 CSV/TSV/TXT files onto the drop zone, or click to browse</li>
+            <li><strong>Use demo datasets:</strong> Expand the "Select Cisplatin Demo Datasets" panel and tick the files you want to include</li>
+        </ul>
+        <p>Each uploaded file shows a preview of its first few rows so you can verify the data looks correct.</p>
+
+        <div class="info-box">
+            <strong>File requirements:</strong> Each file must contain gene identifiers, log&#x2082; fold change values,
+            and p-values &mdash; the same format as single analysis. All files should use the same column layout.
+        </div>
+
+        <h3>Step 2: Tag Conditions</h3>
+        <p>
+            Assign metadata to each file so results can be grouped and compared. For each file you can set:
+        </p>
+        <ul>
+            <li><strong>Condition label:</strong> A short name for the experimental condition (e.g., "10 uM", "24 hr")</li>
+            <li><strong>Timepoint:</strong> Exposure duration (e.g., "4hr", "24hr", "72hr")</li>
+            <li><strong>Dose:</strong> Concentration (e.g., "0.1uM", "50uM")</li>
+        </ul>
+        <p>For cisplatin demo files, these fields are auto-filled from the filename.</p>
+
+        <h3>Step 3: Analysis Settings</h3>
+        <p>Configure shared settings that apply to all files:</p>
+        <ul>
+            <li><strong>AOP selection:</strong> Search for an AOP by name or ID using the typeahead search</li>
+            <li><strong>Gene ID column / FC column / P-value column:</strong> Select which columns to use (applied to all files)</li>
+            <li><strong>log&#x2082;FC threshold:</strong> Minimum fold change for significance</li>
+            <li><strong>P-value cutoff:</strong> Maximum p-value for significance (default 0.05)</li>
+            <li><strong>Experiment metadata:</strong> Dataset ID, stressor name, owner, and description for reports</li>
+        </ul>
+
+        <h3>Running the Analysis</h3>
+        <p>
+            Click <strong>Run Batch Analysis</strong> to start. A progress modal shows the status of each file as it
+            is processed. Once complete, you are taken to the batch summary page where you can view individual results
+            or proceed to the comparison view.
+        </p>
+    </div>
+
+    <!-- Section 5: Comparison Feature Guide -->
+    <div class="doc-section" id="comparison-feature">
+        <h2>Comparison Feature Guide</h2>
+
+        <p>
+            After completing a batch analysis, use the comparison view to identify patterns across conditions.
+        </p>
+
+        <h3>Heatmap View</h3>
+        <p>
+            The heatmap displays KE enrichment significance (FDR values) across all analysed conditions. Rows represent
+            Key Events and columns represent conditions. Cells are coloured by significance level:
+        </p>
+        <ul>
+            <li>Darker colours indicate stronger enrichment (lower FDR)</li>
+            <li>Hover over a cell to see the exact FDR value, overlap count, and odds ratio</li>
+            <li>Rows and columns can be sorted to highlight patterns</li>
+        </ul>
+
+        <h3>Table View</h3>
+        <p>
+            The comparison table provides a detailed numeric view of enrichment results across conditions. Each row
+            is a Key Event, and you can compare overlap counts, p-values, FDR, and odds ratios side by side.
+        </p>
+
+        <h3>Network Overlay</h3>
+        <p>
+            The network comparison overlays enrichment results from multiple conditions onto the same AOP network.
+            KE nodes show aggregated significance across the selected conditions, making it easy to see which parts
+            of the pathway are consistently affected.
+        </p>
+
+        <h3>Delta Mode</h3>
+        <p>
+            Delta mode highlights the differences between two selected conditions. It shows which Key Events become
+            more or less enriched as conditions change (e.g., from low to high dose), helping identify
+            dose&ndash;response transitions.
+        </p>
+    </div>
+
+    <!-- Section 6: FAQ -->
+    <div class="doc-section" id="faq">
+        <h2>Frequently Asked Questions</h2>
+
+        <h3>What file formats are accepted?</h3>
+        <p>
+            CSV (comma-separated), TSV (tab-separated), and TXT files up to 10 MB. The file must contain column
+            headers in the first row and at least three columns: gene identifiers, log&#x2082; fold change, and p-values.
+        </p>
+
+        <h3>Which gene identifier types are supported?</h3>
+        <p>The tool accepts:</p>
+        <ul>
+            <li><strong>HGNC gene symbols</strong> (e.g., TP53, BRCA1, CYP3A4)</li>
+            <li><strong>Ensembl gene IDs</strong> (e.g., ENSG00000141510)</li>
+            <li><strong>Entrez gene IDs</strong> (e.g., 7157)</li>
+        </ul>
+        <p>
+            The identifier type is auto-detected. For best results, use a single identifier type consistently
+            throughout your file.
+        </p>
+
+        <h3>How are duplicate genes handled?</h3>
+        <p>
+            If the same gene appears multiple times (e.g., from probe-level data or &ldquo;///&rdquo;-separated
+            symbols), the tool combines them automatically:
+        </p>
+        <ul>
+            <li><strong>P-values:</strong> Combined using Fisher&rsquo;s method</li>
+            <li><strong>log&#x2082;FC values:</strong> Averaged (arithmetic mean)</li>
+        </ul>
+
+        <h3>What is the background universe?</h3>
+        <p>
+            The enrichment analysis uses <strong>all genes in your uploaded dataset</strong> as the background, not the
+            entire human genome. This makes the test more appropriate for platform-specific data (e.g., RNA-seq panels
+            that measure a subset of genes).
+        </p>
+
+        <h3>How is FDR calculated?</h3>
+        <p>
+            False Discovery Rate is calculated using the Benjamini&ndash;Hochberg procedure. It adjusts p-values to
+            account for multiple comparisons (one test per KE). An FDR &lt; 0.05 means there is less than a 5% chance
+            that a result at that significance level is a false positive.
+        </p>
+
+        <h3>How does batch harmonisation work?</h3>
+        <p>
+            In batch mode, all files are processed with the same analysis settings (AOP, thresholds, column mappings).
+            Gene identifiers are normalised to the same format across files, and the same reference KE gene sets are
+            used for all enrichment tests. This ensures results are directly comparable across conditions.
+        </p>
+
+        <h3>Can I export my results?</h3>
+        <p>Yes, several export options are available:</p>
+        <ul>
+            <li><strong>Reports:</strong> PDF or HTML reports with full analysis documentation</li>
+            <li><strong>Tables:</strong> Enrichment results as CSV or Excel files</li>
+            <li><strong>Network:</strong> Cytoscape JSON file for import into Cytoscape desktop</li>
+            <li><strong>Visualizations:</strong> Network as PNG image</li>
+        </ul>
+
+        <h3>Is my data stored on the server?</h3>
+        <p>
+            Uploaded files are stored temporarily during your session and cleaned up automatically. Experiment metadata
+            and analysis parameters are saved in the database for reproducibility, but your raw gene expression data
+            is not permanently stored.
+        </p>
     </div>
 
 </div>

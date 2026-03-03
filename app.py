@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, abort, session, make_response, send_file, jsonify, redirect
+from flask import Flask, render_template, request, abort, session, make_response, send_file, jsonify, redirect, url_for
 import pandas as pd
 import os
 import json
@@ -176,7 +176,10 @@ def index():
     Returns:
         str: Rendered HTML template for the main page
     """
-    return render_template('index.html', case_study_aops=Config.CASE_STUDY_AOPS)
+    return render_template('index.html',
+                           case_study_aops=Config.CASE_STUDY_AOPS,
+                           cisplatin_demos=get_cisplatin_demo_files(),
+                           parse_filename=parse_cisplatin_filename)
 
 @app.route('/documentation')
 def documentation():
@@ -499,7 +502,9 @@ def preview():
         pval_cutoff=pval_cutoff,
         pval_y=pval_y,
         columns_confirmed=columns_confirmed,
-        case_study_aops=Config.CASE_STUDY_AOPS
+        case_study_aops=Config.CASE_STUDY_AOPS,
+        cisplatin_demos=get_cisplatin_demo_files(),
+        parse_filename=parse_cisplatin_filename
     )
 
 
@@ -973,17 +978,12 @@ if reference_sets:
 
 @app.route('/batch')
 def batch_page():
-    """Render the batch upload wizard page.
-
-    Provides the cisplatin demo file list (grouped by timepoint) to the template
-    so checkboxes can be rendered server-side.
+    """Redirect to the main page with the batch tab active.
 
     Returns:
-        str: Rendered batch.html template
+        Response: 302 redirect to /?tab=batch
     """
-    demos = get_cisplatin_demo_files()
-    return render_template('batch.html', cisplatin_demos=demos,
-                           parse_filename=parse_cisplatin_filename)
+    return redirect(url_for('index') + '?tab=batch')
 
 
 @app.route('/batch/upload', methods=['POST'])

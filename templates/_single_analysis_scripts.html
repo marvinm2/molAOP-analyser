@@ -1,0 +1,385 @@
+<script>
+    // Volcano plot data and configuration from Flask backend
+    {% if volcano_data %}
+    const volcanoData = {{ volcano_data | tojson }};
+    const threshold = {{ logfc_threshold or 'null' }};
+    const pvalThreshold = {{ pval_cutoff }};
+    const pvalY = {{ pval_y | default(1.3) | float }};
+
+    // Configure Plotly scatter plot trace for volcano visualization
+    const trace = {
+        x: volcanoData.map(d => d.log2FC),  // X-axis: log2 fold change values
+        y: volcanoData.map(d => -Math.log10(d.pval)),  // Y-axis: -log10 p-values
+        text: volcanoData.map(d => d.ID),  // Gene identifiers for hover labels
+        mode: 'markers',
+        type: 'scatter',
+        marker: {
+            size: 6,
+            opacity: 0.7,
+            // Color-code points based on statistical significance and fold change
+            color: volcanoData.map(d => {
+                const fc = parseFloat(d.log2FC);
+                const pval = parseFloat(d.pval);
+                if (isNaN(fc) || isNaN(pval)) return 'gray';  // Invalid data
+
+                const sigPval = pval < pvalThreshold;  // Statistically significant p-value
+                const sigLeft = sigPval && fc <= -threshold;  // Significantly downregulated
+                const sigRight = sigPval && fc >= threshold;  // Significantly upregulated
+                const absFC = Math.abs(fc);
+
+                if (sigLeft) return 'blue';      // Downregulated genes
+                if (sigRight) return 'red';      // Upregulated genes
+                if (sigPval && absFC < threshold) return 'green';  // Significant but low fold change
+                return 'lightgray';  // Not statistically significant
+            })
+        },
+        hovertemplate: 'Gene: %{text}<br>log2FC: %{x}<br>-log10(p): %{y}<extra></extra>'
+    };
+
+    // Calculate data range for drawing significance threshold lines
+    const minX = Math.min(...volcanoData.map(d => parseFloat(d.log2FC)).filter(x => !isNaN(x)));
+    const maxX = Math.max(...volcanoData.map(d => parseFloat(d.log2FC)).filter(x => !isNaN(x)));
+
+    // Define significance threshold lines for the plot
+    const shapes = [
+        // Horizontal line marking p-value significance threshold (typically p = 0.05)
+        {
+            type: 'line',
+            x0: minX,  // Extend across full x-axis range
+            x1: maxX,
+            y0: pvalY,  // Y position: -log10(0.05) ≈ 1.3
+            y1: pvalY,
+            line: {
+                color: 'black',
+                width: 1,
+                dash: 'dash'  // Dashed line style
+            }
+        }
+    ];
+
+    // Add vertical fold change threshold lines if threshold is set
+    if (threshold !== null && !isNaN(threshold)) {
+        const maxY = Math.max(...volcanoData.map(d => -Math.log10(parseFloat(d.pval))).filter(y => !isNaN(y)));
+
+        shapes.push(
+            {
+                type: 'line',  // Positive fold change threshold line
+                x0: threshold,
+                x1: threshold,
+                y0: 0,
+                y1: maxY,  // Extend to maximum y-value
+                line: {
+                    color: 'black',
+                    width: 1,
+                    dash: 'dot'  // Dotted line style
+                }
+            },
+            {
+                type: 'line',  // Negative fold change threshold line
+                x0: -threshold,
+                x1: -threshold,
+                y0: 0,
+                y1: maxY,  // Extend to maximum y-value
+                line: {
+                    color: 'black',
+                    width: 1,
+                    dash: 'dot'  // Dotted line style
+                }
+            }
+        );
+    }
+
+    // Configure plot layout and styling
+    const layout = {
+        xaxis: { title: 'log2 Fold Change' },  // X-axis label
+        yaxis: { title: '-log10(p-value)' },   // Y-axis label
+        margin: { t: 30 },  // Top margin to accommodate title
+        shapes: shapes  // Add significance threshold lines
+    };
+
+    // Render the volcano plot using Plotly.js
+    Plotly.newPlot('volcano', [trace], layout);
+    {% endif %}
+</script>
+
+<script>
+// Show loading spinner during enrichment analysis submission
+document.addEventListener("DOMContentLoaded", function () {
+    const form = document.getElementById("enrichmentForm");
+    const spinner = document.getElementById("loadingSpinner");
+
+    // Add event listener to show spinner when enrichment analysis starts
+    if (form && spinner) {
+        form.addEventListener("submit", function () {
+            spinner.style.display = "block";  // Make spinner visible during processing
+        });
+    }
+
+    // Copy metadata from the main form to all hidden fields in other forms
+    function copyMetadataToForms() {
+        const metadataFields = ['dataset_id', 'owner', 'stressor', 'dosing', 'description'];
+
+        metadataFields.forEach(fieldName => {
+            const sourceField = document.getElementById(fieldName);
+            if (sourceField) {
+                const hiddenFields = document.querySelectorAll(`input[name="${fieldName}"][type="hidden"]`);
+                hiddenFields.forEach(hiddenField => {
+                    hiddenField.value = sourceField.value;
+                });
+            }
+        });
+    }
+
+    // Add event listeners to all forms to copy metadata before submission
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+        form.addEventListener('submit', function() {
+            copyMetadataToForms();
+        });
+    });
+
+    // Also copy metadata when metadata fields change
+    const metadataInputs = document.querySelectorAll('#metadataForm input, #metadataForm textarea');
+    metadataInputs.forEach(input => {
+        input.addEventListener('change', copyMetadataToForms);
+        input.addEventListener('input', copyMetadataToForms);  // For real-time updates
+    });
+});
+
+function setThreshold(value) {
+    document.getElementById('logfc_threshold').value = value;
+    // Submit volcanoForm specifically to update the plot while keeping columns confirmed
+    document.getElementById('volcanoForm').submit();
+}
+
+function setPercentageThreshold(percentage) {
+    if (typeof volcanoData !== 'undefined' && volcanoData.length > 0) {
+        // Calculate threshold based on percentage of most extreme log2FC values
+        const absLogFCs = volcanoData.map(d => Math.abs(parseFloat(d.log2FC) || 0)).sort((a, b) => b - a);
+        const targetIndex = Math.floor(absLogFCs.length * (percentage / 100));
+        const threshold = Math.round(absLogFCs[targetIndex] * 100) / 100; // Round to 2 decimals
+        document.getElementById('logfc_threshold').value = threshold;
+        // Submit volcanoForm specifically to update the plot while keeping columns confirmed
+        document.getElementById('volcanoForm').submit();
+    } else {
+        alert('Please load a dataset first to use percentage-based thresholds.');
+    }
+}
+</script>
+
+<script>
+// Drag-and-drop upload zone
+(function() {
+    var dropZone = document.getElementById('upload-drop-zone');
+    var fileInput = document.getElementById('file-input-hidden');
+    var submitBtn = document.getElementById('upload-submit-btn');
+
+    if (!dropZone || !fileInput) return;
+
+    // Click to browse
+    dropZone.addEventListener('click', function(e) {
+        if (e.target.id === 'drop-zone-remove') return;
+        fileInput.click();
+    });
+
+    // Keyboard accessibility
+    dropZone.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInput.click();
+        }
+    });
+
+    // Drag-over feedback
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropZone.classList.add('drop-zone--active');
+    });
+    dropZone.addEventListener('dragleave', function() {
+        dropZone.classList.remove('drop-zone--active');
+    });
+
+    // Drop handler
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropZone.classList.remove('drop-zone--active');
+        var file = e.dataTransfer.files[0];
+        if (file) setFile(file);
+    });
+
+    // File input change handler
+    fileInput.addEventListener('change', function() {
+        if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    function setFile(file) {
+        // Transfer to DataTransfer to set on hidden input
+        var dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+
+        document.getElementById('drop-zone-filename').textContent = file.name;
+        document.getElementById('drop-zone-filename').hidden = false;
+        document.getElementById('drop-zone-remove').hidden = false;
+        if (submitBtn) submitBtn.disabled = false;
+    }
+
+    document.getElementById('drop-zone-remove').addEventListener('click', function(e) {
+        e.stopPropagation();
+        fileInput.value = '';
+        document.getElementById('drop-zone-filename').hidden = true;
+        document.getElementById('drop-zone-remove').hidden = true;
+        if (submitBtn) submitBtn.disabled = true;
+    });
+
+    // Ensure metadata is copied into the upload form before submit
+    var uploadForm = document.getElementById('uploadForm');
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', function() {
+            var metadataFields = ['dataset_id', 'owner', 'stressor', 'dosing', 'description'];
+            metadataFields.forEach(function(fieldName) {
+                var source = document.getElementById(fieldName);
+                if (source) {
+                    var hidden = uploadForm.querySelector('input[name="' + fieldName + '"]');
+                    if (hidden) hidden.value = source.value;
+                }
+            });
+        });
+    }
+})();
+</script>
+
+<script>
+// AOP typeahead search — queries /api/aops as user types or on focus
+(function () {
+    // The typeahead elements only exist when the volcano section is rendered
+    const searchInput = document.getElementById('aop_search');
+    const hiddenInput = document.getElementById('aop_selection');
+    const suggestions = document.getElementById('aop_suggestions');
+
+    if (!searchInput || !hiddenInput || !suggestions) {
+        return; // Elements not present on this page load
+    }
+
+    let debounceTimer;
+
+    /**
+     * Format a single AOP object into a human-readable label.
+     * @param {Object} aop - AOP dict from /api/aops
+     * @returns {string}
+     */
+    function formatLabel(aop) {
+        const mappedInfo = aop.mapped_ke_count > 0
+            ? ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs mapped`
+            : '';
+        return `${aop.aop_id}: ${aop.title} (${aop.ke_count} KEs${mappedInfo})`;
+    }
+
+    /**
+     * Render a list of AOP objects (or an error dict) as dropdown items.
+     * @param {Array|Object} aops - Array of AOP dicts or {error: string}
+     */
+    function renderSuggestions(aops) {
+        suggestions.innerHTML = '';
+
+        // Handle error response
+        if (!Array.isArray(aops) && aops.error) {
+            const li = document.createElement('li');
+            li.textContent = aops.error;
+            li.style.color = '#EB5B25';
+            li.style.cursor = 'default';
+
+            const retryBtn = document.createElement('button');
+            retryBtn.textContent = 'Retry';
+            retryBtn.type = 'button';
+            retryBtn.style.marginLeft = '10px';
+            retryBtn.style.fontSize = '12px';
+            retryBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                fetchSuggestions(searchInput.value);
+            });
+            li.appendChild(retryBtn);
+            suggestions.appendChild(li);
+            suggestions.hidden = false;
+            return;
+        }
+
+        if (!Array.isArray(aops) || aops.length === 0) {
+            suggestions.hidden = true;
+            return;
+        }
+
+        aops.forEach(function (aop) {
+            const li = document.createElement('li');
+
+            // Main label: AOP ID and title
+            const mainText = document.createElement('span');
+            mainText.textContent = `${aop.aop_id}: ${aop.title} (${aop.ke_count} KEs)`;
+            li.appendChild(mainText);
+
+            // Mapping info badge
+            if (aop.mapped_ke_count > 0) {
+                const info = document.createElement('span');
+                info.className = 'mapped-info';
+                info.textContent = ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs mapped`;
+                li.appendChild(info);
+            }
+
+            li.dataset.id = aop.aop_id;
+
+            li.addEventListener('click', function () {
+                hiddenInput.value = aop.aop_id;
+                searchInput.value = formatLabel(aop);
+                suggestions.hidden = true;
+            });
+
+            suggestions.appendChild(li);
+        });
+
+        suggestions.hidden = false;
+    }
+
+    /**
+     * Fetch AOP suggestions from the server.
+     * @param {string} q - Search query (may be empty for on-focus defaults)
+     */
+    async function fetchSuggestions(q) {
+        try {
+            const res = await fetch(`/api/aops?q=${encodeURIComponent(q)}`);
+            if (!res.ok) {
+                let errMsg = 'Failed to load AOPs';
+                try {
+                    const err = await res.json();
+                    errMsg = err.error || errMsg;
+                } catch (_) {}
+                renderSuggestions({ error: errMsg });
+                return;
+            }
+            const aops = await res.json();
+            renderSuggestions(aops);
+        } catch (err) {
+            renderSuggestions({ error: 'Network error. Please check your connection.' });
+        }
+    }
+
+    // On focus: show mapped AOPs immediately (empty query returns mapped AOPs)
+    searchInput.addEventListener('focus', function () {
+        fetchSuggestions('');
+    });
+
+    // On input: debounced search
+    searchInput.addEventListener('input', function () {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+            fetchSuggestions(searchInput.value);
+        }, 250);
+    });
+
+    // Close suggestions when clicking outside the typeahead wrapper
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('.typeahead-wrapper')) {
+            suggestions.hidden = true;
+        }
+    });
+})();
+</script>
