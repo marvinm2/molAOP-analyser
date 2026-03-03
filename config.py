@@ -101,7 +101,7 @@ class Config:
         "AOP:33", "AOP:53", "AOP:105", "AOP:116", "AOP:128",
         "AOP:138", "AOP:177", "AOP:186", "AOP:256", "AOP:257",
         "AOP:258", "AOP:284", "AOP:384", "AOP:413", "AOP:437",
-        "AOP:447", "AOP:622",
+        "AOP:447", "AOP:472", "AOP:622",
     ]
 
     # AOP case studies
@@ -130,8 +130,9 @@ class Config:
         "kidney-437": {"id": "AOP:437", "label": "Inhibition of mitochondrial ETC complexes leading to kidney toxicity", "enabled": True, "source": "sparql"},
         "kidney-447": {"id": "AOP:447", "label": "Inhibition of mitochondrial ETC leading to kidney failure", "enabled": True, "source": "sparql"},
         "kidney-622": {"id": "AOP:622", "label": "Calcineurin inhibitor induced nephrotoxicity leading to kidney failure", "enabled": True, "source": "sparql"},
+        "kidney-472": {"id": "AOP:472", "label": "DNA adduct formation leading to kidney failure", "enabled": True, "source": "csv"},
         "ORGAN-NETWORK": {"label": "---ORGAN NETWORKS---", "enabled": False},
-        "Kidney-aop-network": {"id": "NETWORK:kidney", "label": "Kidney AOP network (all 17 AOPs combined)", "enabled": True, "source": "sparql"},
+        "Kidney-aop-network": {"id": "NETWORK:kidney", "label": "Kidney AOP network (all 18 AOPs combined)", "enabled": True, "source": "sparql"},
         "Liver-aop-network": {"id": "AOP:5", "label": "Liver AOP network", "enabled": False},
         "Brain-aop-network": {"id": "AOP:6", "label": "Brain AOP network", "enabled": False},
         "Lung-aop-network": {"id": "AOP:8", "label": "Lung AOP network", "enabled": False},
@@ -144,7 +145,7 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-change-in-production'
 
     # Builder API settings
-    BUILDER_API_URL = os.environ.get('BUILDER_API_URL', '')
+    BUILDER_API_URL = os.environ.get('BUILDER_API_URL', 'https://molaop-builder.vhp4safety.nl/')
     BUILDER_API_TIMEOUT = int(os.environ.get('BUILDER_API_TIMEOUT', '30'))
     CACHE_DIR = os.environ.get('CACHE_DIR', '/tmp/molaop_cache')
     CACHE_TTL = 3600  # 1 hour

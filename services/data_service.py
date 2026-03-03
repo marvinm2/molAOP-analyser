@@ -201,11 +201,37 @@ def load_aop_data(aop_id: str) -> Tuple[Set[str], pd.DataFrame, Dict[str, str], 
 
             # Combined network: use the aop_ids list from config
             if aop_id.startswith("NETWORK:") and aop_config and aop_config.get("aop_ids"):
-                sparql_ids = aop_config["aop_ids"]
+                all_ids = aop_config["aop_ids"]
+
+                # Split IDs by source: some AOPs are CSV-only
+                sparql_ids = []
+                csv_ids = []
+                for aid in all_ids:
+                    aid_source = "sparql"
+                    for entry in Config.CASE_STUDY_AOPS.values():
+                        if entry.get("id") == aid:
+                            aid_source = entry.get("source", "sparql")
+                            break
+                    if aid_source == "csv":
+                        csv_ids.append(aid)
+                    else:
+                        sparql_ids.append(aid)
+
+                # Fetch SPARQL AOPs
+                ke_list, edges, ke_type_map, ke_title_map = fetch_aop_ke_data_cached(sparql_ids)
+
+                # Merge in CSV-sourced AOPs
+                for csv_aop_id in csv_ids:
+                    csv_kes, csv_edges, csv_type_map, csv_title_map = _load_aop_data_csv(csv_aop_id)
+                    ke_list |= csv_kes
+                    edges = pd.concat([edges, csv_edges], ignore_index=True)
+                    ke_type_map.update(csv_type_map)
+                    ke_title_map.update(csv_title_map)
+                    logger.info(f"Merged CSV AOP {csv_aop_id}: +{len(csv_kes)} KEs, +{len(csv_edges)} edges")
             else:
                 sparql_ids = [aop_id]
+                ke_list, edges, ke_type_map, ke_title_map = fetch_aop_ke_data_cached(sparql_ids)
 
-            ke_list, edges, ke_type_map, ke_title_map = fetch_aop_ke_data_cached(sparql_ids)
             logger.info(f"Loaded AOP {aop_id} via SPARQL: {len(ke_list)} KEs, {len(edges)} edges")
             return ke_list, edges, ke_type_map, ke_title_map
 
