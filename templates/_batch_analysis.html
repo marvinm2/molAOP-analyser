@@ -38,9 +38,6 @@
             <input type="file" id="batch-file-input" multiple accept=".csv,.tsv,.txt" style="display:none">
         </div>
 
-        <!-- File queue -->
-        <div id="file-list" class="file-list"></div>
-
         <!-- Cisplatin demo picker -->
         <details class="demo-picker">
             <summary>Or select demo cisplatin files</summary>
@@ -65,6 +62,9 @@
                 {% endfor %}
             </div>
         </details>
+
+        <!-- File queue (below demo picker so selections don't push checkboxes down) -->
+        <div id="file-list" class="file-list"></div>
 
         <div class="wizard-nav">
             <button id="btn-next-tag" class="btn btn--primary" disabled>Next: Tag Conditions</button>

@@ -408,6 +408,41 @@ function buildTagForm() {
         row.appendChild(condField);
         row.appendChild(doseField);
         row.appendChild(tpField);
+
+        // Collapsible data preview (first 5 rows from upload)
+        if (entry.headRows && entry.headRows.length > 0) {
+            var preview = document.createElement('details');
+            preview.className = 'tag-row__preview';
+            var summary = document.createElement('summary');
+            summary.textContent = 'Preview (' + entry.headRows.length + ' rows)';
+            preview.appendChild(summary);
+
+            var tbl = document.createElement('table');
+            var thead = document.createElement('thead');
+            var hrow = document.createElement('tr');
+            Object.keys(entry.headRows[0]).forEach(function(col) {
+                var th = document.createElement('th');
+                th.textContent = col;
+                hrow.appendChild(th);
+            });
+            thead.appendChild(hrow);
+            tbl.appendChild(thead);
+
+            var tbody = document.createElement('tbody');
+            entry.headRows.forEach(function(r) {
+                var tr = document.createElement('tr');
+                Object.values(r).forEach(function(val) {
+                    var td = document.createElement('td');
+                    td.textContent = val === null || val === undefined ? '' : String(val);
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            tbl.appendChild(tbody);
+            preview.appendChild(tbl);
+            row.appendChild(preview);
+        }
+
         container.appendChild(row);
     });
 }

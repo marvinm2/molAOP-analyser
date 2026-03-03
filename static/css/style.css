@@ -1170,6 +1170,57 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   TAG ROW PREVIEW (collapsible data preview in batch Step 2)
+   ========================================================================== */
+
+.tag-row__preview {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.tag-row__preview summary {
+    cursor: pointer;
+    color: #307BBF;
+    font-weight: 500;
+    font-size: 12px;
+    margin-bottom: 4px;
+}
+
+.tag-row__preview summary:hover {
+    color: #29235C;
+}
+
+.tag-row__preview table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.tag-row__preview th {
+    background: #29235C;
+    color: #fff;
+    padding: 4px 8px;
+    text-align: left;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.tag-row__preview td {
+    padding: 3px 8px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tag-row__preview tr:nth-child(even) {
+    background: #f9f9f9;
+}
+
+/* ==========================================================================
    LANDING TABS
    ========================================================================== */
 
