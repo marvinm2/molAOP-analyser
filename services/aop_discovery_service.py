@@ -313,6 +313,22 @@ def build_aop_list(config) -> List[Dict]:
     for aop in aops:
         aop["mapped_ke_count"] = aop_to_mapped_count.get(aop["aop_id"], 0)
 
+    # Merge in configured AOPs from Config that are absent from SPARQL results
+    from config import Config  # local import to avoid circular deps
+    existing_ids = {a["aop_id"] for a in aops}
+    for entry in Config.CASE_STUDY_AOPS.values():
+        if not entry.get("enabled", False) or not entry.get("id"):
+            continue
+        aop_id = entry["id"]
+        if aop_id not in existing_ids:
+            aops.append({
+                "aop_id": aop_id,
+                "title": entry.get("label", aop_id),
+                "ke_count": 0,
+                "mapped_ke_count": 1,  # treat configured AOPs as mapped
+            })
+            logger.info("Merged configured AOP %s into discovery list", aop_id)
+
     # Sort: mapped first (by mapped_ke_count desc), then unmapped (by numeric AOP id)
     def _sort_key(aop: Dict):
         is_mapped = aop["mapped_ke_count"] > 0
