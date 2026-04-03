@@ -367,11 +367,17 @@ def run_batch(batch_id: int, db_url: str, reference_sets: Dict) -> None:
     """
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
     from database import BatchRecord, ConditionRecord
     from services.data_service import load_aop_data
     from config import Config
 
-    engine = create_engine(db_url, echo=False, pool_pre_ping=True)
+    engine_kwargs = dict(echo=False)
+    if 'sqlite' in db_url:
+        engine_kwargs.update(poolclass=StaticPool, connect_args={"check_same_thread": False})
+    else:
+        engine_kwargs.update(pool_pre_ping=True, pool_size=5, max_overflow=10)
+    engine = create_engine(db_url, **engine_kwargs)
     Session = sessionmaker(bind=engine)
     db_session = Session()
 

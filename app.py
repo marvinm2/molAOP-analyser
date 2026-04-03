@@ -38,11 +38,31 @@ from services.batch_service import (
 )
 from services.comparison_service import build_comparison_matrix, CONDITION_PALETTE
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging — JSON format when LOG_FORMAT=json (production), human-readable otherwise
+if os.environ.get('LOG_FORMAT') == 'json':
+    import json as _json_mod
+
+    class _JSONFormatter(logging.Formatter):
+        def format(self, record):
+            entry = {
+                'ts': self.formatTime(record),
+                'level': record.levelname,
+                'logger': record.name,
+                'msg': record.getMessage(),
+            }
+            if record.exc_info:
+                entry['exc'] = self.formatException(record.exc_info)
+            return _json_mod.dumps(entry)
+
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(_JSONFormatter())
+    logging.root.addHandler(_handler)
+    logging.root.setLevel(logging.INFO)
+else:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -60,6 +80,21 @@ csrf = CSRFProtect(app)
 # as well as python app.py. Must run before any route handler accesses db_manager.get_session().
 if not init_database():
     logger.warning("Database initialization failed - continuing without persistence")
+
+# Graceful shutdown for background batch threads
+_batch_threads: list = []
+_shutdown_event = threading.Event()
+
+import atexit
+
+def _shutdown_batch_threads():
+    """Join pending batch threads on app exit so work is not abandoned."""
+    _shutdown_event.set()
+    for t in _batch_threads:
+        t.join(timeout=60)
+    _batch_threads.clear()
+
+atexit.register(_shutdown_batch_threads)
 
 @app.context_processor
 def inject_csrf_token():
@@ -1239,9 +1274,12 @@ def batch_analyze():
     thread = threading.Thread(
         target=run_batch,
         args=(batch_id, db_url, current_reference_sets),
-        daemon=True,
+        daemon=False,
     )
+    _batch_threads.append(thread)
     thread.start()
+    # Prune finished threads to avoid unbounded growth
+    _batch_threads[:] = [t for t in _batch_threads if t.is_alive()]
     logger.info(f'batch_analyze: background thread started for batch {batch_id}')
 
     response_data = {

@@ -4,6 +4,7 @@ services:
   ke-enrichment:
     build: .
     container_name: ke_enrichment_app
+    restart: unless-stopped
     ports:
       - "5010:5000"
     volumes:
@@ -13,3 +14,14 @@ services:
       - FLASK_DEBUG=1
       - BUILDER_API_URL=https://molaop-builder.vhp4safety.nl/
       - SPARQL_ENDPOINT=https://aopwiki.rdf.bigcat-bioinformatics.org/sparql/
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

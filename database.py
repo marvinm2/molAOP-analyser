@@ -295,11 +295,22 @@ class DatabaseManager:
     def initialize(self):
         """Initialize database connection and create tables."""
         try:
-            self.engine = create_engine(
-                self.db_url,
-                echo=False,  # Set to True for SQL debugging
-                pool_pre_ping=True,  # Verify connections before use
-            )
+            engine_kwargs = dict(echo=False)
+            if 'sqlite' in self.db_url:
+                # SQLite does not support concurrent writers; use StaticPool
+                # with check_same_thread=False for multi-threaded Flask/batch use.
+                from sqlalchemy.pool import StaticPool
+                engine_kwargs.update(
+                    poolclass=StaticPool,
+                    connect_args={"check_same_thread": False},
+                )
+            else:
+                engine_kwargs.update(
+                    pool_pre_ping=True,
+                    pool_size=10,
+                    max_overflow=20,
+                )
+            self.engine = create_engine(self.db_url, **engine_kwargs)
             
             # Create all tables
             Base.metadata.create_all(bind=self.engine)
