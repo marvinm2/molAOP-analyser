@@ -709,7 +709,7 @@ def analyze():
         # Convert any numpy/pandas types to native Python types
         for row in enrichment_table:
             for key, value in row.items():
-                if pd.isna(value):
+                if isinstance(value, float) and (pd.isna(value) or math.isinf(value)):
                     row[key] = None
                 elif hasattr(value, 'item'):  # numpy scalar
                     row[key] = value.item()

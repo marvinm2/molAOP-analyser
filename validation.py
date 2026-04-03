@@ -101,24 +101,31 @@ def validate_threshold(threshold_str: str) -> Tuple[bool, Union[float, str]]:
 def validate_aop_selection(aop_id: str) -> Tuple[bool, str]:
     """
     Validate AOP selection.
-    
+
+    Accepts pre-configured case study AOPs as well as dynamically discovered
+    AOPs from SPARQL (any well-formed ``AOP:<number>`` or ``NETWORK:<name>``).
+
     Args:
         aop_id: AOP identifier
-    
+
     Returns:
         Tuple of (is_valid, error_message)
     """
     if not aop_id:
         return False, "AOP selection is required"
-    
-    # Check if AOP exists in our configuration
-    valid_aops = [aop_data.get('id') for aop_data in Config.CASE_STUDY_AOPS.values() 
+
+    # Accept any well-formed AOP-Wiki identifier or network prefix
+    if re.match(r'^(AOP:\d+|NETWORK:\w[\w-]*)$', aop_id):
+        return True, ""
+
+    # Also accept pre-configured case study IDs (may use custom naming)
+    valid_aops = [aop_data.get('id') for aop_data in Config.CASE_STUDY_AOPS.values()
                   if aop_data.get('id') and aop_data.get('enabled', True)]
-    
-    if aop_id not in valid_aops:
-        return False, f"Invalid AOP selection: {aop_id}"
-    
-    return True, ""
+
+    if aop_id in valid_aops:
+        return True, ""
+
+    return False, f"Invalid AOP selection: {aop_id}"
 
 def validate_form_data(form_data: Dict[str, Any]) -> Tuple[bool, List[str]]:
     """

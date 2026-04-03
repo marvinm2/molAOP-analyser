@@ -7,6 +7,7 @@ and core batch orchestration (background harmonisation, per-condition enrichment
 
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -325,7 +326,7 @@ def _run_condition(
     enrichment_table = enrichment_results.to_dict(orient='records')
     for row in enrichment_table:
         for key, value in row.items():
-            if isinstance(value, float) and (value != value):  # NaN check
+            if isinstance(value, float) and (value != value or math.isinf(value)):  # NaN/inf
                 row[key] = None
             elif hasattr(value, 'item'):  # numpy scalar
                 row[key] = value.item()

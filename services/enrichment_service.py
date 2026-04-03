@@ -1,6 +1,7 @@
 """
 Gene set enrichment analysis service.
 """
+import math
 import pandas as pd
 import logging
 from typing import Dict, Set, List, Any, Tuple
@@ -79,6 +80,11 @@ def run_enrichment_analysis(
             c = len(non_sig_in_ke)                # non-significant & in KE
             d = non_sig_genes - c                 # non-significant & not in KE
 
+            # Validate contingency table cells are non-negative
+            if b < 0 or d < 0:
+                logger.error(f"KE {ke}: invalid contingency table (a={a}, b={b}, c={c}, d={d}) — skipping")
+                continue
+
             # Run Fisher's exact test (one-tailed, greater)
             odds, pval = fisher_exact([[a, b], [c, d]], alternative="greater")
 
@@ -100,7 +106,7 @@ def run_enrichment_analysis(
             r_nsig_in.append(c)
             r_nsig_not.append(d)
             r_pct.append(round((a / len(ke_genes)) * 100, 1) if ke_genes else 0)
-            r_odds.append(round(odds, 4) if not pd.isna(odds) else 'NA')
+            r_odds.append(round(odds, 4) if (not pd.isna(odds) and not math.isinf(odds)) else 'NA')
             r_pval.append(pval)
             r_overlap.append(", ".join(sorted(sig_in_ke)))
             r_noverlap.append(a)

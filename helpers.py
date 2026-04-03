@@ -1,4 +1,8 @@
+import logging
+
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def load_reference_sets(ke_wp_path='data/KE-WP.csv',
@@ -32,11 +36,8 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
     wp_gene_df = pd.read_csv(wp_gene_path)
     node_df = pd.read_csv(node_path)
 
-    print("\n[DEBUG] Sample gene_id values from wp_gene_df:")
-    print(wp_gene_df['gene_id'].dropna().unique()[:10])
-
-    print("\n[DEBUG] Sample GeneID values from node_df:")
-    print(node_df['GeneID'].dropna().unique()[:10])
+    logger.debug("Sample gene_id values from wp_gene_df: %s", wp_gene_df['gene_id'].dropna().unique()[:10])
+    logger.debug("Sample GeneID values from node_df: %s", node_df['GeneID'].dropna().unique()[:10])
 
     # Normalize formatting
     ke_wp_df['WP_ID'] = ke_wp_df['WP_ID'].astype(str).str.upper().str.strip()
@@ -54,9 +55,9 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
 
     node_df['GeneName'] = node_df['GeneName'].astype(str).str.strip()
 
-    print("[DEBUG] KE-WP mappings:", ke_wp_df.shape)
-    print("[DEBUG] Gene-pathway mappings:", wp_gene_df.shape)
-    print("[DEBUG] Node annotation mappings:", node_df.shape)
+    logger.debug("KE-WP mappings: %s", ke_wp_df.shape)
+    logger.debug("Gene-pathway mappings: %s", wp_gene_df.shape)
+    logger.debug("Node annotation mappings: %s", node_df.shape)
 
     # Merge gene → annotation
     wp_gene_annotated = wp_gene_df.merge(
@@ -66,7 +67,7 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
         how='left'
     )
 
-    print("[DEBUG] After annotation merge:", wp_gene_annotated.shape)
+    logger.debug("After annotation merge: %s", wp_gene_annotated.shape)
 
     # Merge WP → KE
     merged = ke_wp_df.merge(
@@ -76,12 +77,21 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
         how='inner'
     )
 
-    print("[DEBUG] Final merged KE-gene mapping before dropna:", merged.shape)
+    pre_dropna_count = len(merged)
+    logger.debug("Final merged KE-gene mapping before dropna: %s", merged.shape)
 
     # Drop entries without gene symbol
     merged = merged.dropna(subset=['GeneName'])
 
-    print("[DEBUG] Final merged KE-gene mapping after dropna:", merged.shape)
+    logger.debug("Final merged KE-gene mapping after dropna: %s", merged.shape)
+
+    # Report any KE-WP mappings lost in the inner join
+    dropped_ke_wp = len(ke_wp_df) - merged['KE_ID'].nunique()
+    if dropped_ke_wp > 0:
+        logger.warning(
+            "Inner join dropped %d of %d KE-WP mappings (no matching WikiPathways genes)",
+            dropped_ke_wp, len(ke_wp_df)
+        )
 
     # Group into dict: KE_ID → set of gene symbols
     reference_sets = (
