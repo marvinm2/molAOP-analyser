@@ -47,34 +47,37 @@ def run_enrichment_analysis(
     
     logger.info(f"Statistical background: {len(all_genes)} total genes ({sig_genes} significant, {non_sig_genes} non-significant)")
     
-    results = []
-    
+    # Columnar result accumulation — avoids per-row dict allocation
+    r_ke = []; r_title = []; r_total = []; r_sig_in = []; r_sig_not = []
+    r_nsig_in = []; r_nsig_not = []; r_pct = []; r_odds = []; r_pval = []
+    r_overlap = []; r_noverlap = []
+
     for ke, ref_genes in filtered_reference_sets.items():
         try:
             # Find overlap between KE genes and user genes
             ke_genes = {g.strip().upper() for g in ref_genes} & all_genes
-            
+
             if not ke_genes:
                 logger.debug(f"No overlap found for KE {ke}")
                 continue
-                
+
             # Skip KEs with too few genes for reliable statistics
             if len(ke_genes) < 5:
                 logger.debug(f"Skipping KE {ke}: only {len(ke_genes)} genes (minimum 5 required)")
                 continue
-            
+
             sig_in_ke = {g for g in ke_genes if user_gene_status.get(g, False)}
             non_sig_in_ke = ke_genes - sig_in_ke
-            
+
             # Create 2x2 contingency table
             a = len(sig_in_ke)                    # significant & in KE
-            b = sig_genes - a                     # significant & not in KE  
+            b = sig_genes - a                     # significant & not in KE
             c = len(non_sig_in_ke)                # non-significant & in KE
             d = non_sig_genes - c                 # non-significant & not in KE
-            
+
             # Run Fisher's exact test (one-tailed, greater)
             odds, pval = fisher_exact([[a, b], [c, d]], alternative="greater")
-            
+
             # Add statistical warnings for edge cases
             if a == 0:
                 logger.warning(f"KE {ke}: No significant genes found - result may not be meaningful")
@@ -82,58 +85,50 @@ def run_enrichment_analysis(
                 logger.debug(f"KE {ke}: Small gene set ({len(ke_genes)} genes) - interpret with caution")
             elif a / len(ke_genes) > 0.9:
                 logger.debug(f"KE {ke}: Very high enrichment ratio ({a}/{len(ke_genes)}) - verify biological relevance")
-            
+
             logger.debug(f"KE {ke}: {len(ke_genes)} total genes, {a} significant overlap (p={pval:.2e})")
-            
-            results.append({
-                'KE': ke,
-                'Title': ke_title_map.get(ke, ke),
-                'total_KE_genes_in_dataset': len(ke_genes),
-                'sig_in_KE': a,
-                'sig_not_KE': b,
-                'non_sig_in_KE': c,
-                'non_sig_not_KE': d,
-                'pct_sig_in_KE': round((a / len(ke_genes)) * 100, 1) if ke_genes else 0,
-                'odds_ratio': round(odds, 4) if not pd.isna(odds) else 'NA',
-                'p_value': pval,
-                'overlap': ", ".join(sorted(sig_in_ke)),
-                'num_overlap': a
-            })
-            
+
+            r_ke.append(ke)
+            r_title.append(ke_title_map.get(ke, ke))
+            r_total.append(len(ke_genes))
+            r_sig_in.append(a)
+            r_sig_not.append(b)
+            r_nsig_in.append(c)
+            r_nsig_not.append(d)
+            r_pct.append(round((a / len(ke_genes)) * 100, 1) if ke_genes else 0)
+            r_odds.append(round(odds, 4) if not pd.isna(odds) else 'NA')
+            r_pval.append(pval)
+            r_overlap.append(", ".join(sorted(sig_in_ke)))
+            r_noverlap.append(a)
+
         except Exception as e:
             logger.error(f"Error processing KE {ke}: {e}")
             continue
-    
-    if not results:
+
+    if not r_ke:
         logger.error("No enrichment results generated")
         raise ValueError("No enrichment results generated")
-    
-    # Convert to DataFrame and apply FDR correction
-    df_results = pd.DataFrame(results)
-    df_results["FDR"] = multipletests(df_results["p_value"], method="fdr_bh")[1]
+
+    # Build DataFrame from columnar data and apply FDR correction
+    df_results = pd.DataFrame({
+        'Title': r_title,
+        'p_value': r_pval,
+        'FDR': multipletests(r_pval, method="fdr_bh")[1],
+        'num_overlap': r_noverlap,
+        'pct_sig_in_KE': r_pct,
+        'total_KE_genes_in_dataset': r_total,
+        'odds_ratio': r_odds,
+        'overlap': r_overlap,
+        'KE': r_ke,
+        'sig_in_KE': r_sig_in,
+        'sig_not_KE': r_sig_not,
+        'non_sig_in_KE': r_nsig_in,
+        'non_sig_not_KE': r_nsig_not,
+    })
     df_results = df_results.sort_values("FDR")
-    
-    # Reorder columns to prioritize most important information first
-    column_order = [
-        'Title',               # KE title (most important for user understanding)
-        'p_value',            # Statistical significance 
-        'FDR',                # Multiple testing corrected p-value
-        'num_overlap',        # Number of overlapping genes
-        'pct_sig_in_KE',      # Percentage enrichment
-        'total_KE_genes_in_dataset',  # KE gene set size
-        'odds_ratio',         # Effect size
-        'overlap',            # Specific genes (detailed view)
-        'KE',                 # KE ID (for reference)
-        'sig_in_KE',          # Contingency table details
-        'sig_not_KE',
-        'non_sig_in_KE', 
-        'non_sig_not_KE'
-    ]
-    
-    df_results = df_results[column_order]
-    
+
     logger.info(f"Enrichment analysis completed: {len(df_results)} results generated")
-    
+
     return df_results
 
 def build_ke_gene_mapping(
