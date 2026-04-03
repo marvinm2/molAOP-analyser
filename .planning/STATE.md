@@ -110,7 +110,9 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None.
+2 pending todos:
+- **Fix remaining test failures in database and report service** (testing) — 9 pre-existing failures from shallow mocks
+- **Separate demo setup from live analysis service** (ui) — dedicated demo page, clean main landing page
 
 ### Blockers/Concerns
 

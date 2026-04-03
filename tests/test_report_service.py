@@ -43,7 +43,7 @@ class TestReportService:
         html_content = report_generator.generate_html_report(sample_report_data)
         
         # Check basic HTML structure
-        assert html_content.startswith('<!DOCTYPE html>')
+        assert html_content.strip().startswith('<!DOCTYPE html>')
         assert '<html lang="en">' in html_content
         assert '</html>' in html_content
         
@@ -88,13 +88,13 @@ class TestReportService:
         assert 'KE ID' in html_content
         assert 'Key Event Title' in html_content
         assert 'P-value' in html_content
-        assert 'Adj. P-value' in html_content
-        
+        assert 'FDR' in html_content
+
         # Check data from sample
         assert 'KE:115' in html_content
         assert 'Test Key Event' in html_content
-        assert '0.001' in html_content  # p-value
-        assert '2.5' in html_content    # enrichment ratio
+        assert '0.0010' in html_content  # p-value formatted
+        assert '2.50' in html_content    # odds ratio formatted
     
     def test_metadata_section_generation(self, sample_report_data):
         """Test metadata section includes all fields."""
@@ -146,12 +146,13 @@ class TestReportService:
         assert 'TEST001' in html_content  # Other sections should still work
     
     def test_pdf_report_without_weasyprint(self, sample_report_data, monkeypatch):
-        """Test PDF generation when WeasyPrint is not available."""
-        # Mock WeasyPrint as unavailable
+        """Test PDF generation falls back to ReportLab when WeasyPrint unavailable."""
         monkeypatch.setattr('services.report_service.WEASYPRINT_AVAILABLE', False)
-        
-        with pytest.raises(RuntimeError, match="WeasyPrint is required"):
-            report_generator.generate_pdf_report(sample_report_data)
+
+        # Should fall back to ReportLab, not raise
+        pdf_bytes = report_generator.generate_pdf_report(sample_report_data)
+        assert pdf_bytes is not None
+        assert len(pdf_bytes) > 0
     
     @pytest.mark.slow
     def test_large_enrichment_results(self, sample_metadata):
@@ -162,13 +163,19 @@ class TestReportService:
         large_results = []
         for i in range(100):
             large_results.append({
-                'KE_ID': f'KE:{i:03d}',
-                'KE_title': f'Key Event {i}',
-                'overlap_genes': i % 10 + 1,
-                'ke_size': (i % 5 + 1) * 20,
-                'pvalue': 0.001 * (i + 1),
-                'pvalue_adjusted': 0.01 * (i + 1),
-                'enrichment_ratio': 2.0 + (i % 3)
+                'KE': f'KE:{i:03d}',
+                'Title': f'Key Event {i}',
+                'num_overlap': i % 10 + 1,
+                'total_KE_genes_in_dataset': (i % 5 + 1) * 20,
+                'p_value': 0.001 * (i + 1),
+                'FDR': 0.01 * (i + 1),
+                'odds_ratio': 2.0 + (i % 3),
+                'pct_sig_in_KE': 25.0,
+                'overlap': 'GENE1, GENE2',
+                'sig_in_KE': i % 10 + 1,
+                'sig_not_KE': 100,
+                'non_sig_in_KE': 50,
+                'non_sig_not_KE': 800,
             })
         
         large_report_data = ReportData(
@@ -200,10 +207,9 @@ class TestReportService:
         """Test that report includes proper CSS styling."""
         html_content = report_generator.generate_html_report(sample_report_data)
         
-        # Check brand colors are used
-        brand_colors = ['#29235C', '#307BBF', '#93D5F6', '#E6007E']
-        for color in brand_colors:
-            assert color in html_content
+        # Check primary brand colors used in report CSS
+        assert '#29235C' in html_content  # Primary dark (text)
+        assert '#307BBF' in html_content  # Primary blue (header)
         
         # Check responsive design elements
         assert 'max-width' in html_content

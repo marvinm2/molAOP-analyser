@@ -188,13 +188,13 @@ class TestDatabaseOperations:
         )
         
         assert record.dataset_id == 'MODEL_TEST'
-        assert record.upload_timestamp is not None  # Should be set by default
-        
+
         # Test to_dict method with database context
         session = db_manager.get_session()
         try:
             session.add(record)
             session.commit()
+            assert record.upload_timestamp is not None  # Default set on INSERT
             record_dict = record.to_dict()
             assert 'id' in record_dict
             assert record_dict['dataset_id'] == 'MODEL_TEST'

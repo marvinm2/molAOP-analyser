@@ -388,8 +388,8 @@ class ReportGenerator:
                 <td>{title}</td>
                 <td>{overlap_count}</td>
                 <td>{ke_size}</td>
-                <td>{pval:.2e if pval < 0.001 else pval:.4f}</td>
-                <td>{adj_pval:.2e if adj_pval < 0.001 else adj_pval:.4f}</td>
+                <td>{f"{pval:.2e}" if pval < 0.001 else f"{pval:.4f}"}</td>
+                <td>{f"{adj_pval:.2e}" if adj_pval < 0.001 else f"{adj_pval:.4f}"}</td>
                 <td>{odds_ratio_str}</td>
             </tr>
             """

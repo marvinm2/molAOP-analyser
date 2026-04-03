@@ -71,13 +71,19 @@ def sample_report_data(sample_metadata):
         id_type="HGNC",
         enrichment_results=[
             {
-                'KE_ID': 'KE:115',
-                'KE_title': 'Test Key Event',
-                'overlap_genes': 25,
-                'ke_size': 100,
-                'pvalue': 0.001,
-                'pvalue_adjusted': 0.01,
-                'enrichment_ratio': 2.5
+                'KE': 'KE:115',
+                'Title': 'Test Key Event',
+                'num_overlap': 25,
+                'total_KE_genes_in_dataset': 100,
+                'p_value': 0.001,
+                'FDR': 0.01,
+                'odds_ratio': 2.5,
+                'pct_sig_in_KE': 25.0,
+                'overlap': 'BRCA1, TP53, EGFR',
+                'sig_in_KE': 25,
+                'sig_not_KE': 125,
+                'non_sig_in_KE': 75,
+                'non_sig_not_KE': 775,
             }
         ]
     )
