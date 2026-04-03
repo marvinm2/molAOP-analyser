@@ -295,6 +295,7 @@ document.getElementById('btn-next-tag').addEventListener('click', function() {
 
     fetch('/batch/upload', {
         method: 'POST',
+        headers: {'X-CSRFToken': CSRF_TOKEN},
         body: formData,
     })
     .then(function(resp) {
@@ -531,6 +532,7 @@ document.getElementById('btn-analyze').addEventListener('click', function() {
 
     fetch('/batch/analyze', {
         method: 'POST',
+        headers: {'X-CSRFToken': CSRF_TOKEN},
         body: payload,
     })
     .then(function(resp) {

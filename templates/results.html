@@ -1084,7 +1084,7 @@ document.getElementById('copyLinkBtn').addEventListener('click', async function(
 
         const resp = await fetch('/api/share', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content},
             body: JSON.stringify({
                 enrichment_table: tableData,
                 network: network,
@@ -1185,6 +1185,7 @@ async function handleReportSubmit(event) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content,
       },
       body: JSON.stringify({ png_data: png })
     });

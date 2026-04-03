@@ -1,0 +1,16 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.env
+.claude
+.planning
+.pytest_cache
+htmlcov
+tests
+*.db
+flask.log
+CLAUDE.md
+README.md
+KE-MAPPING-API-REFERENCE.md

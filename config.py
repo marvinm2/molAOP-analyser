@@ -142,7 +142,19 @@ class Config:
     CASE_STUDY_AOPS["Kidney-aop-network"]["aop_ids"] = KIDNEY_AOP_IDS  # noqa: E501
 
     # Flask settings
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-key-change-in-production'
+    _secret = os.environ.get('SECRET_KEY')
+    if not _secret:
+        import warnings
+        import secrets as _secrets
+        warnings.warn("SECRET_KEY not set — using random key (sessions won't persist across restarts)")
+        _secret = _secrets.token_hex(32)
+    SECRET_KEY = _secret
+
+    # Session cookie security
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    PERMANENT_SESSION_LIFETIME = 86400  # 24 hours
+    SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', '0') == '1'
 
     # Builder API settings
     BUILDER_API_URL = os.environ.get('BUILDER_API_URL', 'https://molaop-builder.vhp4safety.nl/')

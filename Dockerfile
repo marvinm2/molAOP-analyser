@@ -27,6 +27,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+RUN mkdir -p /app/uploads /app/temp && \
+    useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app/uploads /app/temp
+
+USER appuser
+
 EXPOSE 5000
 
 CMD ["python", "app.py"]

@@ -5,6 +5,7 @@ import json
 import math
 import logging
 import threading
+import re
 import uuid
 import base64
 import time
@@ -64,6 +65,13 @@ if not init_database():
 def inject_csrf_token():
     """Make CSRF token available in all templates."""
     return dict(csrf_token=generate_csrf())
+
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+
+def _validate_uuid(uuid_str):
+    """Abort 400 if uuid_str is not a valid UUID format."""
+    if not _UUID_RE.match(uuid_str):
+        abort(400, description="Invalid identifier format")
 
 def allowed_file(filename):
     """Check if uploaded file has an allowed extension.
@@ -200,7 +208,7 @@ def about():
     return render_template('about.html')
 
 @app.route('/api/upload_network_png', methods=['POST'])
-@csrf.exempt
+
 def upload_network_png():
     """Upload network PNG data and store in temporary file.
 
@@ -236,10 +244,10 @@ def upload_network_png():
 
     except Exception as e:
         logger.error(f"Failed to upload network PNG: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Failed to process network image'}), 500
 
 @app.route('/api/share', methods=['POST'])
-@csrf.exempt
+
 def create_share():
     """Create a shareable UUID for the current analysis results.
 
@@ -312,15 +320,8 @@ def api_aops():
 
 @app.route('/results/<uuid_str>')
 def shared_results(uuid_str):
-    """Render a shared analysis result page by UUID.
-
-    Args:
-        uuid_str: 36-character UUID identifying the shared result.
-
-    Returns:
-        Rendered shared_results.html template (200), 404 if not found,
-        or 410 if the shared result has expired.
-    """
+    """Render a shared analysis result page by UUID."""
+    _validate_uuid(uuid_str)
     session_db = db_manager.get_session()
     try:
         record = session_db.query(SharedResult).filter_by(uuid=uuid_str).first()
@@ -387,25 +388,20 @@ def preview():
 
     # Handle demo file selection (pre-loaded datasets)
     elif demo_filename:
-        # Security: normalize and validate the demo filename path
-        normalized_path = os.path.normpath(demo_filename)
-        
-        # Ensure the path doesn't escape the data directory
-        if '..' in normalized_path or normalized_path.startswith('/'):
-            return f"Invalid demo file path: {demo_filename}", 400
-            
-        filename = os.path.basename(normalized_path)
+        # Security: resolve path and verify it stays within data/
+        from pathlib import Path
+        data_dir = Path('data').resolve()
+        requested = (data_dir / demo_filename).resolve()
+        if not str(requested).startswith(str(data_dir)) or not requested.is_file():
+            return "Invalid demo file path", 400
+
+        filename = requested.name
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
-        # Copy demo file from data directory to uploads directory (preserving subdirectory)
-        source_path = os.path.join('data', normalized_path)
-        if not os.path.exists(source_path):
-            return f"Demo file {normalized_path} not found.", 404
-        
-        # Copy the file to uploads directory
+
+        # Copy demo file from data directory to uploads directory
         import shutil
-        shutil.copy2(source_path, filepath)
-        logger.info(f"Copied demo file {normalized_path} from {source_path} to {filepath}")
+        shutil.copy2(str(requested), filepath)
+        logger.info(f"Copied demo file {demo_filename} to {filepath}")
 
     # Handle re-processing of existing uploaded file
     elif filename:
@@ -743,7 +739,7 @@ def analyze():
         
     except ValueError as e:
         logger.error(f"Validation error in analysis: {e}")
-        return f"Analysis error: {str(e)}", 400
+        return "Analysis error: please check your input data and parameters", 400
         
     except Exception as e:
         logger.error(f"Unexpected error in analysis: {e}", exc_info=True)
@@ -987,7 +983,7 @@ def batch_page():
 
 
 @app.route('/batch/upload', methods=['POST'])
-@csrf.exempt
+
 def batch_upload():
     """Receive files for a new batch, save to a UUID-scoped upload directory, and return previews.
 
@@ -1038,7 +1034,7 @@ def batch_upload():
             except Exception:
                 suggestions = {}
         except Exception as exc:
-            return jsonify({'error': f'Could not read {safe_name}: {exc}'}), 400
+            return jsonify({'error': f'Could not read {safe_name}. The file may be malformed.'}), 400
 
         file_previews.append({
             'filename': safe_name,
@@ -1049,16 +1045,15 @@ def batch_upload():
         })
 
     # Copy demo files from data/ to batch dir
+    from pathlib import Path
+    data_dir = Path('data').resolve()
     for rel_path in demo_paths:
-        norm = os.path.normpath(rel_path)
-        if '..' in norm or norm.startswith('/'):
-            return jsonify({'error': f'Invalid demo path: {rel_path}'}), 400
-        src = os.path.join('data', norm)
-        if not os.path.isfile(src):
-            return jsonify({'error': f'Demo file not found: {norm}'}), 404
-        safe_name = secure_filename(os.path.basename(norm))
+        requested = (data_dir / rel_path).resolve()
+        if not str(requested).startswith(str(data_dir)) or not requested.is_file():
+            return jsonify({'error': 'Invalid demo file path'}), 400
+        safe_name = secure_filename(requested.name)
         dest = os.path.join(batch_dir, safe_name)
-        _shutil.copy2(src, dest)
+        _shutil.copy2(str(requested), dest)
         try:
             df_head = pd.read_csv(dest, sep=None, engine='python', nrows=200)
             # Count total rows using fast byte-level line count (subtract 1 for header)
@@ -1075,7 +1070,7 @@ def batch_upload():
             except Exception:
                 suggestions = {}
         except Exception as exc:
-            return jsonify({'error': f'Could not read demo file {safe_name}: {exc}'}), 400
+            return jsonify({'error': f'Could not read demo file {safe_name}. The file may be malformed.'}), 400
 
         file_previews.append({
             'filename': safe_name,
@@ -1090,7 +1085,7 @@ def batch_upload():
 
 
 @app.route('/batch/analyze', methods=['POST'])
-@csrf.exempt
+
 def batch_analyze():
     """Validate, harmonise, create DB records, and launch the batch analysis in a background thread.
 
@@ -1163,7 +1158,7 @@ def batch_analyze():
         harmonised_genes, per_file_counts = harmonise_backgrounds(file_infos)
     except Exception as exc:
         logger.error(f'batch_analyze: harmonisation failed: {exc}')
-        return jsonify({'error': f'Failed to harmonise gene backgrounds: {exc}'}), 500
+        return jsonify({'error': 'Failed to harmonise gene backgrounds'}), 500
 
     harmonised_count = len(harmonised_genes)
     warning_msg = None
@@ -1234,7 +1229,7 @@ def batch_analyze():
     except Exception as exc:
         session_db.rollback()
         logger.error(f'batch_analyze: DB error: {exc}')
-        return jsonify({'error': f'Database error: {exc}'}), 500
+        return jsonify({'error': 'Database error while starting batch analysis'}), 500
     finally:
         session_db.close()
 
@@ -1262,18 +1257,8 @@ def batch_analyze():
 
 @app.route('/batch/<batch_uuid_str>/status')
 def batch_status(batch_uuid_str):
-    """Return htmx partial for the progress modal, and redirect when complete.
-
-    Used by the htmx polling loop in the progress modal to update per-file status.
-    When the batch reaches 'complete' status, returns an HX-Redirect header so
-    htmx navigates the browser to the summary page automatically.
-
-    Args:
-        batch_uuid_str: UUID of the batch to query.
-
-    Returns:
-        HTML partial (batch_progress.html) with optional HX-Redirect header.
-    """
+    """Return htmx partial for the progress modal, and redirect when complete."""
+    _validate_uuid(batch_uuid_str)
     session_db = db_manager.get_session()
     try:
         batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
@@ -1298,17 +1283,8 @@ def batch_status(batch_uuid_str):
 
 @app.route('/batch/<batch_uuid_str>/summary')
 def batch_summary(batch_uuid_str):
-    """Render the batch summary page after analysis completes.
-
-    Shows batch metadata, harmonisation note, and per-condition result cards
-    with links to individual condition results pages.
-
-    Args:
-        batch_uuid_str: UUID of the completed batch.
-
-    Returns:
-        Rendered batch_summary.html or redirect to /batch if not complete.
-    """
+    """Render the batch summary page after analysis completes."""
+    _validate_uuid(batch_uuid_str)
     session_db = db_manager.get_session()
     try:
         batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
@@ -1346,6 +1322,7 @@ def batch_condition_results(batch_uuid_str, position):
     Returns:
         Rendered results.html with condition-specific enrichment data.
     """
+    _validate_uuid(batch_uuid_str)
     session_db = db_manager.get_session()
     try:
         batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
@@ -1403,7 +1380,7 @@ def batch_condition_results(batch_uuid_str, position):
 
 
 @app.route('/batch/<batch_uuid_str>/cancel', methods=['POST'])
-@csrf.exempt
+
 def batch_cancel(batch_uuid_str):
     """Mark a batch as cancelled so the background thread stops after the current condition.
 
@@ -1413,6 +1390,7 @@ def batch_cancel(batch_uuid_str):
     Returns:
         JSON with updated status.
     """
+    _validate_uuid(batch_uuid_str)
     session_db = db_manager.get_session()
     try:
         batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
@@ -1427,26 +1405,15 @@ def batch_cancel(batch_uuid_str):
         return jsonify({'batch_uuid': batch.uuid, 'status': batch.status})
     except Exception as exc:
         session_db.rollback()
-        return jsonify({'error': str(exc)}), 500
+        return jsonify({'error': 'Failed to cancel batch'}), 500
     finally:
         session_db.close()
 
 
 @app.route('/batch/<batch_uuid_str>/compare')
 def batch_compare(batch_uuid_str):
-    """Render the multi-condition comparison page for a completed batch.
-
-    Builds a KE × condition comparison matrix from enrichment results and
-    serialises it as JSON for use by the client-side heatmap, table, and
-    network visualisations.
-
-    Args:
-        batch_uuid_str: UUID string identifying the batch.
-
-    Returns:
-        Rendered compare.html (200), 404 for unknown UUIDs, or a redirect to
-        /batch for batches that are not yet complete.
-    """
+    """Render the multi-condition comparison page for a completed batch."""
+    _validate_uuid(batch_uuid_str)
     session_db = db_manager.get_session()
     try:
         batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
@@ -1495,7 +1462,7 @@ if __name__ == '__main__':
         # Validate required data files exist
         Config.validate_data_files()
         logger.info("All required data files validated successfully")
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        app.run(debug=os.environ.get('FLASK_DEBUG', '0') == '1', host='0.0.0.0', port=5000)
     except FileNotFoundError as e:
         logger.error(f"Startup failed: {e}")
         raise
