@@ -1,0 +1,98 @@
+"""Tests for the data processing service."""
+import os
+import tempfile
+import pytest
+import pandas as pd
+from services.data_service import load_and_validate_data, process_gene_expression
+
+
+class TestLoadAndValidateData:
+    """Tests for file loading and validation."""
+
+    def _write_tsv(self, path, data):
+        df = pd.DataFrame(data)
+        df.to_csv(path, sep='\t', index=False)
+        return path
+
+    def test_loads_valid_tsv(self, tmp_path):
+        path = self._write_tsv(str(tmp_path / 'test.tsv'), {
+            'Gene': ['BRCA1', 'TP53', 'EGFR'],
+            'logFC': [1.5, -0.8, 2.1],
+            'pval': [0.001, 0.05, 0.0001],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert len(df) == 3
+        assert 'ID' in df.columns
+        assert 'log2FC' in df.columns
+        assert 'pval' in df.columns
+
+    def test_missing_column_raises(self, tmp_path):
+        path = self._write_tsv(str(tmp_path / 'test.tsv'), {
+            'Gene': ['BRCA1'], 'logFC': [1.5],
+        })
+        with pytest.raises(Exception):
+            load_and_validate_data(path, 'Gene', 'logFC', 'MISSING_COL')
+
+    def test_expands_triple_slash_genes(self, tmp_path):
+        """Genes separated by /// should be expanded into separate rows."""
+        path = self._write_tsv(str(tmp_path / 'test.tsv'), {
+            'Gene': ['BRCA1///TP53', 'EGFR'],
+            'logFC': [1.5, 2.0],
+            'pval': [0.001, 0.01],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert len(df) >= 3  # BRCA1, TP53, EGFR
+        assert 'BRCA1' in df['ID'].values
+        assert 'TP53' in df['ID'].values
+
+    def test_gene_ids_uppercased(self, tmp_path):
+        path = self._write_tsv(str(tmp_path / 'test.tsv'), {
+            'Gene': ['brca1', 'tp53'],
+            'logFC': [1.5, -0.8],
+            'pval': [0.001, 0.05],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert all(g == g.upper() for g in df['ID'])
+
+
+class TestProcessGeneExpression:
+    """Tests for gene expression processing and significance assignment."""
+
+    def _make_df(self, genes, fc_vals, pvals):
+        return pd.DataFrame({'ID': genes, 'log2FC': fc_vals, 'pval': pvals})
+
+    def test_basic_processing(self):
+        df = self._make_df(['BRCA1', 'TP53', 'EGFR'],
+                           [2.0, 0.1, -1.5], [0.001, 0.5, 0.01])
+        result, stats = process_gene_expression(df, logfc_threshold=1.0)
+        assert stats['total_genes'] == 3
+        assert 'significant' in result.columns
+
+    def test_threshold_zero_all_significant_if_low_pval(self):
+        """With threshold=0, all genes with pval<=cutoff are significant."""
+        df = self._make_df(['A', 'B', 'C'], [0.5, 0.1, 2.0], [0.01, 0.01, 0.01])
+        result, stats = process_gene_expression(df, logfc_threshold=0.0)
+        assert stats['significant_genes'] == 3
+
+    def test_high_threshold_reduces_significant(self):
+        df = self._make_df(['A', 'B', 'C'], [0.5, 1.5, 2.0], [0.01, 0.01, 0.01])
+        result, stats = process_gene_expression(df, logfc_threshold=1.0)
+        # Only B (1.5) and C (2.0) have |logFC| >= 1.0
+        assert stats['significant_genes'] == 2
+
+    def test_duplicate_genes_combined(self):
+        """Duplicate gene IDs should be combined via Fisher's method."""
+        df = self._make_df(['BRCA1', 'BRCA1', 'TP53'],
+                           [1.5, 2.0, 0.5], [0.01, 0.02, 0.05])
+        result, stats = process_gene_expression(df, logfc_threshold=0.0)
+        assert stats['total_genes'] == 2  # BRCA1 combined, TP53 separate
+        brca1_row = result[result['ID'] == 'BRCA1']
+        assert len(brca1_row) == 1
+        # Combined logFC should be mean of 1.5 and 2.0
+        assert abs(brca1_row.iloc[0]['log2FC'] - 1.75) < 0.01
+
+    def test_empty_after_processing_warns(self):
+        """All genes above p-value cutoff should yield zero significant genes."""
+        df = self._make_df(['A', 'B'], [2.0, 2.0], [0.9, 0.9])
+        result, stats = process_gene_expression(df, logfc_threshold=0.0)
+        assert stats['significant_genes'] == 0
