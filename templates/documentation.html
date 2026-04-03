@@ -94,7 +94,6 @@
             <li><a href="#interpreting-results">Interpreting Results</a></li>
             <li><a href="#batch-analysis">Batch Analysis Tutorial</a></li>
             <li><a href="#comparison-feature">Comparison Feature Guide</a></li>
-            <li><a href="#faq">Frequently Asked Questions</a></li>
         </ul>
     </div>
 
@@ -351,75 +350,6 @@ CYP3A4         3.21             0.00001   0.0001
         </p>
     </div>
 
-    <!-- Section 6: FAQ -->
-    <div class="doc-section" id="faq">
-        <h2>Frequently Asked Questions</h2>
-
-        <h3>What file formats are accepted?</h3>
-        <p>
-            CSV (comma-separated), TSV (tab-separated), and TXT files up to 10 MB. The file must contain column
-            headers in the first row and at least three columns: gene identifiers, log&#x2082; fold change, and p-values.
-        </p>
-
-        <h3>Which gene identifier types are supported?</h3>
-        <p>The tool accepts:</p>
-        <ul>
-            <li><strong>HGNC gene symbols</strong> (e.g., TP53, BRCA1, CYP3A4)</li>
-            <li><strong>Ensembl gene IDs</strong> (e.g., ENSG00000141510)</li>
-            <li><strong>Entrez gene IDs</strong> (e.g., 7157)</li>
-        </ul>
-        <p>
-            The identifier type is auto-detected. For best results, use a single identifier type consistently
-            throughout your file.
-        </p>
-
-        <h3>How are duplicate genes handled?</h3>
-        <p>
-            If the same gene appears multiple times (e.g., from probe-level data or &ldquo;///&rdquo;-separated
-            symbols), the tool combines them automatically:
-        </p>
-        <ul>
-            <li><strong>P-values:</strong> Combined using Fisher&rsquo;s method</li>
-            <li><strong>log&#x2082;FC values:</strong> Averaged (arithmetic mean)</li>
-        </ul>
-
-        <h3>What is the background universe?</h3>
-        <p>
-            The enrichment analysis uses <strong>all genes in your uploaded dataset</strong> as the background, not the
-            entire human genome. This makes the test more appropriate for platform-specific data (e.g., RNA-seq panels
-            that measure a subset of genes).
-        </p>
-
-        <h3>How is FDR calculated?</h3>
-        <p>
-            False Discovery Rate is calculated using the Benjamini&ndash;Hochberg procedure. It adjusts p-values to
-            account for multiple comparisons (one test per KE). An FDR &lt; 0.05 means there is less than a 5% chance
-            that a result at that significance level is a false positive.
-        </p>
-
-        <h3>How does batch harmonisation work?</h3>
-        <p>
-            In batch mode, all files are processed with the same analysis settings (AOP, thresholds, column mappings).
-            Gene identifiers are normalised to the same format across files, and the same reference KE gene sets are
-            used for all enrichment tests. This ensures results are directly comparable across conditions.
-        </p>
-
-        <h3>Can I export my results?</h3>
-        <p>Yes, several export options are available:</p>
-        <ul>
-            <li><strong>Reports:</strong> PDF or HTML reports with full analysis documentation</li>
-            <li><strong>Tables:</strong> Enrichment results as CSV or Excel files</li>
-            <li><strong>Network:</strong> Cytoscape JSON file for import into Cytoscape desktop</li>
-            <li><strong>Visualizations:</strong> Network as PNG image</li>
-        </ul>
-
-        <h3>Is my data stored on the server?</h3>
-        <p>
-            Uploaded files are stored temporarily during your session and cleaned up automatically. Experiment metadata
-            and analysis parameters are saved in the database for reproducibility, but your raw gene expression data
-            is not permanently stored.
-        </p>
-    </div>
 
 </div>
 {% endblock %}
