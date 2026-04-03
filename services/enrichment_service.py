@@ -30,12 +30,16 @@ def run_enrichment_analysis(
     logger.info("Starting enrichment analysis")
     
     # Filter reference sets to only include KEs in the AOP
-    filtered_reference_sets = {ke: genes for ke, genes in reference_sets.items() if ke in ke_list}
-    
+    # Pre-normalize gene symbols once to avoid repeated .strip().upper() in the loop
+    filtered_reference_sets = {
+        ke: frozenset(g.strip().upper() for g in genes)
+        for ke, genes in reference_sets.items() if ke in ke_list
+    }
+
     if not filtered_reference_sets:
         logger.error("No reference gene sets found for the selected AOP")
         raise ValueError("No reference gene sets found for the selected AOP")
-    
+
     # Define gene universe and significance status
     all_genes = set(df['ID'])
     user_gene_status = dict(zip(df['ID'], df['significant']))
@@ -54,8 +58,8 @@ def run_enrichment_analysis(
 
     for ke, ref_genes in filtered_reference_sets.items():
         try:
-            # Find overlap between KE genes and user genes
-            ke_genes = {g.strip().upper() for g in ref_genes} & all_genes
+            # Find overlap between KE genes and user genes (ref_genes already normalized)
+            ke_genes = ref_genes & all_genes
 
             if not ke_genes:
                 logger.debug(f"No overlap found for KE {ke}")
