@@ -244,15 +244,33 @@ function setPercentageThreshold(percentage) {
 </script>
 
 <script>
-// AOP typeahead search — queries /api/aops as user types or on focus
+// AOP typeahead search — queries /api/aops as user types or on focus.
+// Phase 10.1 (D-06): supports a recommended-only filter mode driven by `recommended_aops` from the server.
 (function () {
-    // The typeahead elements only exist when the volcano section is rendered
     const searchInput = document.getElementById('aop_search');
     const hiddenInput = document.getElementById('aop_selection');
     const suggestions = document.getElementById('aop_suggestions');
+    if (!searchInput || !hiddenInput || !suggestions) return;
 
-    if (!searchInput || !hiddenInput || !suggestions) {
-        return; // Elements not present on this page load
+    // ---- Phase 10.1 filter state ----
+    const dataNode = document.getElementById('recommended-aops-data');
+    const recommendedAops = dataNode ? JSON.parse(dataNode.textContent || '[]') : [];
+    const filterModeInput = document.getElementById('aop_filter_mode');
+    const filterBtn = document.getElementById('aop_filter_btn');
+    const filterLabel = document.getElementById('aop_filter_label');
+
+    function getFilterMode() {
+        if (!filterModeInput) return 'all';
+        return filterModeInput.value === 'recommended' ? 'recommended' : 'all';
+    }
+
+    function applyRecommendedFilter(aops) {
+        if (getFilterMode() !== 'recommended' || recommendedAops.length === 0) return aops;
+        // Recommended set may include 'NETWORK:kidney' which is not a standard AOP:N id —
+        // /api/aops returns AOP:N entries, so NETWORK:* sentinels never match. That is intentional:
+        // the kidney network is reachable via the existing CASE_STUDY_AOPS dropdown elsewhere.
+        const set = new Set(recommendedAops);
+        return aops.filter(a => set.has(a.aop_id));
     }
 
     let debounceTimer;
@@ -298,12 +316,13 @@ function setPercentageThreshold(percentage) {
             return;
         }
 
-        if (!Array.isArray(aops) || aops.length === 0) {
+        const filtered = applyRecommendedFilter(Array.isArray(aops) ? aops : []);
+        if (filtered.length === 0) {
             suggestions.hidden = true;
             return;
         }
 
-        aops.forEach(function (aop) {
+        filtered.forEach(function (aop) {
             const li = document.createElement('li');
 
             // Main label: AOP ID and title
@@ -317,6 +336,11 @@ function setPercentageThreshold(percentage) {
                 info.className = 'mapped-info';
                 info.textContent = ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs mapped`;
                 li.appendChild(info);
+            }
+
+            // Phase 10.1: highlight recommended AOPs with the blue left border (UI-SPEC §Color).
+            if (recommendedAops.indexOf(aop.aop_id) !== -1) {
+                li.classList.add('aop-recommended');
             }
 
             li.dataset.id = aop.aop_id;
@@ -375,5 +399,26 @@ function setPercentageThreshold(percentage) {
             suggestions.hidden = true;
         }
     });
+
+    // ---- Phase 10.1 filter toggle (D-06 sticky behavior) ----
+    if (filterBtn && filterLabel && filterModeInput) {
+        // Restore label from current mode (handles HTMX re-renders where mode was 'all').
+        function syncLabel() {
+            if (getFilterMode() === 'all') {
+                filterLabel.textContent = 'Showing all AOPs';
+                filterBtn.textContent = 'Hide all';
+            } else {
+                filterLabel.textContent = 'Showing recommended AOPs for this demo';
+                filterBtn.textContent = 'Show all AOPs';
+            }
+        }
+        filterBtn.addEventListener('click', function () {
+            filterModeInput.value = (getFilterMode() === 'all') ? 'recommended' : 'all';
+            syncLabel();
+            // Refresh the dropdown so the new mode applies.
+            fetchSuggestions(searchInput.value || '');
+        });
+        syncLabel();
+    }
 })();
 </script>

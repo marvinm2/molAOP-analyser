@@ -1,146 +1,28 @@
 <div id="single-analysis-panel">
 <div class="card card--narrow">
-    <!-- Tutorial-style explanation -->
+    <!-- Tutorial-style explanation (info-callout) -->
     <div class="info-callout">
-        <h2>Molecular AOP Analyser Demo</h2>
+        <h2>Molecular AOP Analyser</h2>
         <p>
-            To get started quickly, choose one of the demo gene expression datasets below. These represent experiments where cells were exposed to chemicals, and the resulting gene expression changes can be analyzed in the context of molecular AOPs. The datasets have been pre-processed.
+            Upload a gene expression dataset (CSV, TSV, or TXT) to analyse it against molecular Adverse Outcome Pathways. The tool will guide you through choosing the right columns, visualising gene expression with a volcano plot, and running KE enrichment against a selected AOP.
         </p>
         <p>
-            <em>(In a real case, you'd upload your own data instead.)</em>
+            <em>New here? <a href="{{ url_for('demos') }}">Try a curated demo dataset</a> first to see how the tool works.</em>
         </p>
-        <ul>
-            <li><strong>PXR agonist 1</strong> (GSE90122_TO90137): A reference dataset simulating exposure to a prototypical PXR activator.</li>
-            <li><strong>PXR agonist 2</strong> (GSE90122_SR12813): A second compound activating the same nuclear receptor, with a distinct gene profile.</li>
-            <li><strong>Cisplatin kidney exposure</strong>: 45 datasets covering time points from 4-72hr and doses from 0.1-50μM to study nephrotoxicity mechanisms.</li>
-        </ul>
-        <p>
-            After selecting a dataset, the tool will guide you through:
-        </p>
-        <ul>
-            <li>Choosing the correct data columns</li>
-            <li>Visualizing gene expression changes (volcano plot)</li>
-            <li>Running KE enrichment analysis and explore the molecular AOP network</li>
-        </ul>
     </div>
 
-    <!-- Demo dataset selection form -->
-    <form action="{{ url_for('preview') }}" method="post"
-          hx-post="{{ url_for('preview') }}"
-          hx-target="#single-analysis-panel"
-          hx-swap="outerHTML"
-          hx-indicator="#single-analysis-panel">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
-        <h2>Select Demo Dataset</h2>
-
-        <h3>PXR Agonists (Liver Steatosis)</h3>
-        <label>
-            <input type="radio" name="demo_file" value="GSE90122_TO90137.tsv" required>
-            PXR agonist 1 – GSE90122_TO90137
-        </label><br>
-
-        <label>
-            <input type="radio" name="demo_file" value="GSE90122_SR12813.tsv">
-            PXR agonist 2 – GSE90122_SR12813
-        </label><br><br>
-
-        <h3>Cisplatin Kidney Exposure</h3>
-        <details>
-            <summary>4 Hour Exposure</summary>
-            <div class="dose-grid">
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_0.1uM.csv">0.1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_0.5uM.csv">0.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_1uM.csv">1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_2.5uM.csv">2.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_5uM.csv">5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_10uM.csv">10μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_20uM.csv">20μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_30uM.csv">30μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_4hr_50uM.csv">50μM</label>
-            </div>
-        </details>
-
-        <details>
-            <summary>8 Hour Exposure</summary>
-            <div class="dose-grid">
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_0.1uM.csv">0.1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_0.5uM.csv">0.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_1uM.csv">1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_2.5uM.csv">2.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_5uM.csv">5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_10uM.csv">10μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_20uM.csv">20μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_30uM.csv">30μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_8hr_50uM.csv">50μM</label>
-            </div>
-        </details>
-
-        <details>
-            <summary>16 Hour Exposure</summary>
-            <div class="dose-grid">
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_0.1uM.csv">0.1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_0.5uM.csv">0.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_1uM.csv">1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_2.5uM.csv">2.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_5uM.csv">5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_10uM.csv">10μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_20uM.csv">20μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_30uM.csv">30μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_16hr_50uM.csv">50μM</label>
-            </div>
-        </details>
-
-        <details>
-            <summary>24 Hour Exposure</summary>
-            <div class="dose-grid">
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_0.1uM.csv">0.1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_0.5uM.csv">0.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_1uM.csv">1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_2.5uM.csv">2.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_5uM.csv">5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_10uM.csv">10μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_20uM.csv">20μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_30uM.csv">30μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_24hr_50uM.csv">50μM</label>
-            </div>
-        </details>
-
-        <details>
-            <summary>48 Hour Exposure</summary>
-            <div class="dose-grid">
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_0.1uM.csv">0.1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_0.5uM.csv">0.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_1uM.csv">1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_2.5uM.csv">2.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_5uM.csv">5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_10uM.csv">10μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_20uM.csv">20μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_30uM.csv">30μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_48hr_50uM.csv">50μM</label>
-            </div>
-        </details>
-
-        <details>
-            <summary>72 Hour Exposure</summary>
-            <div class="dose-grid">
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_0.1uM.csv">0.1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_0.5uM.csv">0.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_1uM.csv">1μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_2.5uM.csv">2.5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_5uM.csv">5μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_10uM.csv">10μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_20uM.csv">20μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_30uM.csv">30μM</label>
-                <label class="dose-label"><input type="radio" name="demo_file" value="Cisplatin_Kidney/CSP_72hr_50uM.csv">50μM</label>
-            </div>
-        </details>
-
-        <button type="submit">Load Demo Dataset</button>
-    </form>
+    <!-- Try a demo banner card (Phase 10.1, D-03, D-04) -->
+    <div class="card card--banner">
+        <div class="card--banner__text">
+            <h3>New here? Try a demo dataset</h3>
+            <p>Explore PXR liver steatosis and cisplatin nephrotoxicity examples — pre-loaded with recommended AOPs.</p>
+        </div>
+        <a href="{{ url_for('demos') }}" class="btn btn--primary card--banner__cta">Browse demos &rarr;</a>
+    </div>
 
     <!-- File upload with drag-and-drop -->
     <div style="margin-top: 24px; padding-top: 24px; border-top: 2px solid #eee;">
-        <h2>Or Upload Your Own Data</h2>
+        <h2>Upload Your Own Data</h2>
         <form action="{{ url_for('preview') }}" method="post" enctype="multipart/form-data" id="uploadForm"
               hx-post="{{ url_for('preview') }}"
               hx-target="#single-analysis-panel"
@@ -463,6 +345,14 @@
                 This step links the most affected genes in your dataset to key events in a specific Adverse Outcome Pathway.
                 Start typing an AOP name or ID, or click the box to see AOPs with available KE-gene mappings.
             </p>
+            {% if recommended_aops %}
+            <div class="aop-filter-toggle"
+                 data-recommended-aops="{{ recommended_aops | tojson | forceescape }}">
+                <span class="aop-filter-toggle__label" id="aop_filter_label">Showing recommended AOPs for this demo</span>
+                <button type="button" class="aop-filter-toggle__btn" id="aop_filter_btn">Show all AOPs</button>
+            </div>
+            <input type="hidden" name="aop_filter_mode" id="aop_filter_mode" value="recommended">
+            {% endif %}
             <div class="typeahead-wrapper" style="position: relative; max-width: 600px; margin: 0 auto;">
                 <input type="text" id="aop_search" placeholder="Search AOPs by name or ID..."
                        autocomplete="off" class="wide-dropdown"
@@ -484,6 +374,9 @@
 </div>
 {% endif %}
 
+{% if recommended_aops %}
+<script id="recommended-aops-data" type="application/json">{{ recommended_aops | tojson }}</script>
+{% endif %}
 {% include '_single_analysis_scripts.html' %}
 </div><!-- /#single-analysis-panel -->
 

@@ -386,15 +386,16 @@ class TestDemosPage:
 
     def test_preview_with_recommended_aops_renders_filter_toggle(self, flask_client):
         """POST /preview with recommended_aops shows the filter toggle UI (Plan 02)."""
-        from unittest.mock import patch, MagicMock
+        import pandas as pd
+        from unittest.mock import patch
+        # Use a real DataFrame so the volcano plot data path produces non-empty volcano_data.
+        mock_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FoldChange': [2.5, -1.2, 0.8],
+            'padj': [0.001, 0.05, 0.3],
+        })
         with patch('os.path.exists', return_value=True), \
-             patch('pandas.read_csv') as mock_read_csv:
-            mock_df = MagicMock()
-            mock_df.head.return_value.to_dict.return_value = [
-                {'Gene_Symbol': 'BRCA1', 'log2FoldChange': 2.5, 'padj': 0.001}
-            ]
-            mock_df.columns.tolist.return_value = ['Gene_Symbol', 'log2FoldChange', 'padj']
-            mock_read_csv.return_value = mock_df
+             patch('pandas.read_csv', return_value=mock_df):
 
             response = flask_client.post('/preview', data={
                 'demo_file': 'GSE90122_TO90137.tsv',
@@ -405,23 +406,24 @@ class TestDemosPage:
                 'pval_column': 'padj',
             })
             assert response.status_code == 200
-            assert b'aop-filter-toggle' in response.data
+            assert b'class="aop-filter-toggle"' in response.data
             assert b'Showing recommended AOPs for this demo' in response.data
             assert b'Show all AOPs' in response.data
-            assert b'recommended-aops-data' in response.data
+            assert b'<script id="recommended-aops-data"' in response.data
             assert b'AOP:1' in response.data
 
     def test_preview_without_recommended_aops_hides_filter_toggle(self, flask_client):
         """POST /preview WITHOUT recommended_aops (upload-your-own path) hides the toggle (D-07)."""
-        from unittest.mock import patch, MagicMock
+        import pandas as pd
+        from unittest.mock import patch
+        # Use a real DataFrame so the volcano plot data path produces non-empty volcano_data.
+        mock_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FoldChange': [2.5, -1.2, 0.8],
+            'padj': [0.001, 0.05, 0.3],
+        })
         with patch('os.path.exists', return_value=True), \
-             patch('pandas.read_csv') as mock_read_csv:
-            mock_df = MagicMock()
-            mock_df.head.return_value.to_dict.return_value = [
-                {'Gene_Symbol': 'BRCA1', 'log2FoldChange': 2.5, 'padj': 0.001}
-            ]
-            mock_df.columns.tolist.return_value = ['Gene_Symbol', 'log2FoldChange', 'padj']
-            mock_read_csv.return_value = mock_df
+             patch('pandas.read_csv', return_value=mock_df):
 
             # No recommended_aops in form data — simulates upload-your-own-data path.
             response = flask_client.post('/preview', data={
@@ -433,6 +435,7 @@ class TestDemosPage:
             })
             assert response.status_code == 200
             # Filter toggle UI must be ABSENT on the upload-your-own path.
-            assert b'aop-filter-toggle' not in response.data
-            assert b'Showing recommended AOPs' not in response.data
-            assert b'recommended-aops-data' not in response.data
+            # The JS code references 'recommended-aops-data' as a getElementById string,
+            # so we check for the HTML element tag (not just the bare string).
+            assert b'class="aop-filter-toggle"' not in response.data
+            assert b'<script id="recommended-aops-data"' not in response.data
