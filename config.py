@@ -96,7 +96,18 @@ class Config:
     )
     SPARQL_TIMEOUT = int(os.environ.get('SPARQL_TIMEOUT', '30'))
 
-    # Kidney AOP IDs for the combined kidney network
+    # Kidney AOP IDs for the combined kidney network.
+    #
+    # Curation criterion: this is a manually curated curator's working list —
+    # there is no single reproducible rule. The set is a mix of AOPs whose
+    # Adverse Outcome references kidney / renal failure and AOPs flagged as
+    # relevant by VHP4Safety collaborators in the kidney case study. To
+    # refresh, the maintainer reviews AOP-Wiki AOs touching renal endpoints
+    # and re-confirms the list with the kidney case-study lead; there is no
+    # script that reproduces this list automatically.
+    #
+    # Last reviewed: 2026-05-06
+    # Maintainer: Marvin Martens (m.martens@maastrichtuniversity.nl)
     KIDNEY_AOP_IDS = [
         "AOP:33", "AOP:53", "AOP:105", "AOP:116", "AOP:128",
         "AOP:138", "AOP:177", "AOP:186", "AOP:256", "AOP:257",
@@ -130,7 +141,6 @@ class Config:
         "kidney-437": {"id": "AOP:437", "label": "Inhibition of mitochondrial ETC complexes leading to kidney toxicity", "enabled": True, "source": "sparql"},
         "kidney-447": {"id": "AOP:447", "label": "Inhibition of mitochondrial ETC leading to kidney failure", "enabled": True, "source": "sparql"},
         "kidney-622": {"id": "AOP:622", "label": "Calcineurin inhibitor induced nephrotoxicity leading to kidney failure", "enabled": True, "source": "sparql"},
-        "kidney-472": {"id": "AOP:472", "label": "DNA adduct formation leading to kidney failure", "enabled": True, "source": "sparql"},
         "ORGAN-NETWORK": {"label": "---ORGAN NETWORKS---", "enabled": False},
         "Kidney-aop-network": {"id": "NETWORK:kidney", "label": "Kidney AOP network (all 18 AOPs combined)", "enabled": True, "source": "sparql"},
         "Liver-aop-network": {"id": "AOP:5", "label": "Liver AOP network", "enabled": False},
