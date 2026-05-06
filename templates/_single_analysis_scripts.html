@@ -103,22 +103,19 @@
 </script>
 
 <script>
-// Show loading spinner during enrichment analysis submission
-document.addEventListener("DOMContentLoaded", function () {
+// IIFE so this re-runs every time the partial is swapped in via HTMX (DOMContentLoaded only fires once).
+(function () {
     const form = document.getElementById("enrichmentForm");
     const spinner = document.getElementById("loadingSpinner");
 
-    // Add event listener to show spinner when enrichment analysis starts
     if (form && spinner) {
         form.addEventListener("submit", function () {
-            spinner.style.display = "block";  // Make spinner visible during processing
+            spinner.style.display = "block";
         });
     }
 
-    // Copy metadata from the main form to all hidden fields in other forms
     function copyMetadataToForms() {
         const metadataFields = ['dataset_id', 'owner', 'stressor', 'dosing', 'description'];
-
         metadataFields.forEach(fieldName => {
             const sourceField = document.getElementById(fieldName);
             if (sourceField) {
@@ -130,37 +127,34 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // Add event listeners to all forms to copy metadata before submission
-    const forms = document.querySelectorAll('form');
-    forms.forEach(form => {
-        form.addEventListener('submit', function() {
-            copyMetadataToForms();
-        });
+    // Sync metadata into every form's hidden fields just before submit (native + HTMX).
+    const forms = document.querySelectorAll('#single-analysis-panel form');
+    forms.forEach(f => {
+        f.addEventListener('submit', copyMetadataToForms);
+        f.addEventListener('htmx:configRequest', copyMetadataToForms);
     });
 
-    // Also copy metadata when metadata fields change
     const metadataInputs = document.querySelectorAll('#metadataForm input, #metadataForm textarea');
     metadataInputs.forEach(input => {
         input.addEventListener('change', copyMetadataToForms);
-        input.addEventListener('input', copyMetadataToForms);  // For real-time updates
+        input.addEventListener('input', copyMetadataToForms);
     });
-});
+})();
 
+// Globals exposed for inline onclick handlers in _single_analysis.html.
 function setThreshold(value) {
     document.getElementById('logfc_threshold').value = value;
-    // Submit volcanoForm specifically to update the plot while keeping columns confirmed
-    document.getElementById('volcanoForm').submit();
+    // requestSubmit() fires a real submit event so HTMX intercepts it (form.submit() bypasses listeners).
+    document.getElementById('volcanoForm').requestSubmit();
 }
 
 function setPercentageThreshold(percentage) {
     if (typeof volcanoData !== 'undefined' && volcanoData.length > 0) {
-        // Calculate threshold based on percentage of most extreme log2FC values
         const absLogFCs = volcanoData.map(d => Math.abs(parseFloat(d.log2FC) || 0)).sort((a, b) => b - a);
         const targetIndex = Math.floor(absLogFCs.length * (percentage / 100));
-        const threshold = Math.round(absLogFCs[targetIndex] * 100) / 100; // Round to 2 decimals
+        const threshold = Math.round(absLogFCs[targetIndex] * 100) / 100;
         document.getElementById('logfc_threshold').value = threshold;
-        // Submit volcanoForm specifically to update the plot while keeping columns confirmed
-        document.getElementById('volcanoForm').submit();
+        document.getElementById('volcanoForm').requestSubmit();
     } else {
         alert('Please load a dataset first to use percentage-based thresholds.');
     }

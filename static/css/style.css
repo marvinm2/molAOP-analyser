@@ -143,6 +143,29 @@ header {
     color: #ffffff;
 }
 
+.site-footer__inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.site-footer__platform-link {
+    display: inline-flex;
+    align-items: center;
+    line-height: 0;
+}
+
+.site-footer__platform-logo {
+    height: 28px;
+    width: auto;
+    background: #ffffff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    vertical-align: middle;
+}
+
 /* ==========================================================================
    TYPOGRAPHY
    ========================================================================== */
@@ -251,6 +274,77 @@ button:hover {
 
 .btn--teal:hover {
     background-color: #005A6C;
+}
+
+.btn--secondary {
+    background-color: #ffffff;
+    color: #29235C;
+    border: 1.5px solid #29235C;
+}
+
+.btn--secondary:hover {
+    background-color: #f0f0f7;
+    color: #29235C;
+}
+
+.btn--option,
+.btn--option-pct {
+    background-color: #ffffff;
+    color: #29235C;
+    border: 1.5px solid #307BBF;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+    margin: 2px;
+    width: auto;
+    display: inline-block;
+}
+
+.btn--option:hover,
+.btn--option-pct:hover {
+    background-color: #307BBF;
+    color: #ffffff;
+}
+
+.btn--option-pct {
+    border-color: #45A6B2;
+    color: #005A6C;
+}
+
+.btn--option-pct:hover {
+    background-color: #45A6B2;
+    color: #ffffff;
+}
+
+/* Disabled state for any button — readable, clearly inactive */
+button:disabled,
+.btn:disabled,
+.btn--primary:disabled,
+.btn--secondary:disabled,
+.btn--accent:disabled,
+.btn--teal:disabled,
+.btn--option:disabled,
+.btn--option-pct:disabled {
+    background-color: #d1d5db;
+    color: #6b7280;
+    border-color: #9ca3af;
+    cursor: not-allowed;
+    opacity: 1;
+}
+
+button:disabled:hover,
+.btn:disabled:hover,
+.btn--primary:disabled:hover,
+.btn--secondary:disabled:hover,
+.btn--accent:disabled:hover,
+.btn--teal:disabled:hover,
+.btn--option:disabled:hover,
+.btn--option-pct:disabled:hover {
+    background-color: #d1d5db;
+    color: #6b7280;
 }
 
 /* ==========================================================================

@@ -909,7 +909,7 @@ cy.on('tap', 'node', function(event) {
 
 // --- Expand All toggle with gene count guard (NETW-01, NETW-02) ---
 const totalGeneCount = Object.values(keToGenes).reduce(function(sum, arr) { return sum + arr.length; }, 0);
-const EXPAND_ALL_LIMIT = 200;
+const EXPAND_ALL_LIMIT = 500;
 
 function expandAll() {
     showSpinner('Expanding all KEs...');

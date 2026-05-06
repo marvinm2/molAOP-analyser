@@ -307,6 +307,6 @@
     }
 })();
 </script>
-{% include '_single_analysis_scripts.html' %}
+{# _single_analysis_scripts.html is included inside _single_analysis.html so it gets re-executed on HTMX swap #}
 {% include '_batch_analysis_scripts.html' %}
 {% endblock %}

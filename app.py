@@ -521,8 +521,7 @@ def preview():
         except Exception as e:
             logger.warning(f"Volcano plot generation failed: {e}")
 
-    return render_template(
-        "index.html",
+    template_vars = dict(
         preview=preview_rows,
         columns=columns,
         filename=filename,
@@ -535,8 +534,13 @@ def preview():
         columns_confirmed=columns_confirmed,
         case_study_aops=Config.CASE_STUDY_AOPS,
         cisplatin_demos=get_cisplatin_demo_files(),
-        parse_filename=parse_cisplatin_filename
+        parse_filename=parse_cisplatin_filename,
     )
+
+    # HTMX swaps in just the partial — no full-page reload, no scroll-to-top.
+    if request.headers.get("HX-Request") == "true":
+        return render_template("_single_analysis.html", **template_vars)
+    return render_template("index.html", **template_vars)
 
 
 

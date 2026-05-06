@@ -1,3 +1,4 @@
+<div id="single-analysis-panel">
 <div class="card card--narrow">
     <!-- Tutorial-style explanation -->
     <div class="info-callout">
@@ -24,7 +25,11 @@
     </div>
 
     <!-- Demo dataset selection form -->
-    <form action="{{ url_for('preview') }}#centered-container" method="post">
+    <form action="{{ url_for('preview') }}" method="post"
+          hx-post="{{ url_for('preview') }}"
+          hx-target="#single-analysis-panel"
+          hx-swap="outerHTML"
+          hx-indicator="#single-analysis-panel">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <h2>Select Demo Dataset</h2>
 
@@ -136,7 +141,11 @@
     <!-- File upload with drag-and-drop -->
     <div style="margin-top: 24px; padding-top: 24px; border-top: 2px solid #eee;">
         <h2>Or Upload Your Own Data</h2>
-        <form action="{{ url_for('preview') }}#centered-container" method="post" enctype="multipart/form-data" id="uploadForm">
+        <form action="{{ url_for('preview') }}" method="post" enctype="multipart/form-data" id="uploadForm"
+              hx-post="{{ url_for('preview') }}"
+              hx-target="#single-analysis-panel"
+              hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
 
             <!-- Hidden metadata fields (will be populated by existing JS) -->
@@ -242,7 +251,10 @@
     </div>
 
     <!-- Column selection form -->
-    <form action="{{ url_for('preview') }}#volcano-section" method="post" id="columnForm">
+    <form action="{{ url_for('preview') }}" method="post" id="columnForm"
+          hx-post="{{ url_for('preview') }}"
+          hx-target="#single-analysis-panel"
+          hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <input type="hidden" name="filename" value="{{ filename }}">
         <!-- Signal to the backend that the user has confirmed their column choices -->
@@ -382,7 +394,10 @@
 
     <div id="volcano" style="width:100%; height:500px;"></div>
 
-    <form action="{{ url_for('preview') }}#volcano-section" method="post" class="volcano-form" id="volcanoForm">
+    <form action="{{ url_for('preview') }}" method="post" class="volcano-form" id="volcanoForm"
+          hx-post="{{ url_for('preview') }}"
+          hx-target="#single-analysis-panel"
+          hx-swap="outerHTML">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <input type="hidden" name="filename" value="{{ filename }}">
         <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
@@ -468,3 +483,7 @@
     </div>
 </div>
 {% endif %}
+
+{% include '_single_analysis_scripts.html' %}
+</div><!-- /#single-analysis-panel -->
+
