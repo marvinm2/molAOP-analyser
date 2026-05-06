@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Cleanup, Gene-Set Export & UX Gaps
-status: Phase 10 in progress — Plan 10-01 complete; UAT (Plan 10-02) pending
-stopped_at: Phase 10 Plan 01 complete; awaiting Plan 10-02 UAT
-last_updated: "2026-05-06T13:08:00.000Z"
-last_activity: 2026-05-06 — Plan 10-01 executed (AOP:472 source-of-truth cleanup)
+status: executing
+stopped_at: Phase 10.1 Plan 01 complete
+last_updated: "2026-05-06T21:18:00.000Z"
+last_activity: 2026-05-06 -- Phase 10.1 Plan 01 executed (demos backend)
 progress:
-  total_phases: 12
-  completed_phases: 9
-  total_plans: 1
-  completed_plans: 1
+  total_phases: 10
+  completed_phases: 1
+  total_plans: 6
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -20,14 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-06)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 10 — AOP Source-of-Truth Cleanup
+**Current focus:** Phase 10.1 — Demos Page Restructure
 
 ## Current Position
 
-Phase: 10 — AOP Source-of-Truth Cleanup
-Plan: 10-01 complete; 10-02 (UAT) pending
-Status: Plan 10-01 shipped — AOP:472 CSV fallback removed, kidney-472 dict entry deleted, KIDNEY_AOP_IDS curation provenance documented; 124/124 tests passing
-Last activity: 2026-05-06 — Plan 10-01 executed
+Phase: 10.1 (Demos Page Restructure) — EXECUTING
+Plan: 2 of 3
+Status: Executing Phase 10.1
+Next recommended run: `/gsd-execute-phase 10.1`
+Last activity: 2026-05-06 -- Phase 10.1 Plan 01 executed (demos backend)
 
 ## Performance Metrics
 
@@ -109,11 +111,15 @@ Recent decisions affecting current work:
 - [10-01]: AOP:472 CSV rows deleted in-place (9 from aop_ke_map, 8 from aop_ker_edges); strict scope per D-05 — AOP:1, AOP:2, AOP:3, AOP:100 rows untouched
 - [10-01]: KER_ID gap (23–30) left intentionally — downstream code keys on (Source_KE, Target_KE) not contiguous KER_IDs, renumbering would be a noisy diff with no behavioural benefit
 - [10-01]: kidney-472 entry removed from CASE_STUDY_AOPS but AOP:472 stays in KIDNEY_AOP_IDS — combined Kidney-aop-network view (line ~152 wiring) is unchanged
+- [10.1-01]: DEMO_AOP_RECOMMENDATIONS uses fnmatch glob for Cisplatin_Kidney/* pattern — two-pass lookup (exact first, then glob fallback) via get_recommended_aops() classmethod
+- [10.1-01]: demos.html uses Jinja2 for-loops; rendered output has 62 cards (2 PXR + 6 curated cisplatin + 54 in details), not 3 source occurrences
+- [10.1-01]: /preview extended to read recommended_aops from form POST or query-string GET fallback; parsed list passed to template as recommended_aops variable
 
 ### Roadmap Evolution
 
 - Phase 8 added: Comparison UI Polish — fix KE detail drawer sizing/overlap, missing AOP-Wiki link, pie chart slice sizing, delta mode network clarity
 - v3.0 milestone planned (2026-05-06): Phase 10 (AOP source-of-truth cleanup), Phase 11 (gene-set export GMT/CSV + Cytoscape p-value embedding), Phase 12 (upload widget + tech-debt sweep)
+- Phase 10.1 inserted after Phase 10: Demos page restructure - move demos off main page (URGENT)
 
 ### Pending Todos
 
@@ -122,6 +128,7 @@ Recent decisions affecting current work:
 - **Separate demo setup from live analysis service** (ui) — dedicated demo page, clean main landing page
 
 Resolved:
+
 - ~~**Fix remaining test failures in database and report service**~~ — resolved by commit `0b7c297 fix: resolve all 9 remaining test failures` before Phase 10 began; pytest now reports 124 passed, 0 failed.
 
 ### Blockers/Concerns
@@ -134,6 +141,6 @@ Resolved:
 
 ## Session Continuity
 
-Last session: 2026-05-06T13:08:00.000Z
-Stopped at: Phase 10 Plan 01 complete (commits 2bb37c2, 7e21d57); awaiting Plan 10-02 UAT
-Resume file: .planning/phases/10-aop-source-of-truth-cleanup/10-02-PLAN.md
+Last session: 2026-05-06T21:18:00.000Z
+Stopped at: Phase 10.1 Plan 01 complete
+Resume file: .planning/phases/10.1-demos-page-restructure/10.1-02-PLAN.md

@@ -13,15 +13,22 @@ class TestFlaskRoutes:
     """Test Flask application routes."""
     
     def test_index_route(self, flask_client):
-        """Test main index page loads correctly with both tabs."""
+        """Test main index page loads correctly with both tabs (Phase 10.1 layout)."""
         response = flask_client.get('/')
 
         assert response.status_code == 200
         assert b'molAOP Analyser' in response.data
-        assert b'Select Demo Dataset' in response.data
-        assert b'Experiment Information' in response.data  # Metadata form
-        assert b'Single Analysis' in response.data  # Single tab
-        assert b'Batch Analysis' in response.data  # Batch tab
+        # Phase 10.1: demo selection block was removed; banner + upload form now lead.
+        assert b'Select Demo Dataset' not in response.data
+        assert b'Browse demos' in response.data           # banner CTA
+        assert b'Upload Your Own Data' in response.data   # upload heading
+        assert b'href="/demos"' in response.data          # banner links to /demos
+        # Tabs and metadata form unchanged.
+        assert b'Single Analysis' in response.data
+        assert b'Batch Analysis' in response.data
+        assert b'Experiment Information' in response.data
+        # No demo radio buttons remain.
+        assert b'name="demo_file"' not in response.data or b'type="radio"' not in response.data
 
     def test_batch_route_redirects(self, flask_client):
         """Test that /batch redirects to /?tab=batch."""
@@ -376,3 +383,56 @@ class TestDemosPage:
             assert response.status_code == 200, f"{path} returned {response.status_code}"
             # Look for the nav anchor — should resolve to /demos via url_for
             assert b'href="/demos"' in response.data, f"Demos nav missing on {path}"
+
+    def test_preview_with_recommended_aops_renders_filter_toggle(self, flask_client):
+        """POST /preview with recommended_aops shows the filter toggle UI (Plan 02)."""
+        from unittest.mock import patch, MagicMock
+        with patch('os.path.exists', return_value=True), \
+             patch('pandas.read_csv') as mock_read_csv:
+            mock_df = MagicMock()
+            mock_df.head.return_value.to_dict.return_value = [
+                {'Gene_Symbol': 'BRCA1', 'log2FoldChange': 2.5, 'padj': 0.001}
+            ]
+            mock_df.columns.tolist.return_value = ['Gene_Symbol', 'log2FoldChange', 'padj']
+            mock_read_csv.return_value = mock_df
+
+            response = flask_client.post('/preview', data={
+                'demo_file': 'GSE90122_TO90137.tsv',
+                'recommended_aops': 'AOP:1',
+                'columns_confirmed': 'true',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+            })
+            assert response.status_code == 200
+            assert b'aop-filter-toggle' in response.data
+            assert b'Showing recommended AOPs for this demo' in response.data
+            assert b'Show all AOPs' in response.data
+            assert b'recommended-aops-data' in response.data
+            assert b'AOP:1' in response.data
+
+    def test_preview_without_recommended_aops_hides_filter_toggle(self, flask_client):
+        """POST /preview WITHOUT recommended_aops (upload-your-own path) hides the toggle (D-07)."""
+        from unittest.mock import patch, MagicMock
+        with patch('os.path.exists', return_value=True), \
+             patch('pandas.read_csv') as mock_read_csv:
+            mock_df = MagicMock()
+            mock_df.head.return_value.to_dict.return_value = [
+                {'Gene_Symbol': 'BRCA1', 'log2FoldChange': 2.5, 'padj': 0.001}
+            ]
+            mock_df.columns.tolist.return_value = ['Gene_Symbol', 'log2FoldChange', 'padj']
+            mock_read_csv.return_value = mock_df
+
+            # No recommended_aops in form data — simulates upload-your-own-data path.
+            response = flask_client.post('/preview', data={
+                'demo_file': 'GSE90122_TO90137.tsv',
+                'columns_confirmed': 'true',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+            })
+            assert response.status_code == 200
+            # Filter toggle UI must be ABSENT on the upload-your-own path.
+            assert b'aop-filter-toggle' not in response.data
+            assert b'Showing recommended AOPs' not in response.data
+            assert b'recommended-aops-data' not in response.data
