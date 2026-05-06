@@ -141,6 +141,9 @@
         <input type="hidden" name="filename" value="{{ filename }}">
         <!-- Signal to the backend that the user has confirmed their column choices -->
         <input type="hidden" name="columns_confirmed" value="true">
+        {% if recommended_aops %}
+        <input type="hidden" name="recommended_aops" value="{{ recommended_aops | join(',') }}">
+        {% endif %}
 
         <!-- Hidden metadata fields -->
         <input type="hidden" name="dataset_id" id="hidden_dataset_id">
@@ -287,6 +290,9 @@
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
         <!-- Preserve confirmation state so the volcano section stays visible after threshold updates -->
         <input type="hidden" name="columns_confirmed" value="true">
+        {% if recommended_aops %}
+        <input type="hidden" name="recommended_aops" value="{{ recommended_aops | join(',') }}">
+        {% endif %}
 
         <!-- Hidden metadata fields -->
         <input type="hidden" name="dataset_id" class="metadata-field">
