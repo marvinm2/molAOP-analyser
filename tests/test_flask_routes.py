@@ -27,8 +27,11 @@ class TestFlaskRoutes:
         assert b'Single Analysis' in response.data
         assert b'Batch Analysis' in response.data
         assert b'Experiment Information' in response.data
-        # No demo radio buttons remain.
-        assert b'name="demo_file"' not in response.data or b'type="radio"' not in response.data
+        # No demo radio buttons remain. Use two separate assertions so both conditions
+        # are verified independently. The second check uses the combined attribute string
+        # to avoid false positives from CSS rules like `.dose-label input[type="radio"]`.
+        assert b'name="demo_file"' not in response.data
+        assert b'type="radio" name="demo_file"' not in response.data
 
     def test_batch_route_redirects(self, flask_client):
         """Test that /batch redirects to /?tab=batch."""
