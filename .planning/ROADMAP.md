@@ -32,7 +32,7 @@
 
 **Milestone Goal:** Pay down post-v2.0 tech debt, drop dead AOP-472 fallback data, close two long-standing UX gaps, and ship gene-set export so users can take their KE-conditioned significant-gene sets into downstream pathway-analysis tools.
 
-- [ ] **Phase 10: AOP Source-of-Truth Cleanup** - Drop hardcoded AOP:472 rows and `kidney-472` config entry; document or dynamically derive `KIDNEY_AOP_IDS`
+- [x] **Phase 10: AOP Source-of-Truth Cleanup** - Drop hardcoded AOP:472 rows and `kidney-472` config entry; document or dynamically derive `KIDNEY_AOP_IDS` (completed 2026-05-06)
 - [ ] **Phase 11: Gene-Set Export** - GMT and CSV export of significant genes per KE on the results page; per-KE p-value/FDR embedded in Cytoscape network exports
 - [ ] **Phase 12: Upload Widget + Tech-Debt Sweep** - Real local file upload on upload page; datetime deprecation cleanup, dedup `guess_id_type()`, replace debug prints, drop dead legacy network builder
 
@@ -135,7 +135,7 @@ Plans:
 
 Plans:
 - [x] 10-01-PLAN.md — Remove AOP:472 CSV rows + kidney-472 dict entry; annotate KIDNEY_AOP_IDS with curation provenance (autonomous) — completed 2026-05-06
-- [ ] 10-02-PLAN.md — Manual UAT regression gate on cisplatin demo with cache-clear discipline (checkpoint)
+- [x] 10-02-PLAN.md — Manual UAT regression gate on cisplatin demo with cache-clear discipline (checkpoint)
 
 ### Phase 11: Gene-Set Export
 **Goal**: Users can export per-KE significant gene sets in formats consumable by downstream pathway-analysis tools, and Cytoscape network exports carry the per-KE significance metrics needed to interpret a static snapshot
@@ -178,6 +178,6 @@ Phases execute in numeric order: 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 �
 | 7. Comparison Visualisation | v2.0 | 3/3 | Complete | 2026-03-02 |
 | 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
 | 9. Deployment Hardening | v2.0 | 1/1 | Complete | 2026-03-02 |
-| 10. AOP Source-of-Truth Cleanup | v3.0 | 1/2 | In progress | - |
+| 10. AOP Source-of-Truth Cleanup | v3.0 | 2/2 | Complete   | 2026-05-06 |
 | 11. Gene-Set Export | v3.0 | 0/0 | Not started | - |
 | 12. Upload Widget + Tech-Debt Sweep | v3.0 | 0/0 | Not started | - |
