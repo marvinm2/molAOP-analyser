@@ -115,6 +115,45 @@ class Config:
         "AOP:447", "AOP:472", "AOP:622",
     ]
 
+    # Recommended AOPs per demo dataset for the /demos curated path (Phase 10.1, D-08/D-09).
+    # Keys are demo file paths (relative to data/) or glob patterns matching DEMO_DATASETS keys.
+    # Values are ordered AOP IDs (or NETWORK:* sentinels) presented as recommended on /preview
+    # when the user lands via a /demos CTA. Soft restriction (D-06) — full list still reachable
+    # via the "Show all AOPs" toggle owned by Plan 02.
+    DEMO_AOP_RECOMMENDATIONS = {
+        # PXR demos → AOP:1 only (locked in D-08, D-13)
+        'GSE90122_TO90137.tsv': ['AOP:1'],
+        'GSE90122_SR12813.tsv': ['AOP:1'],
+        # Cisplatin demos → kidney network first + 6 individual kidney AOPs (D-08).
+        # Order: NETWORK:kidney first (locked); remaining order is Claude's discretion
+        # within the curator's most-cited kidney AOP list.
+        'Cisplatin_Kidney/*': [
+            'NETWORK:kidney',
+            'AOP:472',
+            'AOP:177',
+            'AOP:447',
+            'AOP:622',
+            'AOP:258',
+            'AOP:437',
+        ],
+    }
+
+    @classmethod
+    def get_recommended_aops(cls, demo_file: str) -> list:
+        """Return recommended AOP IDs for a demo file path; [] if no match.
+
+        Matches in two passes: exact key first, then fnmatch glob fallback.
+        """
+        import fnmatch
+        if not demo_file:
+            return []
+        if demo_file in cls.DEMO_AOP_RECOMMENDATIONS:
+            return list(cls.DEMO_AOP_RECOMMENDATIONS[demo_file])
+        for pattern, aops in cls.DEMO_AOP_RECOMMENDATIONS.items():
+            if '*' in pattern and fnmatch.fnmatch(demo_file, pattern):
+                return list(aops)
+        return []
+
     # AOP case studies
     CASE_STUDY_AOPS = {
         "DEMO": {"label": "---DEMO---", "enabled": False},

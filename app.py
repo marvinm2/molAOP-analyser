@@ -242,6 +242,43 @@ def about():
     """
     return render_template('about.html')
 
+@app.route('/demos')
+def demos():
+    """Render the curated demos page (Phase 10.1, D-01).
+
+    Shows two sections (PXR + Cisplatin) with curated demo cards. Each card
+    POSTs to /preview with demo_file + recommended_aops prefilled.
+    """
+    curated_pxr = [
+        {'file': 'GSE90122_TO90137.tsv',
+         'label': 'PXR agonist 1 (GSE90122_TO90137)',
+         'description': 'Reference dataset simulating exposure to a prototypical PXR activator.'},
+        {'file': 'GSE90122_SR12813.tsv',
+         'label': 'PXR agonist 2 (GSE90122_SR12813)',
+         'description': 'A second compound activating the same nuclear receptor, with a distinct gene profile.'},
+    ]
+    curated_cisplatin = [
+        {'file': 'Cisplatin_Kidney/CSP_24hr_0.1uM.csv', 'label': 'Cisplatin 24h · 0.1µM', 'description': ''},
+        {'file': 'Cisplatin_Kidney/CSP_24hr_1uM.csv',   'label': 'Cisplatin 24h · 1µM', 'description': ''},
+        {'file': 'Cisplatin_Kidney/CSP_24hr_10uM.csv',  'label': 'Cisplatin 24h · 10µM', 'description': ''},
+        {'file': 'Cisplatin_Kidney/CSP_24hr_50uM.csv',  'label': 'Cisplatin 24h · 50µM', 'description': ''},
+        {'file': 'Cisplatin_Kidney/CSP_4hr_10uM.csv',   'label': 'Cisplatin 4h · 10µM', 'description': ''},
+        {'file': 'Cisplatin_Kidney/CSP_72hr_10uM.csv',  'label': 'Cisplatin 72h · 10µM', 'description': ''},
+    ]
+    # Helper: turn a demo file path into the recommended_aops form value (comma-joined).
+    def recs(path):
+        return ','.join(Config.get_recommended_aops(path))
+
+    return render_template(
+        'demos.html',
+        curated_pxr=curated_pxr,
+        curated_cisplatin=curated_cisplatin,
+        all_cisplatin=get_cisplatin_demo_files(),
+        parse_filename=parse_cisplatin_filename,
+        recs=recs,
+    )
+
+
 @app.route('/api/upload_network_png', methods=['POST'])
 
 def upload_network_png():
@@ -403,6 +440,15 @@ def preview():
         session['experiment_metadata'] = metadata.to_dict()
         logger.info(f"Stored experiment metadata for dataset: {metadata.dataset_id}")
     
+    # Recommended AOPs from /demos prefill — accepted as form field (POST) OR query string (GET fallback).
+    # Comma-separated AOP IDs ('AOP:1,AOP:472,...' or 'NETWORK:kidney,AOP:472,...').
+    recommended_aops_raw = (
+        request.form.get('recommended_aops')
+        or request.args.get('recommended_aops')
+        or ''
+    )
+    recommended_aops = [a.strip() for a in recommended_aops_raw.split(',') if a.strip()]
+
     # Prefer uploaded file if available
     file = request.files.get('gene_file')
     demo_filename = request.form.get('demo_file')
@@ -535,6 +581,7 @@ def preview():
         case_study_aops=Config.CASE_STUDY_AOPS,
         cisplatin_demos=get_cisplatin_demo_files(),
         parse_filename=parse_cisplatin_filename,
+        recommended_aops=recommended_aops,
     )
 
     # HTMX swaps in just the partial — no full-page reload, no scroll-to-top.

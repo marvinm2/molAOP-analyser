@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Demo Datasets — molAOP Analyser{% endblock %}
+
+{% block content %}
+<div class="card card--narrow">
+    <h1>Demo Datasets</h1>
+    <p>Curated transcriptomics datasets paired with recommended molecular AOPs. Pick one to load it into the analyser with the AOPs already selected.</p>
+
+    <!-- PXR Agonists section -->
+    <section class="demos-section">
+        <h2>PXR Agonists &mdash; Liver Steatosis</h2>
+        <p>Two reference datasets where liver cells were exposed to PXR-activating compounds. Recommended AOP: AOP:1 (PXR activation leading to liver steatosis).</p>
+        <div class="demos-grid">
+            {% for item in curated_pxr %}
+            <form class="card card--demo" action="{{ url_for('preview') }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+                <input type="hidden" name="demo_file" value="{{ item.file }}"/>
+                <input type="hidden" name="recommended_aops" value="{{ recs(item.file) }}"/>
+                <h3>{{ item.label }}</h3>
+                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                <button type="submit">Use this dataset</button>
+            </form>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Cisplatin Nephrotoxicity section -->
+    <section class="demos-section">
+        <h2>Cisplatin Nephrotoxicity &mdash; Kidney</h2>
+        <p>A curated subset of the 54-file cisplatin kidney dataset. Six datasets cover a 24-hour dose response and a 10&micro;M time course. Recommended: combined kidney AOP network plus six individual kidney AOPs.</p>
+        <div class="demos-grid">
+            {% for item in curated_cisplatin %}
+            <form class="card card--demo" action="{{ url_for('preview') }}" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+                <input type="hidden" name="demo_file" value="{{ item.file }}"/>
+                <input type="hidden" name="recommended_aops" value="{{ recs(item.file) }}"/>
+                <h3>{{ item.label }}</h3>
+                {% if item.description %}<p>{{ item.description }}</p>{% endif %}
+                <button type="submit">Use this dataset</button>
+            </form>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Show all 54 cisplatin datasets expander -->
+    {% if all_cisplatin %}
+    <section class="demos-section">
+        <details>
+            <summary>Show all 54 cisplatin datasets</summary>
+            {% for group in all_cisplatin %}
+            <div class="demos-timepoint-group">
+                <h4>{{ group.timepoint }} exposure</h4>
+                <div class="demos-grid">
+                    {% for item in group.files %}
+                    {% set parsed = parse_filename(item.label) %}
+                    <form class="card card--demo" action="{{ url_for('preview') }}" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+                        <input type="hidden" name="demo_file" value="{{ item.path }}"/>
+                        <input type="hidden" name="recommended_aops" value="{{ recs(item.path) }}"/>
+                        <h3>{{ parsed.condition_label }}</h3>
+                        <button type="submit">Use this dataset</button>
+                    </form>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </details>
+    </section>
+    {% else %}
+    <section class="demos-section">
+        <div class="info-callout">
+            <strong>Cisplatin demo unavailable.</strong>
+            <p>The 54-file cisplatin dataset is not present on this server. Contact the maintainer or run the analyser locally with the dataset extracted to <code>data/Cisplatin_Kidney/</code>.</p>
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
