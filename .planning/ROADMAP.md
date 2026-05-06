@@ -3,7 +3,8 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-3 (shipped 2026-02-27)
-- ✅ **v2.0 Batch Analysis & Dynamic AOPs** — Phases 4-7 (completed 2026-03-02)
+- ✅ **v2.0 Batch Analysis & Dynamic AOPs** — Phases 4-9 (completed 2026-03-02)
+- 🚧 **v3.0 Cleanup, Gene-Set Export & UX Gaps** — Phases 10-12 (in progress, started 2026-05-06)
 
 ## Phases
 
@@ -26,6 +27,14 @@
 - [x] **Phase 7: Comparison Visualisation** - Side-by-side heatmap, comparison table, multi-condition AOP network overlay, and delta mode (completed 2026-03-02)
 - [x] **Phase 8: Comparison UI Polish** - KE drawer unification, binary pie charts, delta mode banner (completed 2026-03-02)
 - [x] **Phase 9: Deployment Hardening** - Batch nav link + DB init under WSGI (gap closure) (completed 2026-03-02)
+
+### v3.0 Cleanup, Gene-Set Export & UX Gaps
+
+**Milestone Goal:** Pay down post-v2.0 tech debt, drop dead AOP-472 fallback data, close two long-standing UX gaps, and ship gene-set export so users can take their KE-conditioned significant-gene sets into downstream pathway-analysis tools.
+
+- [ ] **Phase 10: AOP Source-of-Truth Cleanup** - Drop hardcoded AOP:472 rows and `kidney-472` config entry; document or dynamically derive `KIDNEY_AOP_IDS`
+- [ ] **Phase 11: Gene-Set Export** - GMT and CSV export of significant genes per KE on the results page; per-KE p-value/FDR embedded in Cytoscape network exports
+- [ ] **Phase 12: Upload Widget + Tech-Debt Sweep** - Real local file upload on upload page; datetime deprecation cleanup, dedup `guess_id_type()`, replace debug prints, drop dead legacy network builder
 
 ## Phase Details
 
@@ -94,23 +103,6 @@ Plans:
 - [x] 07-02: Heatmap + table — Plotly.js heatmap (KE x condition, -log10 FDR), sortable comparison table, absolute/delta mode for both views
 - [x] 07-03: Network overlay — Cytoscape.js pie-chart KE nodes, single/comparison toggle, KE detail panel with bar chart, delta mode for network
 
-## Progress
-
-**Execution Order:**
-Phases execute in numeric order: 4 → 5 → 6 → 7
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|-----------|----------------|--------|-----------|
-| 1. API Integration | v1.0 | 2/2 | Complete | 2026-02-25 |
-| 2. UI/UX and Documentation | v1.0 | 3/3 | Complete | 2026-02-25 |
-| 3. Network Performance | v1.0 | 2/2 | Complete | 2026-02-25 |
-| 4. Shareable URLs + AOP Discovery | v2.0 | 0/2 | Not started | - |
-| 5. Network Interactivity + Responsive Layout | 2/2 | Complete   | 2026-02-28 | - |
-| 6. Batch Analysis | 5/5 | Complete   | 2026-03-02 | 2026-03-01 |
-| 7. Comparison Visualisation | v2.0 | 3/3 | Complete | 2026-03-02 |
-| 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
-| 9. Deployment Hardening | 1/1 | Complete   | 2026-03-02 | - |
-
 ### Phase 8: Comparison UI Polish
 
 **Goal:** Polish the comparison visualisation UI: fix KE detail drawer sizing/overlap and missing AOP-Wiki link, reconsider pie chart slice sizing to use equal percentage per condition with FDR < 0.05 threshold, and improve delta mode network clarity
@@ -129,3 +121,63 @@ Plans:
 **Depends on:** Phase 8
 **Gap Closure:** Closes NAV-BATCH and DB-INIT-GUNICORN from v2.0-MILESTONE-AUDIT.md
 **Plans:** 1/1 plans complete
+
+### Phase 10: AOP Source-of-Truth Cleanup
+**Goal**: AOP:472 data flows from a single dynamic source (SPARQL + dynamic discovery) and `KIDNEY_AOP_IDS` is either derived dynamically or has its curation criterion documented in code
+**Depends on**: Phase 9
+**Requirements**: AOPD-07, AOPD-08, AOPD-09
+**Success Criteria** (what must be TRUE):
+  1. Selecting AOP:472 from the dropdown loads its KEs and KERs without any rows in `data/aop_ke_map.csv` or `data/aop_ker_edges.csv` referencing AOP:472
+  2. `Config.CASE_STUDY_AOPS` contains no `kidney-472` entry, yet AOP:472 still appears in the dynamic AOP list alongside the other kidney AOPs when the SPARQL endpoint is reachable
+  3. `KIDNEY_AOP_IDS` in `config.py` is either populated by a documented dynamic query (e.g. AOs related to renal failure) or is annotated with an explicit comment stating the curation criterion and how to refresh it
+  4. Existing kidney case-study workflows (single + batch analysis on cisplatin demo) still produce the same enrichment results after the cleanup (no regression in KE coverage)
+**Plans**: 2 plans
+
+Plans:
+- [x] 10-01-PLAN.md — Remove AOP:472 CSV rows + kidney-472 dict entry; annotate KIDNEY_AOP_IDS with curation provenance (autonomous) — completed 2026-05-06
+- [ ] 10-02-PLAN.md — Manual UAT regression gate on cisplatin demo with cache-clear discipline (checkpoint)
+
+### Phase 11: Gene-Set Export
+**Goal**: Users can export per-KE significant gene sets in formats consumable by downstream pathway-analysis tools, and Cytoscape network exports carry the per-KE significance metrics needed to interpret a static snapshot
+**Depends on**: Phase 10
+**Requirements**: EXPO-03, EXPO-04, EXPO-05, EXPO-06
+**Success Criteria** (what must be TRUE):
+  1. User clicks "Export gene sets (GMT)" on the results page and downloads a valid GMT file with one row per KE in the format `KE_ID<tab>description<tab>gene1<tab>gene2…`, importable by GSEA / Enrichr
+  2. User clicks "Export gene-by-KE table (CSV)" on the results page and downloads a CSV with columns `KE_ID, KE_Title, Gene_Symbol, log2FC, pvalue, FDR`
+  3. Both exports contain only genes that meet the active log2FC and p-value thresholds set on the analysis page (verifiable by re-running with stricter thresholds and confirming the file shrinks)
+  4. The Cytoscape network data export (PNG metadata and any JSON/data export) includes per-KE p-value and FDR fields, so a downstream consumer can reconstruct significance without re-running the analysis (closes issue #50)
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 12: Upload Widget + Tech-Debt Sweep
+**Goal**: The upload page lets users actually upload their own CSV/TSV/TXT files, and the codebase is free of the long-standing tech-debt items (deprecated `datetime.utcnow()` calls, duplicate helpers, debug prints, dead legacy code)
+**Depends on**: Phase 11
+**Requirements**: UPUX-04, DEBT-01, DEBT-02, DEBT-03, DEBT-04
+**Success Criteria** (what must be TRUE):
+  1. User on the upload page can pick a local CSV/TSV/TXT file via a file-input or drag-and-drop, submit it, and proceed to the threshold/preview step exactly as the demo flow does today
+  2. Running `pytest` produces zero `DeprecationWarning` entries originating from `datetime.utcnow()` (all call sites use `datetime.now(datetime.UTC)` or equivalent timezone-aware constructors)
+  3. `grep -nR "def guess_id_type" .` returns exactly one definition (in `services/data_service.py`); `app.py` imports the helper rather than re-defining it
+  4. `grep -nR "print(" helpers.py` returns no debug prints; equivalent `logger.debug()` calls exist where useful
+  5. `build_cytoscape_network_legacy()` no longer exists in `services/network_service.py`, and the existing test suite still passes
+**Plans**: TBD
+**UI hint**: yes
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. API Integration | v1.0 | 2/2 | Complete | 2026-02-25 |
+| 2. UI/UX and Documentation | v1.0 | 3/3 | Complete | 2026-02-25 |
+| 3. Network Performance | v1.0 | 2/2 | Complete | 2026-02-25 |
+| 4. Shareable URLs + AOP Discovery | v2.0 | 2/2 | Complete | 2026-02-27 |
+| 5. Network Interactivity + Responsive Layout | v2.0 | 2/2 | Complete | 2026-02-28 |
+| 6. Batch Analysis | v2.0 | 3/3 | Complete | 2026-03-01 |
+| 7. Comparison Visualisation | v2.0 | 3/3 | Complete | 2026-03-02 |
+| 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
+| 9. Deployment Hardening | v2.0 | 1/1 | Complete | 2026-03-02 |
+| 10. AOP Source-of-Truth Cleanup | v3.0 | 1/2 | In progress | - |
+| 11. Gene-Set Export | v3.0 | 0/0 | Not started | - |
+| 12. Upload Widget + Tech-Debt Sweep | v3.0 | 0/0 | Not started | - |

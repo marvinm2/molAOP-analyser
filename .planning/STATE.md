@@ -2,32 +2,32 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Cleanup, Gene-Set Export & UX Gaps
-status: planning
-last_updated: "2026-05-06T08:08:19.949Z"
-last_activity: 2026-05-06
+status: Phase 10 in progress — Plan 10-01 complete; UAT (Plan 10-02) pending
+stopped_at: Phase 10 Plan 01 complete; awaiting Plan 10-02 UAT
+last_updated: "2026-05-06T13:08:00.000Z"
+last_activity: 2026-05-06 — Plan 10-01 executed (AOP:472 source-of-truth cleanup)
 progress:
-  total_phases: 0
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 12
+  completed_phases: 9
+  total_plans: 1
+  completed_plans: 1
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-27)
+See: .planning/PROJECT.md (updated 2026-05-06)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 8 — Comparison UI Polish
+**Current focus:** Phase 10 — AOP Source-of-Truth Cleanup
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-05-06 — Milestone v3.0 started
+Phase: 10 — AOP Source-of-Truth Cleanup
+Plan: 10-01 complete; 10-02 (UAT) pending
+Status: Plan 10-01 shipped — AOP:472 CSV fallback removed, kidney-472 dict entry deleted, KIDNEY_AOP_IDS curation provenance documented; 124/124 tests passing
+Last activity: 2026-05-06 — Plan 10-01 executed
 
 ## Performance Metrics
 
@@ -105,27 +105,35 @@ Recent decisions affecting current work:
 - [08-02]: pie_opacity_N mapped via data(pie_opacity_N) in stylesheet so opacity survives Cytoscape style updates
 - [Phase 09-deployment-hardening]: init_database() called at module level after csrf setup — runs under gunicorn/waitress/python app.py without double-initialisation
 - [Phase 09-deployment-hardening]: Batch Analysis nav link uses url_for('batch_page') — no hardcoded /batch path, consistent with other nav items
+- [10-01]: KIDNEY_AOP_IDS kept as static 18-element list with inline curation comment block (D-01/D-02) — no dynamic SPARQL derivation; comment contains 'manually curated', 'Last reviewed: 2026-05-06', 'Marvin Martens' verbatim
+- [10-01]: AOP:472 CSV rows deleted in-place (9 from aop_ke_map, 8 from aop_ker_edges); strict scope per D-05 — AOP:1, AOP:2, AOP:3, AOP:100 rows untouched
+- [10-01]: KER_ID gap (23–30) left intentionally — downstream code keys on (Source_KE, Target_KE) not contiguous KER_IDs, renumbering would be a noisy diff with no behavioural benefit
+- [10-01]: kidney-472 entry removed from CASE_STUDY_AOPS but AOP:472 stays in KIDNEY_AOP_IDS — combined Kidney-aop-network view (line ~152 wiring) is unchanged
 
 ### Roadmap Evolution
 
 - Phase 8 added: Comparison UI Polish — fix KE detail drawer sizing/overlap, missing AOP-Wiki link, pie chart slice sizing, delta mode network clarity
+- v3.0 milestone planned (2026-05-06): Phase 10 (AOP source-of-truth cleanup), Phase 11 (gene-set export GMT/CSV + Cytoscape p-value embedding), Phase 12 (upload widget + tech-debt sweep)
 
 ### Pending Todos
 
-2 pending todos:
+1 pending todo:
 
-- **Fix remaining test failures in database and report service** (testing) — 9 pre-existing failures from shallow mocks
 - **Separate demo setup from live analysis service** (ui) — dedicated demo page, clean main landing page
+
+Resolved:
+- ~~**Fix remaining test failures in database and report service**~~ — resolved by commit `0b7c297 fix: resolve all 9 remaining test failures` before Phase 10 began; pytest now reports 124 passed, 0 failed.
 
 ### Blockers/Concerns
 
 - [Phase 4]: SPARQL cold-fetch latency for `fetch_all_aops()` unmeasured under production load — implement progressive enhancement (static list server-side, dynamic list on fetch success) as first step
 - [Phase 6]: File lifetime management: UUID-scoped directories under uploads/<batch_uuid>/ resolved in 06-01 (create_batch_upload_dir / cleanup_batch_upload_dir)
 - [Phase 7]: Cytoscape.js multi-condition node styling confirmed as pie-chart (pie-N-background-color/-size/-opacity) — resolved in 07-03
+- [Phase 10]: AOPD-09 dynamic derivation of `KIDNEY_AOP_IDS` may not be feasible if AOP-Wiki lacks a clean "kidney AO" predicate — documenting the curation criterion is the acceptable fallback
 - [Ongoing]: Builder API bulk export endpoint needs live verification; rate limit scope unclear for multi-worker production
 
 ## Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Completed 09-01-PLAN.md — Batch Analysis nav link and module-level init_database() for WSGI compatibility.
-Resume file: None
+Last session: 2026-05-06T13:08:00.000Z
+Stopped at: Phase 10 Plan 01 complete (commits 2bb37c2, 7e21d57); awaiting Plan 10-02 UAT
+Resume file: .planning/phases/10-aop-source-of-truth-cleanup/10-02-PLAN.md
