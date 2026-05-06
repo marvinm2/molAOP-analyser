@@ -317,6 +317,7 @@ class TestDemosPage:
 
     def test_demos_route_renders(self, flask_client):
         """GET /demos returns 200 and the curated sections."""
+        import os
         response = flask_client.get('/demos')
         assert response.status_code == 200
         body = response.data
@@ -325,14 +326,18 @@ class TestDemosPage:
         # Sections
         assert b'PXR Agonists' in body
         assert b'Cisplatin Nephrotoxicity' in body
-        # Curated cards present
+        # Curated cards present (hardcoded in route, always rendered)
         assert b'GSE90122_TO90137.tsv' in body
         assert b'GSE90122_SR12813.tsv' in body
         assert b'CSP_24hr_10uM.csv' in body
         assert b'CSP_4hr_10uM.csv' in body
         assert b'CSP_72hr_10uM.csv' in body
-        # Show-all expander
-        assert b'Show all 54 cisplatin datasets' in body
+        # Show-all expander is only rendered when the gitignored cisplatin
+        # data directory is present (~146 MB, not included in the repo).
+        # Skip this assertion in CI / fresh-clone environments.
+        cisplatin_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'Cisplatin_Kidney')
+        if os.path.isdir(cisplatin_dir):
+            assert b'Show all 54 cisplatin datasets' in body
         # CTA copy
         assert b'Use this dataset' in body
 
