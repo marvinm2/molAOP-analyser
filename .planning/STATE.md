@@ -1,14 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v2.0
-milestone_name: Batch Analysis & Dynamic AOPs
-status: unknown
-last_updated: "2026-03-03T07:34:41.212Z"
+milestone: v3.0
+milestone_name: Cleanup, Gene-Set Export & UX Gaps
+status: planning
+last_updated: "2026-05-06T08:08:19.949Z"
+last_activity: 2026-05-06
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 15
-  completed_plans: 15
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -22,16 +24,15 @@ See: .planning/PROJECT.md (updated 2026-02-27)
 
 ## Current Position
 
-Phase: 9 of 9 (Deployment Hardening)
-Plan: 1 of 1 in current phase (COMPLETE)
-Status: Phase 9 complete — all plans done
-Last activity: 2026-03-02 — 09-01 Batch Analysis nav link; init_database() moved to module level
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-06 — Milestone v3.0 started
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 3 (v2.0)
 - Average duration: 6 minutes
 - Total execution time: 17 minutes
@@ -55,6 +56,7 @@ Progress: [██████████] 100%
 Decisions logged in PROJECT.md Key Decisions table (9 decisions from v1.0, all good).
 
 Recent decisions affecting current work:
+
 - [v2.0 roadmap]: Phase 4 establishes UUID identity pattern reused by all subsequent phases — do not use integer experiment IDs
 - [v2.0 roadmap]: Batch state must live in SQLite from the first commit — never prototype with session cookies (4KB overflow risk)
 - [v2.0 roadmap]: Background gene set harmonisation ships with Phase 6 (batch), before comparison (Phase 7) is exposed to users
@@ -111,6 +113,7 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 2 pending todos:
+
 - **Fix remaining test failures in database and report service** (testing) — 9 pre-existing failures from shallow mocks
 - **Separate demo setup from live analysis service** (ui) — dedicated demo page, clean main landing page
 
