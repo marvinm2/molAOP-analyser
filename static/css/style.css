@@ -1669,6 +1669,19 @@ select option[data-suggested="true"] {
     }
 }
 
+/* Info callout box used on multiple pages (/demos unavailable notice, single-analysis intro). */
+.info-callout {
+    background-color: #f1f9ff;
+    border-left: 5px solid #307BBF;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+}
+
+.info-callout h2 {
+    margin-top: 0;
+}
+
 /* Timepoint group headings inside the "Show all 54" expander on /demos. */
 .demos-timepoint-group {
     margin-top: 20px;
