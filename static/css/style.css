@@ -1669,6 +1669,18 @@ select option[data-suggested="true"] {
     }
 }
 
+/* Timepoint group headings inside the "Show all 54" expander on /demos. */
+.demos-timepoint-group {
+    margin-top: 20px;
+}
+
+.demos-timepoint-group h4 {
+    margin: 0 0 8px 0;
+    color: #29235C;
+    font-size: 15px;
+    font-weight: 600;
+}
+
 /* ==========================================================================
    END OF STYLESHEET
    ========================================================================== */
