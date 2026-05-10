@@ -58,13 +58,84 @@ class TestColumnDetector:
             'fold_change': [2.0, -1.5, 1.8],
             'padj': [0.001, 0.05, 0.1]
         })
-        
+
         suggestions = column_detector.detect_columns(df)
-        
+
         # Should detect padj as p-value column
         assert suggestions.best_pvalue is not None
         assert suggestions.best_pvalue.column_name == 'padj'
         assert suggestions.best_pvalue.confidence > 0.5
+
+    # --- D-05: raw vs adjusted p-value column split (Plan 11-01) ---
+
+    def test_pvalue_raw_and_adjusted_split(self, column_detector):
+        """D-05: When both raw and adjusted p-value columns exist, both are
+        captured independently."""
+        df = pd.DataFrame({
+            'genes': ['G1', 'G2', 'G3', 'G4', 'G5'],
+            'log2FoldChange': [1.0, -2.0, 0.5, 1.5, -0.3],
+            'pvalue': [0.001, 0.01, 0.5, 0.05, 0.8],
+            'padj': [0.01, 0.05, 0.6, 0.1, 0.9],
+        })
+        sug = column_detector.detect_columns(df)
+        assert sug.best_pvalue is not None
+        assert sug.best_pvalue.column_name == 'pvalue'
+        assert sug.best_pvalue_adj is not None
+        assert sug.best_pvalue_adj.column_name == 'padj'
+
+    def test_pvalue_only_raw_column(self, column_detector):
+        """D-05: If only raw p-value present, adjusted slot is None
+        (no false positive)."""
+        df = pd.DataFrame({
+            'genes': ['G1', 'G2', 'G3'],
+            'log2FC': [1.0, -1.0, 0.5],
+            'pvalue': [0.01, 0.5, 0.001]
+        })
+        sug = column_detector.detect_columns(df)
+        assert sug.best_pvalue is not None
+        assert sug.best_pvalue.column_name == 'pvalue'
+        assert sug.best_pvalue_adj is None
+
+    def test_pvalue_only_adjusted_column_backward_compat(self, column_detector):
+        """D-05: Single 'padj' upload — best_pvalue still resolves
+        (backward compat) AND best_pvalue_adj also resolves to the same column."""
+        df = pd.DataFrame({
+            'genes': ['G1', 'G2', 'G3'],
+            'log2FC': [1.0, -1.0, 0.5],
+            'padj': [0.01, 0.05, 0.6]
+        })
+        sug = column_detector.detect_columns(df)
+        assert sug.best_pvalue is not None
+        assert sug.best_pvalue.column_name == 'padj'
+        assert sug.best_pvalue_adj is not None
+        assert sug.best_pvalue_adj.column_name == 'padj'
+
+    def test_pvalue_limma_conventions(self, column_detector):
+        """D-05: limma uses 'P.Value' (raw) and 'adj.P.Val' (adjusted)."""
+        df = pd.DataFrame({
+            'genes': ['G1', 'G2', 'G3'],
+            'logFC': [1.0, -1.0, 0.5],
+            'P.Value': [0.001, 0.5, 0.01],
+            'adj.P.Val': [0.01, 0.6, 0.05],
+        })
+        sug = column_detector.detect_columns(df)
+        assert sug.best_pvalue is not None
+        assert sug.best_pvalue.column_name == 'P.Value'
+        assert sug.best_pvalue_adj is not None
+        assert sug.best_pvalue_adj.column_name == 'adj.P.Val'
+
+    def test_pvalue_adj_tolerates_many_ones(self, column_detector):
+        """D-05: Adjusted variant must NOT penalise columns with many 1.0
+        values (BH ceiling produces legitimate 1.0 padj cells)."""
+        df = pd.DataFrame({
+            'genes': [f'G{i}' for i in range(20)],
+            'log2FC': [0.5] * 20,
+            'padj': [0.001, 0.01, 0.05] + [1.0] * 17,  # 85% 1.0 — valid BH
+        })
+        sug = column_detector.detect_columns(df)
+        assert sug.best_pvalue_adj is not None
+        assert sug.best_pvalue_adj.column_name == 'padj'
+        assert sug.best_pvalue_adj.confidence >= 0.5
     
     def test_complete_column_detection(self, column_detector, sample_gene_data):
         """Test detection of all column types together."""
