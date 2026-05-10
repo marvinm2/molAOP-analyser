@@ -366,11 +366,17 @@ def api_aops():
     Query params:
         q: Search query (filters by AOP ID and title, case-insensitive).
            If empty, returns only mapped AOPs (for on-focus default suggestions).
+        ids: Comma-separated AOP IDs to force-include in the response, even if
+             they have no KE-gene mappings. Used by the recommended-AOP filter
+             on demo flows (e.g. AOP:1 for PXR liver steatosis is not in the
+             mapped-AOP list but still needs to appear in the picker).
 
     Returns:
         JSON array of AOP objects, capped at 50 results.
     """
     q = request.args.get('q', '').lower().strip()
+    ids_raw = request.args.get('ids', '')
+    forced_ids = {a.strip() for a in ids_raw.split(',') if a.strip()}
 
     try:
         aops = get_aop_list(Config)
@@ -384,8 +390,17 @@ def api_aops():
             if q in a['aop_id'].lower() or q in a['title'].lower()
         ]
     else:
-        # No query: return mapped AOPs only (on-focus default suggestions)
-        filtered = [a for a in aops if a['mapped_ke_count'] > 0]
+        # No query: return mapped AOPs plus any explicitly-forced IDs (covers
+        # case-study AOPs like AOP:1 that have no KE-gene mappings yet).
+        # Forced IDs go first so they survive the 50-result cap even when there
+        # are 200+ mapped AOPs.
+        forced = [a for a in aops if a['aop_id'] in forced_ids]
+        forced_set = {a['aop_id'] for a in forced}
+        mapped = [
+            a for a in aops
+            if a['mapped_ke_count'] > 0 and a['aop_id'] not in forced_set
+        ]
+        filtered = forced + mapped
 
     return jsonify(filtered[:50])
 
