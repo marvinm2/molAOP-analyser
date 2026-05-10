@@ -383,6 +383,23 @@
 {% if recommended_aops %}
 <script id="recommended-aops-data" type="application/json">{{ recommended_aops | tojson }}</script>
 {% endif %}
+
+{# Phase 10.1: after a demo CTA on /demos POSTs to /preview, the user lands at the top of the
+   page (banner + upload form) instead of seeing their dataset preview. When a demo file just
+   loaded (recommended_aops set, columns not yet confirmed), scroll the preview section into view. #}
+{% if recommended_aops and preview and not columns_confirmed %}
+<script>
+(function () {
+    const target = document.getElementById('centered-container');
+    if (target) {
+        // Defer to next frame so layout is settled (especially after HTMX swap).
+        requestAnimationFrame(function () {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }
+})();
+</script>
+{% endif %}
 {% include '_single_analysis_scripts.html' %}
 </div><!-- /#single-analysis-panel -->
 
