@@ -524,6 +524,9 @@ def preview():
     id_col = request.form.get("id_column")    # User-selected gene ID column
     fc_col = request.form.get("fc_column")    # User-selected log2FC column
     pval_col = request.form.get("pval_column")  # User-selected p-value column
+    # Plan 11-05: optional adjusted p-value column (None when user picks
+    # "-- None --" or single-column upload). Round-tripped via hidden inputs.
+    pval_adj_col_form = request.form.get("pval_adj_column", "") or None
     
     # Run intelligent column detection if user hasn't selected all required columns
     if not (id_col and fc_col and pval_col):
@@ -587,7 +590,7 @@ def preview():
         columns=columns,
         filename=filename,
         volcano_data=volcano_data,
-        selected_columns={"id": id_col, "fc": fc_col, "pval": pval_col},
+        selected_columns={"id": id_col, "fc": fc_col, "pval": pval_col, "pval_adj": pval_adj_col_form},
         column_suggestions=column_suggestions,
         logfc_threshold=logfc_threshold,
         pval_cutoff=pval_cutoff,
@@ -745,24 +748,37 @@ def analyze():
         gene_pvalue_raw_map = None
         gene_pvalue_adj_map = None
         pval_adj_col = None
+        # Plan 11-05: user's explicit pick from the preview UI. When set,
+        # overrides the auto-detected adj column AND skips the same-column
+        # disambiguation below.
+        pval_adj_col_form = request.form.get("pval_adj_column", "") or None
         try:
             df_raw_for_export = pd.read_csv(filepath, sep=None, engine='python')
             suggestions = column_detector.detect_columns(df_raw_for_export)
             raw_col = suggestions.best_pvalue.column_name if suggestions.best_pvalue else None
             adj_col = suggestions.best_pvalue_adj.column_name if suggestions.best_pvalue_adj else None
 
-            # Disambiguate when raw and adj resolve to the same column header
-            # (e.g. the upload only has one p-value column and it matches an
-            # adjusted pattern). In that case we treat it as adjusted only and
-            # leave the raw slot empty -- avoids double-emitting the same value.
-            if raw_col and adj_col and raw_col == adj_col:
-                from services.column_detector import ColumnDetector as _CD
-                is_adj = any(
-                    re.search(p, raw_col, re.IGNORECASE)
-                    for p in _CD.PVALUE_ADJ_PATTERNS
-                )
-                if is_adj:
-                    raw_col = None
+            # Plan 11-05: user's explicit pick wins over auto-detection AND
+            # bypasses the same-column-as-raw disambiguation -- the user owns
+            # the choice, even if it collides with raw_col. The defensive
+            # `adj_col in df_raw_for_export.columns` guard below still applies
+            # so a stale/invalid column name simply yields blank cells.
+            if pval_adj_col_form:
+                adj_col = pval_adj_col_form
+            else:
+                # Auto-detection path: disambiguate when raw and adj resolve to
+                # the same column header (e.g. the upload only has one p-value
+                # column and it matches an adjusted pattern). In that case we
+                # treat it as adjusted only and leave the raw slot empty --
+                # avoids double-emitting the same value (Plan 11-03 commit 8cb676e).
+                if raw_col and adj_col and raw_col == adj_col:
+                    from services.column_detector import ColumnDetector as _CD
+                    is_adj = any(
+                        re.search(p, raw_col, re.IGNORECASE)
+                        for p in _CD.PVALUE_ADJ_PATTERNS
+                    )
+                    if is_adj:
+                        raw_col = None
 
             # Build per-gene pvalue maps keyed by uppercased gene symbol so
             # they line up with df_processed['ID'] (which is uppercased by
