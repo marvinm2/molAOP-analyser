@@ -65,9 +65,9 @@ Requirements for v3.0 Cleanup, Gene-Set Export & UX Gaps milestone.
 ### Gene-Set Export
 
 - [~] **EXPO-03 (deferred-to-builder)**: GMT export of the curated KE→gene library for GSEA / Enrichr / fgsea / clusterProfiler is served upstream by the [molAOP Builder](https://molaop-builder.vhp4safety.nl) (see `KE-MAPPING-API-REFERENCE.md`). Decision recorded 2026-05-10 during Phase 11 planning: the analyser does not duplicate the Builder's GMT, because the Builder is the upstream source of truth for KE→gene mappings. The complementary analyser-specific need ("which genes from THIS analysis drove each KE") is satisfied by EXPO-04's gene-by-KE long-format CSV, which is strictly more interrogable than an intersection-style GMT.
-- [ ] **EXPO-04**: User can export a gene-by-KE mapping table as CSV with columns `KE_ID, KE_Title, Gene_Symbol, log2FC, pvalue, FDR`
-- [ ] **EXPO-05**: Gene-set exports respect the active significance thresholds (only genes meeting log2FC and p-value cutoffs are included)
-- [ ] **EXPO-06**: Cytoscape network export (PNG metadata and any data-export JSON) includes per-KE p-value and FDR (issue #50)
+- [x] **EXPO-04**: User can export a gene-by-KE mapping table as CSV with columns `KE_ID, KE_Title, Gene_Symbol, log2FC, pvalue, FDR` — completed 2026-05-10 (Phase 11-03)
+- [x] **EXPO-05**: Gene-set exports respect the active significance thresholds (only genes meeting log2FC and p-value cutoffs are included) — completed 2026-05-10 (Phase 11-03)
+- [x] **EXPO-06**: Cytoscape network export (PNG metadata and any data-export JSON) includes per-KE p-value and FDR (issue #50) — completed 2026-05-10 (Phase 11-02, JSON channel via D-07; PNG metadata D-08 deferred)
 
 ### Upload UX
 
@@ -153,9 +153,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AOPD-08 | Phase 10 | Planned |
 | AOPD-09 | Phase 10 | Planned |
 | EXPO-03 | Phase 11 | Deferred-to-builder |
-| EXPO-04 | Phase 11 | Planned |
-| EXPO-05 | Phase 11 | Planned |
-| EXPO-06 | Phase 11 | Planned |
+| EXPO-04 | Phase 11 | Complete (2026-05-10) |
+| EXPO-05 | Phase 11 | Complete (2026-05-10) |
+| EXPO-06 | Phase 11 | Complete (2026-05-10) |
 | UPUX-04 | Phase 12 | Planned |
 | DEBT-01 | Phase 12 | Planned |
 | DEBT-02 | Phase 12 | Planned |

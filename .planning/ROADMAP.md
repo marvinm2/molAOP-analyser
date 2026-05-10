@@ -174,10 +174,10 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 11-01-PLAN.md — Column detector raw vs adjusted p-value split (D-05) — services/column_detector.py + tests (autonomous, wave 1)
-- [ ] 11-02-PLAN.md — Embed per-KE p_value + fdr in cytoscape network export (D-07, EXPO-06, closes issue #50) — services/network_service.py + tests (autonomous, wave 1)
-- [ ] 11-03-PLAN.md — Gene-by-KE CSV export button + JS helper + Builder pointer (D-01/D-04/D-09/D-10/D-11/D-12, EXPO-04 + EXPO-05) — enrichment_service.py, app.py, results.html, shared_results.html + tests (autonomous, wave 2, depends on 11-01)
-- [ ] 11-04-PLAN.md — Requirement-doc cleanup: mark EXPO-03 deferred-to-builder, remove ROADMAP success criterion #1, add documentation pointer (autonomous, wave 1)
+- [x] 11-01-PLAN.md — Column detector raw vs adjusted p-value split (D-05) — services/column_detector.py + tests (autonomous, wave 1) — completed 2026-05-10
+- [x] 11-02-PLAN.md — Embed per-KE p_value + fdr in cytoscape network export (D-07, EXPO-06, closes issue #50) — services/network_service.py + tests (autonomous, wave 1) — completed 2026-05-10
+- [x] 11-03-PLAN.md — Gene-by-KE CSV export button + JS helper + Builder pointer (D-01/D-04/D-09/D-10/D-11/D-12, EXPO-04 + EXPO-05) — enrichment_service.py, app.py, results.html, shared_results.html + tests (autonomous, wave 2, depends on 11-01) — completed 2026-05-10
+- [x] 11-04-PLAN.md — Requirement-doc cleanup: mark EXPO-03 deferred-to-builder, remove ROADMAP success criterion #1, add documentation pointer (autonomous, wave 1) — completed 2026-05-10
 
 ### Phase 12: Upload Widget + Tech-Debt Sweep
 **Goal**: The upload page lets users actually upload their own CSV/TSV/TXT files, and the codebase is free of the long-standing tech-debt items (deprecated `datetime.utcnow()` calls, duplicate helpers, debug prints, dead legacy code)

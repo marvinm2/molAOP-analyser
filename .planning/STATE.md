@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Cleanup, Gene-Set Export & UX Gaps
-status: executing
-stopped_at: Phase 11 UI-SPEC approved
-last_updated: "2026-05-10T16:35:22.090Z"
-last_activity: 2026-05-10 -- Phase 11 execution started
+status: completed
+stopped_at: Phase 11 Plan 02 complete (cytoscape network significance embedding, EXPO-06 closed)
+last_updated: "2026-05-10T17:35:54.802Z"
+last_activity: 2026-05-10 -- Phase 11 marked complete
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 9
-  completed_plans: 5
-  percent: 56
+  completed_plans: 7
+  percent: 78
 ---
 
 # Project State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-05-06)
 
 ## Current Position
 
-Phase: 11 (gene-set-export) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 11
-Next recommended run: `/gsd-execute-phase 10.1`
-Last activity: 2026-05-10 -- Phase 11 execution started
+Phase: 11 — COMPLETE
+Plan: 2 of 4 complete (11-02 — cytoscape network significance embedding, EXPO-06 closed)
+Status: Phase 11 complete
+Next recommended run: `/gsd-execute-phase 11`
+Last activity: 2026-05-10 -- Phase 11 marked complete
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Last activity: 2026-05-10 -- Phase 11 execution started
 | 06 (Batch Analysis) | 4/4 | 16m | 4m |
 | 07 (Comparison Visualisation) | 3/3 | 14m | 4.7m |
 | 08 (Comparison UI Polish) | 1/1 | 1m | 1m |
+| 11 (Gene-Set Export) | 1/4 | 3m | 3m |
 
 *Updated after each plan completion*
 
@@ -114,6 +115,10 @@ Recent decisions affecting current work:
 - [10.1-01]: DEMO_AOP_RECOMMENDATIONS uses fnmatch glob for Cisplatin_Kidney/* pattern — two-pass lookup (exact first, then glob fallback) via get_recommended_aops() classmethod
 - [10.1-01]: demos.html uses Jinja2 for-loops; rendered output has 62 cards (2 PXR + 6 curated cisplatin + 54 in details), not 3 source occurrences
 - [10.1-01]: /preview extended to read recommended_aops from form POST or query-string GET fallback; parsed list passed to template as recommended_aops variable
+- [11-02]: Cytoscape network export reads lowercase `p_value` column (not `P_value` — matches `enrichment_service.py:125`); using uppercase would have silently produced `None` for all KEs
+- [11-02]: Added `_to_native()` helper in `services/network_service.py` for NaN/inf/numpy-scalar sanitisation; co-located with the service that emits the payload rather than extracted to `utils.py` to keep the change strictly additive within one file
+- [11-02]: KEs absent from enrichment_results get `p_value: None` and `fdr: None` (keys present, values `None`) — schema is stable for downstream consumers parsing the .cyjs file
+- [11-02]: EXPO-06 / issue #50 closed via the JSON channel only (D-07); PNG-metadata branch (D-08) remains explicitly deferred
 - [10.1-02]: Banner uses .card.card--banner modifier (additive) inheriting .card box-shadow — no new card shell needed
 - [10.1-02]: aop-filter-toggle rendered inside {% if volcano_data %} — toggle only appears when AOP picker section is visible (correct)
 - [10.1-02]: recommended-aops-data JSON data island placed outside {% if volcano_data %} but inside {% if recommended_aops %} — allows JS to read it even before volcano section renders
@@ -146,6 +151,6 @@ Resolved:
 
 ## Session Continuity
 
-Last session: 2026-05-10T12:33:21.869Z
-Stopped at: Phase 11 UI-SPEC approved
-Resume file: .planning/phases/11-gene-set-export/11-UI-SPEC.md
+Last session: 2026-05-10T16:39:35.000Z
+Stopped at: Phase 11 Plan 02 complete (cytoscape network significance embedding, EXPO-06 closed)
+Resume file: .planning/phases/11-gene-set-export/ (next plan: gene-by-KE CSV writer)
