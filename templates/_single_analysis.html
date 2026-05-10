@@ -252,6 +252,41 @@
                     </div>
                 {% endif %}
             </div>
+
+            <div class="column-selector-group">
+                <label for="pval_adj_column" title="Optional: select the column carrying adjusted p-values (padj/FDR/qvalue) to passthrough into the gene-by-KE export.">
+                    Adjusted p-value column (optional):
+                    {% if column_suggestions and column_suggestions.best_pvalue_adj %}
+                        <span class="auto-suggestion" title="Auto-detected with {{ (column_suggestions.best_pvalue_adj.confidence * 100) | round(0) }}% confidence">
+                            Auto-detected
+                        </span>
+                    {% endif %}
+                </label>
+                {# Pre-select rules:
+                     1. If selected_columns.pval_adj is explicitly set, that wins.
+                     2. Else, if an auto-suggestion exists, it pre-selects (mirrors the
+                        starred-default pattern the other pickers use).
+                     3. Else "-- None --" is selected (so single-column uploads don't
+                        get a stray pre-selection). #}
+                {% set adj_suggested = column_suggestions.best_pvalue_adj.column_name
+                                       if (column_suggestions and column_suggestions.best_pvalue_adj)
+                                       else None %}
+                {% set adj_active = selected_columns.pval_adj or adj_suggested %}
+                <select id="pval_adj_column" name="pval_adj_column">
+                    <option value="" {% if not adj_active %}selected{% endif %}>-- None (skip adjusted column) --</option>
+                    {% for col in columns %}
+                        {% set is_suggested = adj_suggested and col == adj_suggested %}
+                        <option value="{{ col }}"
+                                {% if selected_columns.pval_adj == col %}selected{% elif (not selected_columns.pval_adj) and is_suggested %}selected{% endif %}
+                                {% if is_suggested %}data-suggested="true"{% endif %}>
+                            {{ col }}
+                            {% if is_suggested %}
+                                ⭐ ({{ (column_suggestions.best_pvalue_adj.confidence * 100) | round(0) }}% confidence)
+                            {% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
         <div style="text-align: center;">
@@ -288,6 +323,7 @@
         <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
         <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
+        <input type="hidden" name="pval_adj_column" value="{{ selected_columns.pval_adj or '' }}">
         <!-- Preserve confirmation state so the volcano section stays visible after threshold updates -->
         <input type="hidden" name="columns_confirmed" value="true">
         {% if recommended_aops %}
@@ -336,6 +372,7 @@
         <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
         <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
+        <input type="hidden" name="pval_adj_column" value="{{ selected_columns.pval_adj or '' }}">
         <input type="hidden" name="logfc_threshold" value="{{ logfc_threshold or '' }}">
 
         <!-- Hidden metadata fields -->
