@@ -735,8 +735,65 @@ def analyze():
         # Build gene mapping for interactive features
         gene_logfc_map = df_processed.set_index("ID")["log2FC"].to_dict()
         gene_significance_map = df_processed.set_index("ID")["significant"].to_dict()
+
+        # Plan 11-03 (D-04 passthrough): capture raw and adjusted p-value
+        # columns from the user's upload so the gene-by-KE CSV export can
+        # echo them back. df_processed only retains the threshold column
+        # (as `pval`) so we re-read the raw upload here and run column
+        # detection on it. This is additive -- the threshold-column user
+        # flow is unchanged, the second column is captured silently.
+        gene_pvalue_raw_map = None
+        gene_pvalue_adj_map = None
+        pval_adj_col = None
+        try:
+            df_raw_for_export = pd.read_csv(filepath, sep=None, engine='python')
+            suggestions = column_detector.detect_columns(df_raw_for_export)
+            raw_col = suggestions.best_pvalue.column_name if suggestions.best_pvalue else None
+            adj_col = suggestions.best_pvalue_adj.column_name if suggestions.best_pvalue_adj else None
+
+            # Disambiguate when raw and adj resolve to the same column header
+            # (e.g. the upload only has one p-value column and it matches an
+            # adjusted pattern). In that case we treat it as adjusted only and
+            # leave the raw slot empty -- avoids double-emitting the same value.
+            if raw_col and adj_col and raw_col == adj_col:
+                from services.column_detector import ColumnDetector as _CD
+                is_adj = any(
+                    re.search(p, raw_col, re.IGNORECASE)
+                    for p in _CD.PVALUE_ADJ_PATTERNS
+                )
+                if is_adj:
+                    raw_col = None
+
+            # Build per-gene pvalue maps keyed by uppercased gene symbol so
+            # they line up with df_processed['ID'] (which is uppercased by
+            # data_service.process_gene_expression).
+            if raw_col and raw_col in df_raw_for_export.columns and id_col in df_raw_for_export.columns:
+                raw_series = pd.to_numeric(df_raw_for_export[raw_col], errors='coerce')
+                ids = df_raw_for_export[id_col].astype(str).str.strip().str.upper()
+                gene_pvalue_raw_map = dict(zip(ids, raw_series))
+
+            if adj_col and adj_col in df_raw_for_export.columns and id_col in df_raw_for_export.columns:
+                adj_series = pd.to_numeric(df_raw_for_export[adj_col], errors='coerce')
+                ids = df_raw_for_export[id_col].astype(str).str.strip().str.upper()
+                gene_pvalue_adj_map = dict(zip(ids, adj_series))
+
+            pval_adj_col = adj_col
+            logger.info(
+                f"Plan 11-03 pvalue passthrough: raw_col={raw_col!r}, "
+                f"adj_col={adj_col!r} -> "
+                f"raw_map_size={len(gene_pvalue_raw_map) if gene_pvalue_raw_map else 0}, "
+                f"adj_map_size={len(gene_pvalue_adj_map) if gene_pvalue_adj_map else 0}"
+            )
+        except Exception as e:
+            # Non-fatal: if detection or re-read fails, the export simply
+            # produces blank pvalue / FDR cells (still a valid CSV).
+            logger.warning(f"Plan 11-03 pvalue passthrough capture failed (non-fatal): {e}")
+
         ke_gene_map = build_ke_gene_mapping(
-            current_reference_sets, ke_list, gene_logfc_map, gene_significance_map
+            current_reference_sets, ke_list,
+            gene_logfc_map, gene_significance_map,
+            gene_pvalue_raw_map=gene_pvalue_raw_map,
+            gene_pvalue_adj_map=gene_pvalue_adj_map,
         )
         
         # Guess gene ID type for display
@@ -765,6 +822,10 @@ def analyze():
         stored_metadata['id_column'] = id_col
         stored_metadata['fc_column'] = fc_col
         stored_metadata['pval_column'] = pval_col
+        # Plan 11-03: track the adjusted p-value column when it was detected
+        # alongside the threshold column. May be None when the upload only
+        # carried one p-value column.
+        stored_metadata['pval_adj_column'] = pval_adj_col
         stored_metadata['significant_genes'] = len(df_processed[df_processed['significant'] == True])
         stored_metadata['data_source'] = data_source
         stored_metadata['analysis_date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
