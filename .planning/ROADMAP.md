@@ -159,20 +159,25 @@ Plans:
 
 Plans:
 - [x] 10.1-01-PLAN.md — Backend foundation: Config.DEMO_AOP_RECOMMENDATIONS, /demos route, demos.html, nav entry, /preview accepts recommended_aops (autonomous) — completed 2026-05-06
-- [ ] 10.1-02-PLAN.md — Frontend restructure: remove demo block, add banner, AOP picker filter toggle with sticky behavior, CSS modifiers (autonomous)
+- [x] 10.1-02-PLAN.md — Frontend restructure: remove demo block, add banner, AOP picker filter toggle with sticky behavior, CSS modifiers (autonomous) — completed 2026-05-06
 - [ ] 10.1-03-PLAN.md — Manual UAT walk-through (checkpoint:human-verify)
 
 ### Phase 11: Gene-Set Export
 **Goal**: Users can export per-KE significant gene sets in formats consumable by downstream pathway-analysis tools, and Cytoscape network exports carry the per-KE significance metrics needed to interpret a static snapshot
 **Depends on**: Phase 10
-**Requirements**: EXPO-03, EXPO-04, EXPO-05, EXPO-06
+**Requirements**: EXPO-04, EXPO-05, EXPO-06 (EXPO-03 deferred-to-builder, see REQUIREMENTS.md)
 **Success Criteria** (what must be TRUE):
-  1. User clicks "Export gene sets (GMT)" on the results page and downloads a valid GMT file with one row per KE in the format `KE_ID<tab>description<tab>gene1<tab>gene2…`, importable by GSEA / Enrichr
-  2. User clicks "Export gene-by-KE table (CSV)" on the results page and downloads a CSV with columns `KE_ID, KE_Title, Gene_Symbol, log2FC, pvalue, FDR`
-  3. Both exports contain only genes that meet the active log2FC and p-value thresholds set on the analysis page (verifiable by re-running with stricter thresholds and confirming the file shrinks)
-  4. The Cytoscape network data export (PNG metadata and any JSON/data export) includes per-KE p-value and FDR fields, so a downstream consumer can reconstruct significance without re-running the analysis (closes issue #50)
-**Plans**: TBD
+  1. User clicks "Export gene-by-KE table (CSV)" on the results page and downloads a CSV with columns `KE_ID, KE_Title, Gene_Symbol, log2FC, pvalue, FDR`
+  2. The export contains only genes that meet the active log2FC and p-value thresholds set on the analysis page (verifiable by re-running with stricter thresholds and confirming the file shrinks)
+  3. The Cytoscape network data export (PNG metadata and any JSON/data export) includes per-KE p-value and FDR fields, so a downstream consumer can reconstruct significance without re-running the analysis (closes issue #50)
+**Plans**: 4 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 11-01-PLAN.md — Column detector raw vs adjusted p-value split (D-05) — services/column_detector.py + tests (autonomous, wave 1)
+- [ ] 11-02-PLAN.md — Embed per-KE p_value + fdr in cytoscape network export (D-07, EXPO-06, closes issue #50) — services/network_service.py + tests (autonomous, wave 1)
+- [ ] 11-03-PLAN.md — Gene-by-KE CSV export button + JS helper + Builder pointer (D-01/D-04/D-09/D-10/D-11/D-12, EXPO-04 + EXPO-05) — enrichment_service.py, app.py, results.html, shared_results.html + tests (autonomous, wave 2, depends on 11-01)
+- [ ] 11-04-PLAN.md — Requirement-doc cleanup: mark EXPO-03 deferred-to-builder, remove ROADMAP success criterion #1, add documentation pointer (autonomous, wave 1)
 
 ### Phase 12: Upload Widget + Tech-Debt Sweep
 **Goal**: The upload page lets users actually upload their own CSV/TSV/TXT files, and the codebase is free of the long-standing tech-debt items (deprecated `datetime.utcnow()` calls, duplicate helpers, debug prints, dead legacy code)
@@ -204,6 +209,6 @@ Phases execute in numeric order: 4 → 5 → 6 → 7 → 8 → 9 → 10 → 10.1
 | 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
 | 9. Deployment Hardening | v2.0 | 1/1 | Complete | 2026-03-02 |
 | 10. AOP Source-of-Truth Cleanup | v3.0 | 2/2 | Complete   | 2026-05-06 |
-| 10.1. Demos Page Restructure (INSERTED) | v3.0 | 1/3 | In progress | - |
-| 11. Gene-Set Export | v3.0 | 0/0 | Not started | - |
+| 10.1. Demos Page Restructure (INSERTED) | v3.0 | 2/3 | In progress | - |
+| 11. Gene-Set Export | v3.0 | 0/4 | Planned | - |
 | 12. Upload Widget + Tech-Debt Sweep | v3.0 | 0/0 | Not started | - |
