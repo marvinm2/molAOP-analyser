@@ -25,6 +25,9 @@
         </div>
     </section>
 
+    {# Cisplatin demos temporarily hidden — only PXR Agonist datasets surfaced.
+       Re-enable by removing the surrounding if-false wrapper. #}
+    {% if false %}
     <!-- Cisplatin Nephrotoxicity section -->
     <section class="demos-section">
         <h2>Cisplatin Nephrotoxicity &mdash; Kidney</h2>
@@ -74,6 +77,7 @@
             <p>The 54-file cisplatin dataset is not present on this server. Contact the maintainer or run the analyser locally with the dataset extracted to <code>data/Cisplatin_Kidney/</code>.</p>
         </div>
     </section>
+    {% endif %}
     {% endif %}
 </div>
 {% endblock %}

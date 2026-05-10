@@ -498,33 +498,35 @@ class TestDemosPage:
     """Phase 10.1: Demos page restructure — route + prefill flow."""
 
     def test_demos_route_renders(self, flask_client):
-        """GET /demos returns 200 and the curated sections."""
-        import os
+        """GET /demos returns 200 and the curated PXR section.
+
+        Cisplatin demos are currently hidden in the template (only PXR agonist
+        datasets are surfaced). Re-enable by removing the ``{% if false %}``
+        wrapper around the cisplatin section in ``templates/demos.html``.
+        """
         response = flask_client.get('/demos')
         assert response.status_code == 200
         body = response.data
         # Page chrome
         assert b'Demo Datasets' in body
-        # Sections
+        # Visible section
         assert b'PXR Agonists' in body
-        assert b'Cisplatin Nephrotoxicity' in body
-        # Curated cards present (hardcoded in route, always rendered)
+        # PXR curated cards present
         assert b'GSE90122_TO90137.tsv' in body
         assert b'GSE90122_SR12813.tsv' in body
-        assert b'CSP_24hr_10uM.csv' in body
-        assert b'CSP_4hr_10uM.csv' in body
-        assert b'CSP_72hr_10uM.csv' in body
-        # Show-all expander is only rendered when the gitignored cisplatin
-        # data directory is present (~146 MB, not included in the repo).
-        # Skip this assertion in CI / fresh-clone environments.
-        cisplatin_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'Cisplatin_Kidney')
-        if os.path.isdir(cisplatin_dir):
-            assert b'Show all 54 cisplatin datasets' in body
+        # Cisplatin section currently hidden — assert it does NOT render
+        assert b'Cisplatin Nephrotoxicity' not in body
+        assert b'Show all 54 cisplatin datasets' not in body
         # CTA copy
         assert b'Use this dataset' in body
 
     def test_demos_route_embeds_recommended_aops(self, flask_client):
-        """Each curated card embeds the right recommended_aops payload."""
+        """Each PXR curated card embeds the right recommended_aops payload.
+
+        Cisplatin demo cards are currently hidden in the template — only the
+        PXR cards are asserted. Re-enable cisplatin assertions when the
+        cisplatin section is unhidden in ``templates/demos.html``.
+        """
         response = flask_client.get('/demos')
         body = response.data.decode('utf-8')
         # PXR demo cards carry AOP:1
@@ -534,10 +536,6 @@ class TestDemosPage:
         idx = body.index('GSE90122_TO90137.tsv')
         nearby = body[max(0, idx - 400): idx + 400]
         assert 'AOP:1' in nearby, f"AOP:1 not found near PXR card: {nearby!r}"
-        # Cisplatin demo cards carry NETWORK:kidney as the first item
-        idx2 = body.index('CSP_24hr_10uM.csv')
-        nearby2 = body[max(0, idx2 - 400): idx2 + 400]
-        assert 'NETWORK:kidney' in nearby2
 
     def test_preview_accepts_recommended_aops(self, flask_client):
         """POST /preview with recommended_aops propagates the list to the template."""

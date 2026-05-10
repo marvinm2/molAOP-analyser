@@ -38,6 +38,9 @@
             <input type="file" id="batch-file-input" multiple accept=".csv,.tsv,.txt" style="display:none">
         </div>
 
+        {# Cisplatin demo picker temporarily hidden — only PXR demos surfaced.
+           Re-enable by removing the surrounding if-false wrapper. #}
+        {% if false %}
         <!-- Cisplatin demo picker -->
         <details class="demo-picker">
             <summary>Or select demo cisplatin files</summary>
@@ -62,6 +65,7 @@
                 {% endfor %}
             </div>
         </details>
+        {% endif %}
 
         <!-- File queue (below demo picker so selections don't push checkboxes down) -->
         <div id="file-list" class="file-list"></div>
