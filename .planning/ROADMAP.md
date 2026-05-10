@@ -34,7 +34,7 @@
 
 - [x] **Phase 10: AOP Source-of-Truth Cleanup** - Drop hardcoded AOP:472 rows and `kidney-472` config entry; document or dynamically derive `KIDNEY_AOP_IDS` (completed 2026-05-06)
 - [ ] **Phase 10.1: Demos Page Restructure** *(INSERTED)* - Move demos to `/demos` with recommended-AOP options per demo type; main page leads with upload-your-data
-- [ ] **Phase 11: Gene-Set Export** - GMT and CSV export of significant genes per KE on the results page; per-KE p-value/FDR embedded in Cytoscape network exports
+- [x] **Phase 11: Gene-Set Export** - GMT and CSV export of significant genes per KE on the results page; per-KE p-value/FDR embedded in Cytoscape network exports — completed 2026-05-10 (EXPO-03 deferred-to-builder)
 - [ ] **Phase 12: Upload Widget + Tech-Debt Sweep** - Real local file upload on upload page; datetime deprecation cleanup, dedup `guess_id_type()`, replace debug prints, drop dead legacy network builder
 
 ## Phase Details
