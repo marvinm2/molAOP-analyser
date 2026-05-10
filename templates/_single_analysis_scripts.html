@@ -95,16 +95,25 @@
     }
 
     // Configure plot layout and styling.
-    // autosize:false + explicit width/height locks Plotly to the container's size
-    // at render time. Without this, Plotly's autosize observer fires after browser
-    // layout settles and shrinks the plot — causing dashed threshold lines and axis
-    // titles to drift downward as the data-coord space remaps to a smaller pixel area.
+    //
+    // Two layout traps Plotly springs after newPlot resolves:
+    //
+    // 1. autosize observer — fires when the SVG size differs from the container.
+    //    Disabled with autosize:false + explicit width/height.
+    //
+    // 2. auto-margin pass — Plotly initially renders with the user margin, then
+    //    measures tick labels and axis titles and expands margins to fit them.
+    //    Because newPlot's promise resolves BEFORE this pass, .then() reveals the
+    //    plot at its first-paint coordinates; the auto-margin pass then runs and
+    //    shrinks the plot area, snapping data-coord shapes (the dashed threshold
+    //    lines) and axis titles downward. Disabled with margin.autoexpand:false
+    //    plus pre-allocated l/r/t/b values that already accommodate the labels.
     const volcanoEl = document.getElementById('volcano');
     const containerWidth = volcanoEl ? volcanoEl.clientWidth : 800;
     const layout = {
         xaxis: { title: 'log2 Fold Change' },
         yaxis: { title: '-log10(p-value)' },
-        margin: { t: 30 },
+        margin: { l: 70, r: 30, t: 30, b: 60, autoexpand: false },
         shapes: shapes,
         autosize: false,
         width: containerWidth,

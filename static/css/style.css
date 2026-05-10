@@ -120,6 +120,19 @@ header {
     margin-right: auto;
 }
 
+/* Plotly stacking workaround. Plotly's own CSS positions main-svg children
+   absolutely via the .js-plotly-plot scope, but on HTMX-swapped re-renders
+   that class doesn't survive on the volcano div, so the three stacked
+   main-svgs fall back to position:static and reflow vertically — pushing
+   threshold lines, axis titles and the modebar far below the container.
+   Force absolute positioning unconditionally so renders stay correct
+   regardless of Plotly's class management. */
+.svg-container > svg.main-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
 /* ==========================================================================
    FOOTER
    ========================================================================== */
