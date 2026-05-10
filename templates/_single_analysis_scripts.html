@@ -1,7 +1,12 @@
 <script>
-    // Volcano plot data and configuration from Flask backend
+    // Volcano plot data and configuration from Flask backend.
+    // Wrapped in IIFE so re-execution on HTMX swap doesn't redeclare top-level `const`s
+    // (which would throw a SyntaxError and silently break Plotly.newPlot on threshold change).
+    // volcanoData is exposed on `window` so setPercentageThreshold can still read it.
+    (function () {
     {% if volcano_data %}
-    const volcanoData = {{ volcano_data | tojson }};
+    window.volcanoData = {{ volcano_data | tojson }};
+    const volcanoData = window.volcanoData;
     const threshold = {{ logfc_threshold or 'null' }};
     const pvalThreshold = {{ pval_cutoff }};
     const pvalY = {{ pval_y | default(1.3) | float }};
@@ -89,17 +94,59 @@
         );
     }
 
-    // Configure plot layout and styling
+    // Configure plot layout and styling.
+    // autosize:false + explicit width/height locks Plotly to the container's size
+    // at render time. Without this, Plotly's autosize observer fires after browser
+    // layout settles and shrinks the plot — causing dashed threshold lines and axis
+    // titles to drift downward as the data-coord space remaps to a smaller pixel area.
+    const volcanoEl = document.getElementById('volcano');
+    const containerWidth = volcanoEl ? volcanoEl.clientWidth : 800;
     const layout = {
-        xaxis: { title: 'log2 Fold Change' },  // X-axis label
-        yaxis: { title: '-log10(p-value)' },   // Y-axis label
-        margin: { t: 30 },  // Top margin to accommodate title
-        shapes: shapes  // Add significance threshold lines
+        xaxis: { title: 'log2 Fold Change' },
+        yaxis: { title: '-log10(p-value)' },
+        margin: { t: 30 },
+        shapes: shapes,
+        autosize: false,
+        width: containerWidth,
+        height: 500,
     };
 
-    // Render the volcano plot using Plotly.js
-    Plotly.newPlot('volcano', [trace], layout);
+    // Render the volcano plot using Plotly.js.
+    // HTMX outerHTML swap leaves Plotly's internal state attached to detached DOM
+    // nodes; without a full purge the next render duplicates axes, clusters the
+    // modebar in the wrong corner, and overflows into adjacent UI. Purge then
+    // newPlot fully tears down and rebuilds. No `responsive:true` — the container
+    // has fixed dimensions (width:100%; height:500px) so resize listeners just
+    // accumulate and cause layout drift on each HTMX swap.
+    (function renderVolcano() {
+        if (!volcanoEl) return;
+        // Hide the plot during render — Plotly does an internal layout pass after first
+        // paint that briefly leaves shapes (dashed threshold lines, axis titles) at
+        // stale pixel coordinates while the axes reposition. Hiding until plotly_afterplot
+        // fires keeps the user from seeing the transient drift.
+        volcanoEl.style.visibility = 'hidden';
+        try { Plotly.purge(volcanoEl); } catch (_) {}
+
+        // Double-rAF defers measurement past the swap-in layout commit so Plotly
+        // reads the final container dimensions on first try.
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                // Re-measure after layout has settled.
+                layout.width = volcanoEl.clientWidth;
+                Plotly.newPlot(volcanoEl, [trace], layout, {
+                    displayModeBar: 'hover',
+                    responsive: false,
+                }).then(function () {
+                    // After Plotly's render + post-render layout pass completes, reveal.
+                    volcanoEl.style.visibility = 'visible';
+                }).catch(function () {
+                    volcanoEl.style.visibility = 'visible';
+                });
+            });
+        });
+    })();
     {% endif %}
+    })();
 </script>
 
 <script>
@@ -359,11 +406,18 @@ function setPercentageThreshold(percentage) {
 
     /**
      * Fetch AOP suggestions from the server.
+     * In recommended mode, passes the recommended IDs as `ids=` so the API
+     * force-includes case-study AOPs (e.g. AOP:1) that have no KE-gene mappings
+     * and would otherwise be excluded from the default mapped-only response.
      * @param {string} q - Search query (may be empty for on-focus defaults)
      */
     async function fetchSuggestions(q) {
         try {
-            const res = await fetch(`/api/aops?q=${encodeURIComponent(q)}`);
+            const params = new URLSearchParams({ q: q || '' });
+            if (getFilterMode() === 'recommended' && recommendedAops.length > 0) {
+                params.set('ids', recommendedAops.join(','));
+            }
+            const res = await fetch(`/api/aops?${params.toString()}`);
             if (!res.ok) {
                 let errMsg = 'Failed to load AOPs';
                 try {
