@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Cleanup, Gene-Set Export & UX Gaps
 status: executing
-stopped_at: Phase 10.1 Plan 01 complete
-last_updated: "2026-05-06T21:18:00.000Z"
-last_activity: 2026-05-06 -- Phase 10.1 Plan 01 executed (demos backend)
+stopped_at: Phase 11 UI-SPEC approved
+last_updated: "2026-05-10T16:35:22.090Z"
+last_activity: 2026-05-10 -- Phase 11 execution started
 progress:
   total_phases: 10
-  completed_phases: 1
-  total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_phases: 2
+  total_plans: 9
+  completed_plans: 5
+  percent: 56
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-06)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 10.1 — Demos Page Restructure
+**Current focus:** Phase 11 — gene-set-export
 
 ## Current Position
 
-Phase: 10.1 (Demos Page Restructure) — EXECUTING
-Plan: 2 of 3
-Status: Executing Phase 10.1
+Phase: 11 (gene-set-export) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 11
 Next recommended run: `/gsd-execute-phase 10.1`
-Last activity: 2026-05-06 -- Phase 10.1 Plan 01 executed (demos backend)
+Last activity: 2026-05-10 -- Phase 11 execution started
 
 ## Performance Metrics
 
@@ -114,6 +114,11 @@ Recent decisions affecting current work:
 - [10.1-01]: DEMO_AOP_RECOMMENDATIONS uses fnmatch glob for Cisplatin_Kidney/* pattern — two-pass lookup (exact first, then glob fallback) via get_recommended_aops() classmethod
 - [10.1-01]: demos.html uses Jinja2 for-loops; rendered output has 62 cards (2 PXR + 6 curated cisplatin + 54 in details), not 3 source occurrences
 - [10.1-01]: /preview extended to read recommended_aops from form POST or query-string GET fallback; parsed list passed to template as recommended_aops variable
+- [10.1-02]: Banner uses .card.card--banner modifier (additive) inheriting .card box-shadow — no new card shell needed
+- [10.1-02]: aop-filter-toggle rendered inside {% if volcano_data %} — toggle only appears when AOP picker section is visible (correct)
+- [10.1-02]: recommended-aops-data JSON data island placed outside {% if volcano_data %} but inside {% if recommended_aops %} — allows JS to read it even before volcano section renders
+- [10.1-02]: Test mock updated from MagicMock to real pd.DataFrame — MagicMock did not survive df[[col1,col2,col3]].dropna() slicing needed for volcano_data generation
+- [10.1-02]: Test assertion for upload-your-own path uses class="aop-filter-toggle" and <script id="recommended-aops-data" tag — bare strings appear in JS code as getElementById literals
 
 ### Roadmap Evolution
 
@@ -141,6 +146,6 @@ Resolved:
 
 ## Session Continuity
 
-Last session: 2026-05-06T21:18:00.000Z
-Stopped at: Phase 10.1 Plan 01 complete
-Resume file: .planning/phases/10.1-demos-page-restructure/10.1-02-PLAN.md
+Last session: 2026-05-10T12:33:21.869Z
+Stopped at: Phase 11 UI-SPEC approved
+Resume file: .planning/phases/11-gene-set-export/11-UI-SPEC.md
