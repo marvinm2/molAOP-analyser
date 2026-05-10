@@ -4,7 +4,7 @@ Gene set enrichment analysis service.
 import math
 import pandas as pd
 import logging
-from typing import Dict, Set, List, Any, Tuple
+from typing import Dict, Set, List, Any, Tuple, Optional
 from scipy.stats import fisher_exact
 from statsmodels.stats.multitest import multipletests
 
@@ -142,39 +142,63 @@ def run_enrichment_analysis(
     return df_results
 
 def build_ke_gene_mapping(
-    reference_sets: Dict[str, Set[str]], 
-    ke_list: Set[str], 
+    reference_sets: Dict[str, Set[str]],
+    ke_list: Set[str],
     gene_logfc_map: Dict[str, float],
-    gene_significance_map: Dict[str, bool]
+    gene_significance_map: Dict[str, bool],
+    gene_pvalue_raw_map: Optional[Dict[str, float]] = None,
+    gene_pvalue_adj_map: Optional[Dict[str, float]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Build mapping of KE to gene data for network visualization.
     Only includes genes that exist in the user's dataset (have expression data).
-    
+
     Args:
         reference_sets: Dictionary mapping KE_ID to gene sets
         ke_list: Set of KE IDs to include
         gene_logfc_map: Mapping of gene to log2FC values
         gene_significance_map: Mapping of gene to significance status
-    
+        gene_pvalue_raw_map: Optional mapping of gene to raw p-value (D-04 passthrough,
+            Plan 11-03). When supplied, each per-gene dict gains a ``pvalue_raw`` key;
+            genes absent from this map receive ``None`` for that key.
+        gene_pvalue_adj_map: Optional mapping of gene to adjusted/FDR p-value
+            (D-04 passthrough, Plan 11-03). Same fallback semantics as
+            ``gene_pvalue_raw_map``.
+
     Returns:
-        Dict mapping KE_ID to list of gene data dictionaries
+        Dict mapping KE_ID to list of gene data dictionaries. Each entry always
+        contains ``id``, ``log2FC``, and ``significant``. ``pvalue_raw`` and
+        ``pvalue_adj`` keys appear only when the corresponding map is supplied;
+        missing-from-map values become ``None``.
     """
     ke_gene_map = {}
-    
+    # Plan 11-03: when EITHER pvalue map is supplied, both `pvalue_raw` and
+    # `pvalue_adj` keys are emitted on every per-gene entry (with None as the
+    # fallback for genes absent from a given map). This keeps the per-gene
+    # shape uniform for the downstream JS CSV writer (no per-row "key present?"
+    # branching). When NEITHER map is supplied the existing 4-arg call shape
+    # is preserved exactly -- only `id`, `log2FC`, and `significant` are emitted.
+    emit_pvalue_keys = (gene_pvalue_raw_map is not None) or (gene_pvalue_adj_map is not None)
+    raw_lookup = gene_pvalue_raw_map or {}
+    adj_lookup = gene_pvalue_adj_map or {}
+
     for ke, genes in reference_sets.items():
         if ke in ke_list:
             gene_data = []
             for g in genes:
                 # Only include genes that exist in the user's dataset
                 if g in gene_logfc_map:
-                    gene_data.append({
+                    entry = {
                         "id": g,
                         "log2FC": gene_logfc_map[g],
-                        "significant": bool(gene_significance_map.get(g, False))
-                    })
+                        "significant": bool(gene_significance_map.get(g, False)),
+                    }
+                    if emit_pvalue_keys:
+                        entry["pvalue_raw"] = raw_lookup.get(g)
+                        entry["pvalue_adj"] = adj_lookup.get(g)
+                    gene_data.append(entry)
             ke_gene_map[ke] = gene_data
-    
+
     total_genes = sum(len(genes) for genes in ke_gene_map.values())
     logger.debug(f"Built KE-gene mapping for {len(ke_gene_map)} KEs with {total_genes} genes (filtered to only include genes with expression data)")
     return ke_gene_map
