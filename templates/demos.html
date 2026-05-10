@@ -29,7 +29,7 @@
     <section class="demos-section">
         <h2>Cisplatin Nephrotoxicity &mdash; Kidney</h2>
         <p>A curated subset of the 54-file cisplatin kidney dataset. Six datasets cover a 24-hour dose response and a 10&micro;M time course. Recommended: combined kidney AOP network plus six individual kidney AOPs.</p>
-        <div class="demos-grid">
+        <div class="demos-grid demos-grid--cisplatin">
             {% for item in curated_cisplatin %}
             <form class="card card--demo" action="{{ url_for('preview') }}" method="post">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
