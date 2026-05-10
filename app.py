@@ -728,7 +728,8 @@ def analyze():
         
         # Build network visualization data
         cy_network = build_cytoscape_network(
-            ke_list, edges, enrichment_results, ke_title_map, ke_type_map
+            ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
+            reference_sets=current_reference_sets,
         )
         
         # Build gene mapping for interactive features

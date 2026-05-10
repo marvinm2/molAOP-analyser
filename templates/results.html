@@ -462,6 +462,10 @@
                                 <div class="network-legend__swatch" style="background: #f4b3b3;"></div>
                                 <span>AO (Adverse Outcome)</span>
                             </div>
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #cccccc; width: 14px; height: 14px; opacity: 0.7;"></div>
+                                <span>No gene set (KE not curated)</span>
+                            </div>
                         </div>
                     </div>
 
@@ -766,6 +770,21 @@ const cy = cytoscape({
         style: {
             'border-width': 3,
             'border-color': 'red'
+        }
+    },
+    {
+        // KEs without curated gene sets — visually muted so the curation gap
+        // is obvious without hiding the KE from the AOP topology.
+        selector: 'node.no-genes',
+        style: {
+            'width': 28,
+            'height': 28,
+            'background-color': '#cccccc',
+            'border-color': '#999',
+            'border-width': 1,
+            'color': '#777',
+            'font-size': 10,
+            'opacity': 0.7
         }
     },
     {

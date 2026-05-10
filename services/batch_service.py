@@ -312,7 +312,8 @@ def _run_condition(
 
     # Build Cytoscape network
     cy_network = build_cytoscape_network(
-        ke_list, edges, enrichment_results, ke_title_map, ke_type_map
+        ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
+        reference_sets=reference_sets,
     )
 
     # Build KE gene membership maps for the drawer / results page

@@ -9,32 +9,37 @@ logger = logging.getLogger(__name__)
 
 def build_cytoscape_network(
     ke_list: Set[str],
-    edges: pd.DataFrame, 
+    edges: pd.DataFrame,
     enrichment_results: pd.DataFrame,
     ke_title_map: Dict[str, str],
-    ke_type_map: Dict[str, str]
+    ke_type_map: Dict[str, str],
+    reference_sets: Dict[str, Set[str]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Build Cytoscape.js network data structure.
-    
+
     Args:
         ke_list: Set of KE IDs to include in network
         edges: DataFrame with network edges (Source_KE, Target_KE, KER_ID)
         enrichment_results: DataFrame with enrichment analysis results
         ke_title_map: Mapping of KE IDs to human-readable titles
         ke_type_map: Mapping of KE IDs to types (MIE, intermediate, AO)
-    
+        reference_sets: Optional KE_ID -> gene-set dict. When provided, KEs
+            with no gene set get a `no-genes` class so the frontend can
+            render them as smaller / muted nodes — making the curation gap
+            visually obvious without hiding the KE from the AOP topology.
+
     Returns:
         Dictionary with 'nodes' and 'edges' keys for Cytoscape.js
     """
     logger.info("Building Cytoscape network structure")
-    
+
     # Build nodes
     cy_nodes = []
     for ke in ke_list:
         # Get enrichment data for this KE
         enrichment_row = enrichment_results[enrichment_results['KE'] == ke]
-        
+
         if not enrichment_row.empty:
             enrichment_row = enrichment_row.iloc[0]
             odds_ratio = enrichment_row.get('odds_ratio', 0)
@@ -42,26 +47,30 @@ def build_cytoscape_network(
         else:
             odds_ratio = 0
             is_significant = False
-        
+
         # Get KE metadata
         label = ke_title_map.get(ke, ke)
         ke_type = ke_type_map.get(ke, "intermediate")
-        
+        has_gene_set = bool(reference_sets and reference_sets.get(ke))
+
         # Set CSS classes for styling
         classes = []
         if is_significant:
             classes.append("significant")
-        
+        if reference_sets is not None and not has_gene_set:
+            classes.append("no-genes")
+
         node_data = {
             "data": {
                 "id": ke,
                 "label": label,
                 "logfc": odds_ratio,  # Using odds ratio as surrogate for color scaling
-                "ke_type": ke_type
+                "ke_type": ke_type,
+                "has_gene_set": has_gene_set,
             },
             "classes": " ".join(classes)
         }
-        
+
         cy_nodes.append(node_data)
     
     # Build edges
