@@ -4,6 +4,7 @@ Integration tests for Flask routes and web functionality.
 
 import pytest
 import json
+import re
 from unittest.mock import patch, MagicMock
 
 
@@ -183,6 +184,114 @@ class TestFlaskRoutes:
                 "pvalue_raw missing from rendered ke_gene_json data island"
             assert b'pvalue_adj' in response.data, \
                 "pvalue_adj missing from rendered ke_gene_json data island"
+
+    def test_analyze_respects_user_chosen_pval_adj_column(self, authenticated_client):
+        """Plan 11-05 (UAT gap closure): when the user explicitly picks
+        ``pval_adj_column`` in the preview UI, that column drives the
+        gene-by-KE CSV ``pvalue_adj`` cells -- overriding auto-detection
+        AND skipping the same-column-as-raw disambiguation.
+
+        The upload carries TWO adj-pattern columns at disjoint surrogate
+        values:
+
+        - ``padj_a`` = 0.999999  (auto-detector default candidate)
+        - ``padj_b`` = 1.5e-9    (user's explicit pick)
+
+        Surrogate values are chosen far from any other on-page numeric
+        (FDR cells, p_value cells, default thresholds) so a numeric
+        match in the parsed data island is unambiguous evidence of which
+        column was wired through.
+        """
+        import pandas as pd
+
+        # Raw upload: BRCA1/EGFR are in the KE reference set so they appear
+        # in keToGenes; TP53 is intentionally not in the reference set, so
+        # only the first two carry our surrogates into the data island.
+        raw_upload_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FoldChange': [1.5, -0.8, 2.1],
+            'pvalue':        [0.001, 0.05, 0.0001],
+            'padj_a':        [0.999999, 0.999999, 0.999999],
+            'padj_b':        [1.5e-9, 1.5e-9, 1.5e-9],
+        })
+
+        # df_processed mirrors what data_service.process_gene_expression
+        # would produce: only ID/log2FC/pval/significant. The user thresholded
+        # on `pvalue` here (the raw column).
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FC': [1.5, -0.8, 2.1],
+            'pval': [0.001, 0.05, 0.0001],
+            'significant': [True, False, True],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.05],
+            'num_overlap': [2], 'pct_sig_in_KE': [66.7],
+            'total_KE_genes_in_dataset': [3], 'odds_ratio': [3.5],
+            'overlap': ['BRCA1, EGFR'], 'KE': ['KE:115'],
+            'sig_in_KE': [2], 'sig_not_KE': [0],
+            'non_sig_in_KE': [1], 'non_sig_not_KE': [0],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        # Do NOT mock build_ke_gene_mapping -- the override must flow through
+        # the real code path so adj_lookup is built from `padj_b` values, not
+        # from the auto-detected column.
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True), \
+             patch('pandas.read_csv', return_value=raw_upload_df), \
+             patch('app.load_cached_reference_sets',
+                   return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache')):
+
+            response = authenticated_client.post('/analyze', data={
+                'filename': 'test.csv',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'pvalue',
+                'pval_adj_column': 'padj_b',   # the override under test
+                'aop_selection': 'AOP:1',
+                'logfc_threshold': '1.0',
+            })
+
+            assert response.status_code == 200
+
+            # Parse the keToGenes data island. json.dumps with default
+            # separators emits single-line JSON with no internal `;`, so a
+            # MULTILINE-anchored match up to the first `;` end-of-line is
+            # safe and avoids non-greedy DOTALL pitfalls (which would stop
+            # at the first inner `}`).
+            body = response.get_data(as_text=True)
+            match = re.search(
+                r'(?:const|var|let)\s+keToGenes\s*=\s*(.+?);\s*$',
+                body, re.MULTILINE,
+            )
+            assert match is not None, "keToGenes data island missing from response"
+            ke_to_genes = json.loads(match.group(1))
+
+            # Collect every per-gene pvalue_adj across every KE.
+            all_adj = [
+                gene['pvalue_adj']
+                for ke_genes in ke_to_genes.values()
+                for gene in ke_genes
+                if 'pvalue_adj' in gene and gene['pvalue_adj'] is not None
+            ]
+            assert all_adj, \
+                f"No pvalue_adj values flowed through (saw keToGenes={ke_to_genes})"
+
+            # Positive: the user-picked padj_b surrogate must appear.
+            assert any(abs(v - 1.5e-9) < 1e-12 for v in all_adj), \
+                f"User-picked padj_b values not in keToGenes (saw: {all_adj[:10]})"
+
+            # Negative: the auto-detected padj_a surrogate must NOT appear.
+            assert not any(abs(v - 0.999999) < 1e-9 for v in all_adj), \
+                f"Auto-detected padj_a leaked through despite user pick (saw: {all_adj[:10]})"
 
     def test_analyze_route_validation_error(self, flask_client):
         """Test analysis route with validation errors."""
