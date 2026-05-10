@@ -1,5 +1,7 @@
 """Tests for network and comparison services."""
 import json
+import math
+import numpy as np
 import pytest
 import pandas as pd
 from types import SimpleNamespace
@@ -63,6 +65,85 @@ class TestBuildCytoscapeNetwork:
         # KE:2 should have non-significant default
         ke2_node = [n for n in result['nodes'] if n['data']['id'] == 'KE:2'][0]
         assert ke2_node['data'].get('significant') is False or not ke2_node.get('classes', '').count('significant')
+
+    def test_node_data_includes_pvalue_and_fdr(self):
+        """D-07: p_value and FDR are echoed onto each KE node's data payload
+        so the existing Download Network (.cyjs) carries them automatically."""
+        ke_list = {'KE:1', 'KE:2'}
+        edges = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+        enrichment = self._make_enrichment(['KE:1', 'KE:2'], [0.001, 0.5])
+        result = build_cytoscape_network(
+            ke_list, edges, enrichment,
+            {'KE:1': 'E1', 'KE:2': 'E2'},
+            {'KE:1': 'MIE', 'KE:2': 'AO'},
+        )
+        by_id = {n['data']['id']: n['data'] for n in result['nodes']}
+        assert by_id['KE:1']['p_value'] == pytest.approx(0.001)
+        assert by_id['KE:1']['fdr'] == pytest.approx(0.001)
+        assert by_id['KE:2']['p_value'] == pytest.approx(0.5)
+        assert by_id['KE:2']['fdr'] == pytest.approx(0.5)
+        # Existing fields untouched (regression guard):
+        assert by_id['KE:1']['logfc'] == 2.0  # odds_ratio surrogate, unchanged
+        assert by_id['KE:1']['ke_type'] == 'MIE'
+        assert by_id['KE:1']['label'] == 'E1'
+
+    def test_node_data_pvalue_is_none_when_no_enrichment(self):
+        """KE in ke_list but absent from enrichment_results gets None
+        (keys present, values None — schema-stable for downstream consumers)."""
+        ke_list = {'KE:1', 'KE:2'}
+        enrichment = self._make_enrichment(['KE:1'], [0.01])  # KE:2 missing
+        result = build_cytoscape_network(
+            ke_list,
+            pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID']),
+            enrichment,
+            {'KE:1': 'E1', 'KE:2': 'E2'},
+            {'KE:1': 'MIE', 'KE:2': 'AO'},
+        )
+        ke2 = next(n for n in result['nodes'] if n['data']['id'] == 'KE:2')
+        assert 'p_value' in ke2['data']
+        assert 'fdr' in ke2['data']
+        assert ke2['data']['p_value'] is None
+        assert ke2['data']['fdr'] is None
+
+    def test_node_data_nan_sanitised_to_none(self):
+        """NaN values from enrichment must become None — json.dumps must succeed."""
+        ke_list = {'KE:1'}
+        enrichment = self._make_enrichment(['KE:1'], [float('nan')])
+        result = build_cytoscape_network(
+            ke_list,
+            pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID']),
+            enrichment,
+            {'KE:1': 'E1'},
+            {'KE:1': 'MIE'},
+        )
+        ke1 = next(n for n in result['nodes'] if n['data']['id'] == 'KE:1')
+        assert ke1['data']['fdr'] is None
+        # Critical: the entire dict must json-serialise (no NaN leaks)
+        serialised = json.dumps(result)
+        assert 'NaN' not in serialised
+
+    def test_node_data_numpy_scalars_become_native(self):
+        """numpy scalars (np.float64) must be unwrapped to native Python floats."""
+        ke_list = {'KE:1'}
+        enrichment = pd.DataFrame({
+            'KE': ['KE:1'],
+            'KE_Title': ['Event 1'],
+            'p_value': np.array([np.float64(0.0042)]),
+            'FDR': np.array([np.float64(0.0084)]),
+            'odds_ratio': [2.0],
+        })
+        result = build_cytoscape_network(
+            ke_list,
+            pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID']),
+            enrichment,
+            {'KE:1': 'E1'},
+            {'KE:1': 'MIE'},
+        )
+        ke1 = next(n for n in result['nodes'] if n['data']['id'] == 'KE:1')
+        # Must be a native python float, not numpy scalar.
+        assert isinstance(ke1['data']['p_value'], float)
+        assert ke1['data']['p_value'] == pytest.approx(0.0042)
+        assert isinstance(ke1['data']['fdr'], float)
 
 
 class TestBuildComparisonMatrix:
