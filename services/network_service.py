@@ -1,11 +1,41 @@
 """
 Network visualization service for AOP pathways.
 """
+import math
 import pandas as pd
 import logging
 from typing import Dict, Set, List, Any
 
 logger = logging.getLogger(__name__)
+
+
+def _to_native(value):
+    """Convert pandas/numpy values to JSON-safe Python natives.
+
+    - NaN / inf -> None
+    - numpy scalars (np.float64, np.int64, ...) -> native Python via .item()
+    - None / native types -> passthrough
+
+    Mirrors the sanitisation idiom at app.py:808-815 so values flowing into
+    the cytoscape data payload survive json.dumps cleanly (and so the
+    .cyjs Download Network export carries no `NaN` literals — see EXPO-06 /
+    issue #50).
+    """
+    if value is None:
+        return None
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    # Catches np.float64, np.int64, etc.
+    if hasattr(value, 'item'):
+        try:
+            native = value.item()
+            if isinstance(native, float) and (math.isnan(native) or math.isinf(native)):
+                return None
+            return native
+        except (ValueError, AttributeError):
+            return value
+    return value
+
 
 def build_cytoscape_network(
     ke_list: Set[str],
@@ -44,9 +74,17 @@ def build_cytoscape_network(
             enrichment_row = enrichment_row.iloc[0]
             odds_ratio = enrichment_row.get('odds_ratio', 0)
             is_significant = enrichment_row.get('FDR', 1.0) < 0.05
+            # EXPO-06 / issue #50 — embed per-KE significance into the node
+            # data payload so the existing client-side Download Network
+            # (.cyjs) export carries it automatically. Note the DataFrame
+            # column is lowercase 'p_value' (see enrichment_service.py:125).
+            p_value = _to_native(enrichment_row.get('p_value'))
+            fdr = _to_native(enrichment_row.get('FDR'))
         else:
             odds_ratio = 0
             is_significant = False
+            p_value = None
+            fdr = None
 
         # Get KE metadata
         label = ke_title_map.get(ke, ke)
@@ -67,6 +105,8 @@ def build_cytoscape_network(
                 "logfc": odds_ratio,  # Using odds ratio as surrogate for color scaling
                 "ke_type": ke_type,
                 "has_gene_set": has_gene_set,
+                "p_value": p_value,   # EXPO-06: per-KE significance in .cyjs export
+                "fdr": fdr,           # EXPO-06: per-KE significance in .cyjs export
             },
             "classes": " ".join(classes)
         }
