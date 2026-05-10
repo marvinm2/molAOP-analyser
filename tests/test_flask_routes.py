@@ -114,6 +114,76 @@ class TestFlaskRoutes:
 
             assert response.status_code == 200
     
+    def test_results_page_data_island_carries_pvalue_passthrough(self, authenticated_client):
+        """Plan 11-03 (EXPO-04): when the upload has both raw `pvalue` and
+        adjusted `padj` columns, the rendered results page's ke_gene_json
+        data island contains per-gene `pvalue_raw` and `pvalue_adj` keys so
+        the client-side gene-by-KE export can read them.
+
+        We do NOT mock `build_ke_gene_mapping` here -- we assert against the
+        rendered response substring, which exercises the full pipeline:
+        column detection -> raw/adj map extraction -> build_ke_gene_mapping
+        -> JSON serialisation -> template render.
+        """
+        import pandas as pd
+
+        # Raw upload as it would land on disk: includes BOTH pvalue (raw) and
+        # padj (adjusted) columns; the user thresholds on padj.
+        raw_upload_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FoldChange': [1.5, -0.8, 2.1],
+            'pvalue': [0.001, 0.05, 0.0001],
+            'padj': [0.01, 0.1, 0.001],
+        })
+
+        # df_processed as data_service would produce it (only ID/log2FC/pval/significant).
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FC': [1.5, -0.8, 2.1],
+            'pval': [0.01, 0.1, 0.001],   # padj values (user thresholded on padj)
+            'significant': [True, False, True],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.05],
+            'num_overlap': [2], 'pct_sig_in_KE': [66.7],
+            'total_KE_genes_in_dataset': [3], 'odds_ratio': [3.5],
+            'overlap': ['BRCA1, EGFR'], 'KE': ['KE:115'],
+            'sig_in_KE': [2], 'sig_not_KE': [0],
+            'non_sig_in_KE': [1], 'non_sig_not_KE': [0],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        # NOTE: do NOT mock build_ke_gene_mapping -- we want it to run for real
+        # so the per-gene pvalue_raw / pvalue_adj keys actually flow into ke_gene_json.
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True), \
+             patch('pandas.read_csv', return_value=raw_upload_df), \
+             patch('app.load_cached_reference_sets', return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache')):
+
+            response = authenticated_client.post('/analyze', data={
+                'filename': 'test.csv',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+                'aop_selection': 'AOP:1',
+                'logfc_threshold': '1.0'
+            })
+
+            assert response.status_code == 200
+            # The data island MUST carry both passthrough keys (per-gene shape
+            # change is what the JS CSV writer relies on).
+            assert b'pvalue_raw' in response.data, \
+                "pvalue_raw missing from rendered ke_gene_json data island"
+            assert b'pvalue_adj' in response.data, \
+                "pvalue_adj missing from rendered ke_gene_json data island"
+
     def test_analyze_route_validation_error(self, flask_client):
         """Test analysis route with validation errors."""
         response = flask_client.post('/analyze', data={

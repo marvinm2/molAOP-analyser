@@ -317,11 +317,17 @@
 
     <!-- Enrichment Results card -->
     <div class="card card--wide">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
             <h2 style="margin: 0;">KE Enrichment Results</h2>
-            <button class="btn btn--primary" onclick="downloadCSV()" title="Download enrichment results as CSV">
-                Download Results (CSV)
-            </button>
+            <div style="display: inline-flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn btn--primary" onclick="downloadCSV()" title="Download enrichment results as CSV">
+                    Download Results (CSV)
+                </button>
+                <button class="btn btn--primary" onclick="downloadGeneByKeCSV(event)"
+                        title="Download a long-format CSV with one row per gene-KE pair (KE_ID, KE_Title, Gene_Symbol, log2FC, pvalue, FDR), respecting your active log2FC and p-value thresholds.">
+                    Export gene-by-KE (CSV)
+                </button>
+            </div>
         </div>
 
         <div class="explanation">
@@ -355,6 +361,11 @@
                     of the enrichment.
                 </li>
             </ul>
+
+            <p style="margin-top: 12px; font-size: 13px; color: #555;">
+                <em>Looking for a GMT file for fgsea / clusterProfiler? The curated KE&rarr;gene library is served by the
+                <a href="https://molaop-builder.vhp4safety.nl" target="_blank" rel="noopener">molAOP Builder</a>.</em>
+            </p>
 
             <p>The enrichment was calculated using all genes in your uploaded dataset as the
                 <span class="help-tooltip">background universe
@@ -1088,6 +1099,121 @@ function downloadJSON() {
   link.href = URL.createObjectURL(blob);
   link.download = 'aop_network.cyjs';
   link.click();
+}
+
+// --- Gene-by-KE CSV export (Phase 11, EXPO-04 / EXPO-05) ---
+
+function _csvEscape(value) {
+    // Returns a CSV-safe cell. Handles:
+    //   - null/undefined -> empty
+    //   - non-finite numbers (NaN/Infinity) -> empty
+    //   - numbers -> string
+    //   - strings -> double-quote escaping; CSV-injection prefix guard for
+    //     cells starting with =, +, -, @ (per phase threat model T-11-08).
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'number') {
+        if (!isFinite(value)) return '';
+        return String(value);
+    }
+    let s = String(value);
+    // CSV-injection guard: prefix risky leading chars with a single quote
+    // so spreadsheet apps (Excel / Sheets / LibreOffice) do not interpret
+    // the cell as a formula.
+    if (s.length > 0 && '=+-@'.indexOf(s.charAt(0)) !== -1) {
+        s = "'" + s;
+    }
+    // Quote if contains comma, double-quote, newline, or carriage return (RFC 4180).
+    if (/[",\n\r]/.test(s)) {
+        s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+}
+
+function buildGeneByKeFilename() {
+    // D-12: molAOP_<aop_id_normalised>_<dataset_label>_gene_by_KE.csv
+    const rawAop = ('{{ metadata.get("aop_id", "AOP") | default("AOP") }}' || 'AOP');
+    const rawLabel = ('{{ metadata.get("dataset_id", "") | default("") }}' || 'unnamed');
+    const aopNorm = rawAop.replace(/:/g, '');
+    const labelNorm = rawLabel.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
+    return 'molAOP_' + aopNorm + '_' + labelNorm + '_gene_by_KE.csv';
+}
+
+function downloadGeneByKeCSV(evt) {
+    const btn = (evt && evt.currentTarget) || document.activeElement;
+    const originalLabel = btn ? btn.textContent : '';
+    let preparingTimer = null;
+    if (btn) {
+        preparingTimer = setTimeout(function() {
+            btn.textContent = 'Preparing…';   // U+2026 ellipsis (UI-SPEC)
+            btn.disabled = true;
+        }, 150);
+    }
+
+    try {
+        const rows = ['KE_ID,KE_Title,Gene_Symbol,log2FC,pvalue,FDR'];
+        // keToGenes: {ke_id: [{id, log2FC, significant, pvalue_raw?, pvalue_adj?}, ...]}
+        // titleLookup: prefer keTitleMap (results.html), fall back to tableData,
+        // and finally to the KE id itself (graceful degradation).
+        const titleLookup = (typeof keTitleMap !== 'undefined' && keTitleMap) ? Object.assign({}, keTitleMap) : {};
+        if (typeof tableData !== 'undefined' && tableData && tableData.length) {
+            tableData.forEach(function(row) {
+                if (row && row.KE && !titleLookup[row.KE] && row.Title) {
+                    titleLookup[row.KE] = row.Title;
+                }
+            });
+        }
+
+        Object.keys(keToGenes).forEach(function(keId) {
+            const genes = keToGenes[keId] || [];
+            const title = titleLookup[keId] || keId;
+            genes.forEach(function(g) {
+                if (g && g.significant === true) {
+                    rows.push([
+                        _csvEscape(keId),
+                        _csvEscape(title),
+                        _csvEscape(g.id),
+                        _csvEscape(g.log2FC),
+                        _csvEscape(g.pvalue_raw),     // blank when undefined
+                        _csvEscape(g.pvalue_adj),     // blank when undefined
+                    ].join(','));
+                }
+            });
+        });
+
+        const blob = new Blob([rows.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = buildGeneByKeFilename();
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    } catch (err) {
+        console.error('[gene-by-KE export] failed:', err);
+        if (btn) {
+            btn.textContent = 'Export failed — see browser console';
+            btn.disabled = false;
+            setTimeout(function() {
+                btn.textContent = originalLabel;
+            }, 3000);
+        }
+        return;
+    } finally {
+        if (preparingTimer) clearTimeout(preparingTimer);
+        if (btn) {
+            // Defensive restore of the happy path: only restore if we are
+            // currently showing the Preparing... state (do not clobber the
+            // "Export failed" message set in the catch block).
+            if (btn.textContent === 'Preparing…') {
+                btn.textContent = originalLabel;
+            }
+            // The error path manages its own disabled state via the 3s
+            // timeout; in the happy path we re-enable here.
+            if (btn.textContent === originalLabel) {
+                btn.disabled = false;
+            }
+        }
+    }
 }
 
 // --- Copy link (shareable URL) ---
