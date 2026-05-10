@@ -158,3 +158,134 @@ class TestBuildKeGeneMapping:
                                        {'GENE1': True, 'GENE2': True})
         assert 'KE:1' in result
         assert 'KE:2' not in result
+
+
+# --- Plan 11-03 (Wave 2) tests for optional pvalue passthrough ---
+
+def test_build_ke_gene_mapping_backward_compat():
+    """Existing 4-arg call returns the same dict shape as today (no new keys)."""
+    reference_sets = {'KE:1': {'GENE1', 'GENE2'}}
+    ke_list = {'KE:1'}
+    logfc = {'GENE1': 1.5, 'GENE2': -0.3}
+    sig = {'GENE1': True, 'GENE2': False}
+    result = build_ke_gene_mapping(reference_sets, ke_list, logfc, sig)
+    assert 'KE:1' in result
+    for entry in result['KE:1']:
+        assert set(entry.keys()) == {'id', 'log2FC', 'significant'}
+
+
+def test_build_ke_gene_mapping_with_pvalue_passthrough():
+    """When pvalue maps are supplied, per-gene dicts gain pvalue_raw / pvalue_adj
+    with None fallback for genes absent from the maps (D-04 passthrough)."""
+    reference_sets = {'KE:1': {'GENE1', 'GENE2', 'GENE3'}}
+    ke_list = {'KE:1'}
+    logfc = {'GENE1': 1.5, 'GENE2': -0.3, 'GENE3': 0.8}
+    sig = {'GENE1': True, 'GENE2': False, 'GENE3': True}
+    pval_raw = {'GENE1': 0.001, 'GENE3': 0.02}      # GENE2 absent
+    pval_adj = {'GENE1': 0.01, 'GENE3': 0.05}       # GENE2 absent
+    result = build_ke_gene_mapping(
+        reference_sets, ke_list, logfc, sig,
+        gene_pvalue_raw_map=pval_raw,
+        gene_pvalue_adj_map=pval_adj,
+    )
+    by_id = {e['id']: e for e in result['KE:1']}
+    assert by_id['GENE1']['pvalue_raw'] == 0.001
+    assert by_id['GENE1']['pvalue_adj'] == 0.01
+    assert by_id['GENE2']['pvalue_raw'] is None
+    assert by_id['GENE2']['pvalue_adj'] is None
+    assert by_id['GENE3']['pvalue_raw'] == 0.02
+    assert by_id['GENE3']['pvalue_adj'] == 0.05
+
+
+def test_build_ke_gene_mapping_only_raw_pvalue():
+    """Only raw map supplied -> pvalue_raw present, pvalue_adj is None for all."""
+    result = build_ke_gene_mapping(
+        {'KE:1': {'GENE1'}}, {'KE:1'}, {'GENE1': 1.0}, {'GENE1': True},
+        gene_pvalue_raw_map={'GENE1': 0.005},
+    )
+    entry = result['KE:1'][0]
+    assert entry['pvalue_raw'] == 0.005
+    assert entry['pvalue_adj'] is None
+
+
+def test_build_ke_gene_mapping_filters_by_significant_for_export():
+    """Per D-01: the export consumer reads `significant` to filter; the function
+    itself MUST NOT pre-filter. Non-significant genes are still emitted with
+    significant=False so the consumer makes the policy choice."""
+    result = build_ke_gene_mapping(
+        {'KE:1': {'G1', 'G2'}}, {'KE:1'},
+        {'G1': 1.0, 'G2': 1.0},
+        {'G1': True, 'G2': False},
+    )
+    flags = {e['id']: e['significant'] for e in result['KE:1']}
+    assert flags == {'G1': True, 'G2': False}
+
+
+def test_build_ke_gene_mapping_threshold_shrinkage():
+    """EXPO-05 regression guard: tightening the significance threshold
+    STRICTLY shrinks the count of `significant=True` per-gene entries that the
+    downstream CSV writer would emit. This is the automated counterpart to
+    Task 3 Step E item 7's manual smoke test (which re-runs in the browser
+    with a stricter log2FC and confirms the downloaded file is smaller).
+
+    Setup: the same DataFrame-equivalent inputs are passed twice -- once with
+    a LOOSE significance map (more genes flagged True) and once with a
+    STRICT map (fewer genes flagged True). The other inputs (reference_sets,
+    ke_list, gene_logfc_map) are identical across both calls. We then count
+    per-gene entries across all KEs where `significant == True` and assert
+    strict_count < loose_count.
+    """
+    # Three KEs, each with overlapping reference gene sets.
+    reference_sets = {
+        'KE:1': {'G1', 'G2', 'G3', 'G4'},
+        'KE:2': {'G2', 'G3', 'G5', 'G6'},
+        'KE:3': {'G4', 'G5', 'G6', 'G7'},
+    }
+    ke_list = {'KE:1', 'KE:2', 'KE:3'}
+    # All genes present in the user upload with arbitrary log2FC values
+    logfc = {f'G{i}': float(i) - 4.0 for i in range(1, 8)}  # G1..G7
+
+    # LOOSE threshold: 5 of 7 genes pass (G1, G2, G3, G6, G7)
+    loose_sig = {
+        'G1': True,  'G2': True,  'G3': True,
+        'G4': False, 'G5': False,
+        'G6': True,  'G7': True,
+    }
+    # STRICT threshold: only 2 of 7 genes pass (G1, G7) -- proper subset of loose
+    strict_sig = {
+        'G1': True,  'G2': False, 'G3': False,
+        'G4': False, 'G5': False,
+        'G6': False, 'G7': True,
+    }
+
+    loose_map = build_ke_gene_mapping(reference_sets, ke_list, logfc, loose_sig)
+    strict_map = build_ke_gene_mapping(reference_sets, ke_list, logfc, strict_sig)
+
+    loose_count = sum(
+        1 for ke_entries in loose_map.values()
+          for entry in ke_entries
+          if entry['significant'] is True
+    )
+    strict_count = sum(
+        1 for ke_entries in strict_map.values()
+          for entry in ke_entries
+          if entry['significant'] is True
+    )
+
+    # The export consumer (JS CSV writer) emits ONE row per significant=True
+    # entry, so this count is exactly the row count of the downloaded CSV.
+    # Tightening the threshold MUST shrink it.
+    assert strict_count < loose_count, (
+        f"EXPO-05 violated: strict-threshold count ({strict_count}) is not "
+        f"strictly less than loose-threshold count ({loose_count}). The "
+        f"downstream CSV would NOT shrink when the user tightens the "
+        f"threshold -- this breaks the EXPO-05 contract."
+    )
+    # Sanity-pin the absolute counts so a future change that quietly inflates
+    # both sides equally still trips the test:
+    # loose_sig has G1,G2,G3,G6,G7 = 5 True genes; their occurrences across the
+    # three KE reference sets sum to: G1 in {KE:1}, G2 in {KE:1,KE:2}, G3 in {KE:1,KE:2},
+    # G6 in {KE:2,KE:3}, G7 in {KE:3} = 1+2+2+2+1 = 8 significant entries.
+    # strict_sig has G1,G7 = 2 True genes; G1 in {KE:1}, G7 in {KE:3} = 1+1 = 2 entries.
+    assert loose_count == 8
+    assert strict_count == 2
