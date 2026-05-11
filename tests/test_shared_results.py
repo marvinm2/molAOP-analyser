@@ -13,7 +13,7 @@ import uuid
 import tempfile
 import os
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from database import (
     DatabaseManager,
@@ -89,7 +89,7 @@ class TestSharedResultModel:
         uuid.UUID(record.uuid)  # Raises ValueError if not valid UUID
 
         # Expires approximately 30 days from now
-        delta = record.expires_at - datetime.utcnow()
+        delta = record.expires_at - datetime.now(timezone.utc).replace(tzinfo=None)
         assert 29 <= delta.days <= 30, f"Expected ~30 day expiry, got {delta.days} days"
 
         # Enrichment JSON is valid
@@ -122,9 +122,9 @@ class TestSharedResultModel:
             metadata={},
         )
         # Override expires_at to the past
-        record.expires_at = datetime.utcnow() - timedelta(hours=1)
+        record.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
 
-        assert record.expires_at < datetime.utcnow(), "Record should be expired"
+        assert record.expires_at < datetime.now(timezone.utc).replace(tzinfo=None), "Record should be expired"
 
     def test_cleanup_expired(self, db_session):
         """cleanup_expired_shared_results deletes expired rows and keeps valid ones."""
@@ -135,7 +135,7 @@ class TestSharedResultModel:
             ke_gene_map=None, ke_type_map=None, ke_title_map=None,
             aop_id='AOP:1', aop_label='Expired AOP', metadata={},
         )
-        expired.expires_at = datetime.utcnow() - timedelta(days=1)
+        expired.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
 
         valid = SharedResult.create(
             enrichment_table=[],
@@ -255,7 +255,7 @@ class TestShareEndpoints:
                 ke_gene_map=None, ke_type_map=None, ke_title_map=None,
                 aop_id='AOP:99', aop_label='Expired AOP', metadata={},
             )
-            record.expires_at = datetime.utcnow() - timedelta(hours=1)
+            record.expires_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
             session.add(record)
             session.commit()
             expired_uuid = record.uuid
