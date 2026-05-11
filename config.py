@@ -121,9 +121,12 @@ class Config:
     # when the user lands via a /demos CTA. Soft restriction (D-06) — full list still reachable
     # via the "Show all AOPs" toggle owned by Plan 02.
     DEMO_AOP_RECOMMENDATIONS = {
-        # PXR demos → AOP:1 only (locked in D-08, D-13)
-        'GSE90122_TO90137.tsv': ['AOP:1'],
-        'GSE90122_SR12813.tsv': ['AOP:1'],
+        # PXR demos → locally curated AOP:DEMO (PXR activation → liver steatosis).
+        # Namespaced away from AOP:N to avoid colliding with the AOP-Wiki id
+        # space — AOP-Wiki's AOP:1 is a different pathway (uncharacterized
+        # liver damage → HCC) and was overwriting our label in the typeahead.
+        'GSE90122_TO90137.tsv': ['AOP:DEMO'],
+        'GSE90122_SR12813.tsv': ['AOP:DEMO'],
         # Cisplatin demos → kidney network first + 6 individual kidney AOPs (D-08).
         # Order: NETWORK:kidney first (locked); remaining order is Claude's discretion
         # within the curator's most-cited kidney AOP list.
@@ -157,7 +160,7 @@ class Config:
     # AOP case studies
     CASE_STUDY_AOPS = {
         "DEMO": {"label": "---DEMO---", "enabled": False},
-        "steatosis": {"id": "AOP:1", "label": "PXR activation leading to liver steatosis", "enabled": True, "source": "csv"},
+        "steatosis": {"id": "AOP:DEMO", "label": "PXR activation leading to liver steatosis", "enabled": True, "source": "csv"},
         "VHP-CASES:": {"label": "---VHP CASES---", "enabled": False},
         "vhp-kidney": {"id": "AOP:2", "label": "DNA adduct formation leading to kidney failure", "enabled": True, "source": "csv"},
         "vhp-parkinson": {"id": "AOP:3", "label": "Calcium overload in dopaminergic neurons of the substantia nigra leading to parkinsonian motor deficits", "enabled": False, "source": "csv"},

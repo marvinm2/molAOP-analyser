@@ -321,13 +321,26 @@ def build_aop_list(config) -> List[Dict]:
             continue
         aop_id = entry["id"]
         if aop_id not in existing_ids:
+            # For CSV-sourced AOPs, count actual KEs from data/aop_ke_map.csv
+            # so the typeahead shows e.g. "(12 KEs)" instead of "(0 KEs -- 1/0
+            # KEs mapped)". Fall back to 0 if the CSV read fails.
+            ke_count = 0
+            if entry.get("source") == "csv":
+                try:
+                    import pandas as pd
+                    df = pd.read_csv("data/aop_ke_map.csv")
+                    ke_count = int(df[df["AOP_ID"] == aop_id]["KE_ID"].dropna().nunique())
+                except Exception as exc:
+                    logger.warning("Could not count KEs for CSV AOP %s: %s", aop_id, exc)
             aops.append({
                 "aop_id": aop_id,
                 "title": entry.get("label", aop_id),
-                "ke_count": 0,
-                "mapped_ke_count": 1,  # treat configured AOPs as mapped
+                "ke_count": ke_count,
+                # Treat configured AOPs as fully mapped so the typeahead shows
+                # them on focus with a meaningful "N/N KEs mapped" badge.
+                "mapped_ke_count": ke_count or 1,
             })
-            logger.info("Merged configured AOP %s into discovery list", aop_id)
+            logger.info("Merged configured AOP %s into discovery list (%d KEs)", aop_id, ke_count)
 
     # Sort: mapped first (by mapped_ke_count desc), then unmapped (by numeric AOP id)
     def _sort_key(aop: Dict):

@@ -483,5 +483,31 @@ function setPercentageThreshold(percentage) {
         });
         syncLabel();
     }
+
+    // Auto-select the recommended AOP when there is exactly one. The demo CTA
+    // on /demos already POSTs recommended_aops, so curators landing on /preview
+    // via a demo expect the picker to be pre-filled with the recommended AOP
+    // rather than having to re-pick it. Only kicks in when the picker is empty
+    // (so we never clobber a manual selection on HTMX re-render).
+    if (recommendedAops.length === 1 && !hiddenInput.value && !searchInput.value) {
+        const wantedId = recommendedAops[0];
+        // Skip NETWORK:* sentinels — they aren't returned by /api/aops as a
+        // single AOP and are reached through the case-study dropdown instead.
+        if (!wantedId.startsWith('NETWORK:')) {
+            const params = new URLSearchParams({ ids: wantedId });
+            fetch(`/api/aops?${params.toString()}`)
+                .then(function (res) { return res.ok ? res.json() : []; })
+                .then(function (aops) {
+                    const match = Array.isArray(aops)
+                        ? aops.find(function (a) { return a.aop_id === wantedId; })
+                        : null;
+                    if (match && !hiddenInput.value) {
+                        hiddenInput.value = match.aop_id;
+                        searchInput.value = formatLabel(match);
+                    }
+                })
+                .catch(function () { /* silent: user can still pick manually */ });
+        }
+    }
 })();
 </script>

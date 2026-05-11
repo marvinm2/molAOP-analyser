@@ -222,7 +222,8 @@ def index():
     return render_template('index.html',
                            case_study_aops=Config.CASE_STUDY_AOPS,
                            cisplatin_demos=get_cisplatin_demo_files(),
-                           parse_filename=parse_cisplatin_filename)
+                           parse_filename=parse_cisplatin_filename,
+                           metadata=session.get('experiment_metadata', {}) or {})
 
 @app.route('/documentation')
 def documentation():
@@ -368,8 +369,8 @@ def api_aops():
            If empty, returns only mapped AOPs (for on-focus default suggestions).
         ids: Comma-separated AOP IDs to force-include in the response, even if
              they have no KE-gene mappings. Used by the recommended-AOP filter
-             on demo flows (e.g. AOP:1 for PXR liver steatosis is not in the
-             mapped-AOP list but still needs to appear in the picker).
+             on demo flows (e.g. AOP:DEMO for PXR liver steatosis is not in
+             the mapped-AOP list but still needs to appear in the picker).
 
     Returns:
         JSON array of AOP objects, capped at 50 results.
@@ -391,7 +392,7 @@ def api_aops():
         ]
     else:
         # No query: return mapped AOPs plus any explicitly-forced IDs (covers
-        # case-study AOPs like AOP:1 that have no KE-gene mappings yet).
+        # case-study AOPs like AOP:DEMO that have no KE-gene mappings yet).
         # Forced IDs go first so they survive the 50-result cap even when there
         # are 200+ mapped AOPs.
         forced = [a for a in aops if a['aop_id'] in forced_ids]
@@ -499,6 +500,14 @@ def preview():
         shutil.copy2(str(requested), filepath)
         logger.info(f"Copied demo file {demo_filename} to {filepath}")
 
+        # Seed a meaningful default dataset_id from the demo file stem when the
+        # user hasn't supplied one. Without this the gene-by-KE export filename
+        # ends up as `molAOP_<aop>_unnamed_gene_by_KE.csv` for every demo run.
+        seed_meta = dict(session.get('experiment_metadata', {}) or {})
+        if not seed_meta.get('dataset_id'):
+            seed_meta['dataset_id'] = Path(filename).stem
+            session['experiment_metadata'] = seed_meta
+
     # Handle re-processing of existing uploaded file
     elif filename:
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(filename))
@@ -600,6 +609,9 @@ def preview():
         cisplatin_demos=get_cisplatin_demo_files(),
         parse_filename=parse_cisplatin_filename,
         recommended_aops=recommended_aops,
+        # Carry session metadata through so the visible inputs survive HTMX
+        # re-renders. Lets the /demos CTA pre-seed dataset_id (see above).
+        metadata=session.get('experiment_metadata', {}) or {},
     )
 
     # HTMX swaps in just the partial — no full-page reload, no scroll-to-top.

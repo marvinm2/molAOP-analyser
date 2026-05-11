@@ -341,7 +341,7 @@ class TestLoadAopDataDefaultSparql:
         import pandas as pd
         from services.data_service import load_aop_data
 
-        # AOP:1 is configured with source='csv'
+        # AOP:DEMO is configured with source='csv'
         fake_ke_set = {"KE:115"}
         fake_edges = pd.DataFrame(columns=["AOP_ID", "Source_KE", "Target_KE"])
         fake_type = {"KE:115": "MIE"}
@@ -351,9 +351,9 @@ class TestLoadAopDataDefaultSparql:
                    return_value=(fake_ke_set, fake_edges, fake_type, fake_title)) as mock_csv, \
              patch("services.sparql_service.fetch_aop_ke_data_cached") as mock_sparql:
 
-            result = load_aop_data("AOP:1")
+            result = load_aop_data("AOP:DEMO")
 
-        mock_csv.assert_called_once_with("AOP:1")
+        mock_csv.assert_called_once_with("AOP:DEMO")
         mock_sparql.assert_not_called()
 
     def test_sparql_aop_uses_sparql(self):

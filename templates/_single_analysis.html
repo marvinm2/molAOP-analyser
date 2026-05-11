@@ -65,32 +65,36 @@
                 <div class="metadata-field-group">
                     <label for="dataset_id">Dataset ID:</label>
                     <input type="text" id="dataset_id" name="dataset_id"
-                           placeholder="e.g., EXP001, GSE123456">
+                           placeholder="e.g., EXP001, GSE123456"
+                           value="{{ metadata.dataset_id or '' }}">
                 </div>
 
                 <div class="metadata-field-group">
                     <label for="owner">Owner/Contact:</label>
                     <input type="text" id="owner" name="owner"
-                           placeholder="e.g., Dr. Smith, Lab Team">
+                           placeholder="e.g., Dr. Smith, Lab Team"
+                           value="{{ metadata.owner or '' }}">
                 </div>
             </div>
 
             <div class="metadata-field-group">
                 <label for="stressor">Stressor/Treatment:</label>
                 <input type="text" id="stressor" name="stressor"
-                       placeholder="e.g., PFOA, Rotenone, Vehicle control">
+                       placeholder="e.g., PFOA, Rotenone, Vehicle control"
+                       value="{{ metadata.stressor or '' }}">
             </div>
 
             <div class="metadata-field-group">
                 <label for="dosing">Dosing Information:</label>
                 <input type="text" id="dosing" name="dosing"
-                       placeholder="e.g., 10 µM for 24h, 50 mg/kg/day for 7 days">
+                       placeholder="e.g., 10 µM for 24h, 50 mg/kg/day for 7 days"
+                       value="{{ metadata.dosing or '' }}">
             </div>
 
             <div class="metadata-field-group">
                 <label for="description">Description (Optional):</label>
                 <textarea id="description" name="description" rows="3"
-                          placeholder="Additional notes about the experiment..."></textarea>
+                          placeholder="Additional notes about the experiment...">{{ metadata.description or '' }}</textarea>
             </div>
         </form>
 
