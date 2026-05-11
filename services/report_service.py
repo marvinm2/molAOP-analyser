@@ -1028,7 +1028,7 @@ class ReportGenerator:
                 • <font color="#b3e6b3">Green circles</font>: Molecular Initiating Events (MIEs)<br/>
                 • <font color="#ffd9b3">Orange circles</font>: Intermediate Key Events<br/>
                 • <font color="#f4b3b3">Pink circles</font>: Adverse Outcomes (AOs)<br/>
-                • <font color="red">Red border</font>: Significantly enriched Key Events (FDR &lt; 0.05)<br/>
+                • <font color="red">Red border</font>: Significantly enriched Key Events (p-value &lt; 0.05)<br/>
                 • Arrows indicate causal relationships between Key Events
                 """
                 story.append(Paragraph(legend_text, normal_style))

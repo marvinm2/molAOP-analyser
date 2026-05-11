@@ -73,7 +73,7 @@ def build_cytoscape_network(
         if not enrichment_row.empty:
             enrichment_row = enrichment_row.iloc[0]
             odds_ratio = enrichment_row.get('odds_ratio', 0)
-            is_significant = enrichment_row.get('FDR', 1.0) < 0.05
+            is_significant = enrichment_row.get('p_value', 1.0) < 0.05
             # EXPO-06 / issue #50 — embed per-KE significance into the node
             # data payload so the existing client-side Download Network
             # (.cyjs) export carries it automatically. Note the DataFrame
