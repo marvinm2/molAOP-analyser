@@ -75,9 +75,9 @@ Requirements for v3.0 Cleanup, Gene-Set Export & UX Gaps milestone.
 
 ### Tech Debt
 
-- [ ] **DEBT-01**: All `datetime.utcnow()` call sites use timezone-aware `datetime.now(datetime.UTC)` instead (database.py, app.py, tests); pytest run produces no `DeprecationWarning` from datetime
+- [x] **DEBT-01**: All `datetime.utcnow()` call sites use timezone-aware `datetime.now(datetime.UTC)` instead (database.py, app.py, tests); pytest run produces no `DeprecationWarning` from datetime
 - [ ] **DEBT-02**: Duplicate `guess_id_type()` is removed from `app.py`; `services/data_service.py` is the single definition
-- [ ] **DEBT-03**: Debug `print()` statements in `helpers.py` are replaced with `logger.debug()`
+- [x] **DEBT-03**: Debug `print()` statements in `helpers.py` are replaced with `logger.debug()`
 - [ ] **DEBT-04**: Unused `build_cytoscape_network_legacy()` is removed from `services/network_service.py`
 
 ## Future Requirements
@@ -159,7 +159,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UPUX-04 | Phase 12 | Planned |
 | DEBT-01 | Phase 12 | Planned |
 | DEBT-02 | Phase 12 | Planned |
-| DEBT-03 | Phase 12 | Planned |
+| DEBT-03 | Phase 12 | Complete (2026-05-11) |
 | DEBT-04 | Phase 12 | Planned |
 
 **Coverage:**
@@ -169,3 +169,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 ---
 *Requirements defined: 2026-02-27*
 *Last updated: 2026-05-10 — Phase 11 planning: EXPO-03 marked deferred-to-builder; GMT export served by molAOP Builder upstream*
+*Last updated: 2026-05-11 — Phase 12-03: DEBT-03 ticked (helpers.py print -> logger.debug migration verified, completed earlier in commit f711e30)*

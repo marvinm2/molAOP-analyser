@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.0
 milestone_name: Cleanup, Gene-Set Export & UX Gaps
-status: completed
-stopped_at: Phase 11 Plan 02 complete (cytoscape network significance embedding, EXPO-06 closed)
-last_updated: "2026-05-10T17:35:54.802Z"
-last_activity: 2026-05-10 -- Phase 11 marked complete
+status: executing
+stopped_at: Phase 12 context gathered
+last_updated: "2026-05-11T08:11:00.494Z"
+last_activity: 2026-05-11
 progress:
   total_phases: 10
   completed_phases: 2
-  total_plans: 9
-  completed_plans: 7
-  percent: 78
+  total_plans: 15
+  completed_plans: 9
+  percent: 60
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-06)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 11 — gene-set-export
+**Current focus:** Phase 12 — upload-widget-tech-debt-sweep
 
 ## Current Position
 
-Phase: 11 — COMPLETE
-Plan: 2 of 4 complete (11-02 — cytoscape network significance embedding, EXPO-06 closed)
-Status: Phase 11 complete
+Phase: 12 (upload-widget-tech-debt-sweep) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Next recommended run: `/gsd-execute-phase 11`
-Last activity: 2026-05-10 -- Phase 11 marked complete
+Last activity: 2026-05-11
 
 ## Performance Metrics
 
@@ -151,6 +151,6 @@ Resolved:
 
 ## Session Continuity
 
-Last session: 2026-05-10T16:39:35.000Z
-Stopped at: Phase 11 Plan 02 complete (cytoscape network significance embedding, EXPO-06 closed)
-Resume file: .planning/phases/11-gene-set-export/ (next plan: gene-by-KE CSV writer)
+Last session: 2026-05-11T08:11:00.482Z
+Stopped at: Phase 12 context gathered
+Resume file: None
