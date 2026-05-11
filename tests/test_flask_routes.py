@@ -340,6 +340,95 @@ class TestFlaskRoutes:
             assert not any(abs(v - 0.999999) < 1e-9 for v in all_adj), \
                 f"Auto-detected padj_a leaked through despite user pick (saw: {all_adj[:10]})"
 
+    def test_analyze_combines_duplicate_probes_for_pvalue_passthrough(self, authenticated_client):
+        """Regression: when a gene has multiple probes in the upload, the
+        gene-by-KE export's pvalue/FDR cells must reflect a Fisher-combined
+        per-gene value -- not whichever probe happened to be last in the
+        DataFrame.
+
+        Pre-fix, ``dict(zip(ids, series))`` silently kept the last probe per
+        duplicate gene, so a row with significant=True (driven by the
+        Fisher-combined gate in df_processed) could ship next to a
+        non-significant probe p-value, contradicting the significance flag.
+        """
+        import pandas as pd
+
+        # BRCA1 has two probes mirroring the FOXA1 case observed live:
+        # one strong probe (1e-4) and one weak (0.9). Fisher-combined raw p
+        # for BRCA1 is dominated by the strong probe and lands well under
+        # 0.05; min adj likewise reflects the strong probe.
+        raw_upload_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'BRCA1', 'EGFR'],
+            'log2FoldChange': [1.5, 1.4, 2.1],
+            'pvalue':         [1e-4,  0.9,  0.0001],
+            'padj':           [1e-3,  0.95, 0.001],
+        })
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'EGFR'],
+            'log2FC': [1.45, 2.1],
+            'pval':   [1e-4, 0.0001],     # Fisher-combined for BRCA1
+            'significant': [True, True],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.05],
+            'num_overlap': [2], 'pct_sig_in_KE': [100.0],
+            'total_KE_genes_in_dataset': [2], 'odds_ratio': [3.5],
+            'overlap': ['BRCA1, EGFR'], 'KE': ['KE:115'],
+            'sig_in_KE': [2], 'sig_not_KE': [0],
+            'non_sig_in_KE': [0], 'non_sig_not_KE': [0],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 2})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True), \
+             patch('pandas.read_csv', return_value=raw_upload_df), \
+             patch('app.load_cached_reference_sets',
+                   return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache')):
+
+            response = authenticated_client.post('/analyze', data={
+                'filename': 'test.csv',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'pvalue',
+                'aop_selection': 'AOP:1',
+                'logfc_threshold': '1.0',
+            })
+            assert response.status_code == 200
+
+            body = response.get_data(as_text=True)
+            match = re.search(
+                r'(?:const|var|let)\s+keToGenes\s*=\s*(.+?);\s*$',
+                body, re.MULTILINE,
+            )
+            assert match is not None, "keToGenes data island missing from response"
+            ke_to_genes = json.loads(match.group(1))
+
+            brca1 = next(
+                (g for ke_genes in ke_to_genes.values() for g in ke_genes
+                 if g.get('id') == 'BRCA1'),
+                None,
+            )
+            assert brca1 is not None, "BRCA1 absent from keToGenes"
+
+            # Pre-fix the last-probe overwrite would have shipped 0.9 / 0.95.
+            # Post-fix the Fisher-combined raw p is far below the weak probe,
+            # and the adjusted column is combined the same way for consistency.
+            assert brca1['pvalue_raw'] < 0.05, (
+                f"BRCA1 pvalue_raw={brca1['pvalue_raw']} suggests last-probe "
+                "overwrite (expected Fisher-combined value < 0.05)"
+            )
+            assert brca1['pvalue_adj'] < 0.05, (
+                f"BRCA1 pvalue_adj={brca1['pvalue_adj']} suggests last-probe "
+                "overwrite (expected aggregated value < 0.05)"
+            )
+
     def test_analyze_route_validation_error(self, flask_client):
         """Test analysis route with validation errors."""
         response = flask_client.post('/analyze', data={

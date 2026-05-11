@@ -745,15 +745,36 @@ def analyze():
             # Build per-gene pvalue maps keyed by uppercased gene symbol so
             # they line up with df_processed['ID'] (which is uppercased by
             # data_service.process_gene_expression).
-            if raw_col and raw_col in df_raw_for_export.columns and id_col in df_raw_for_export.columns:
-                raw_series = pd.to_numeric(df_raw_for_export[raw_col], errors='coerce')
+            #
+            # Multi-probe collapse: a naive dict(zip(ids, series)) silently
+            # keeps the LAST probe per duplicate gene, producing export rows
+            # where significant=True (driven by the Fisher-combined threshold
+            # column in df_processed) coexists with a non-significant probe
+            # p-value. Aggregate with Fisher's method per gene to mirror
+            # data_service.process_gene_expression, so the exported pvalue/FDR
+            # describe the same evidence as the significance flag.
+            if id_col in df_raw_for_export.columns:
                 ids = df_raw_for_export[id_col].astype(str).str.strip().str.upper()
-                gene_pvalue_raw_map = dict(zip(ids, raw_series))
 
-            if adj_col and adj_col in df_raw_for_export.columns and id_col in df_raw_for_export.columns:
-                adj_series = pd.to_numeric(df_raw_for_export[adj_col], errors='coerce')
-                ids = df_raw_for_export[id_col].astype(str).str.strip().str.upper()
-                gene_pvalue_adj_map = dict(zip(ids, adj_series))
+                def _combine_per_gene(series):
+                    df_tmp = pd.DataFrame(
+                        {'ID': ids, 'val': pd.to_numeric(series, errors='coerce')}
+                    ).dropna()
+                    out = {}
+                    for gene, group in df_tmp.groupby('ID'):
+                        vals = group['val'].astype(float).values
+                        if len(vals) == 1:
+                            out[gene] = float(vals[0])
+                        else:
+                            _, combined = combine_pvalues(vals, method='fisher')
+                            out[gene] = float(combined)
+                    return out
+
+                if raw_col and raw_col in df_raw_for_export.columns:
+                    gene_pvalue_raw_map = _combine_per_gene(df_raw_for_export[raw_col])
+
+                if adj_col and adj_col in df_raw_for_export.columns:
+                    gene_pvalue_adj_map = _combine_per_gene(df_raw_for_export[adj_col])
 
             pval_adj_col = adj_col
             logger.info(
