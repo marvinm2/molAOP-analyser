@@ -610,44 +610,6 @@ def preview():
 
 
 
-import re
-
-def guess_id_type(gene_series):
-    """Determine the most likely gene identifier type in a pandas Series.
-    
-    Analyzes the first 20 gene identifiers to classify them as HGNC symbols,
-    Ensembl IDs, or Entrez IDs based on pattern matching.
-    
-    Args:
-        gene_series: pandas Series containing gene identifiers
-        
-    Returns:
-        str: Most likely identifier type ('HGNC', 'Ensembl', or 'Entrez')
-    """
-    # Define regex patterns for common gene identifier formats
-    hgnc_pattern = re.compile(r"^[A-Z0-9\-]+$")  # Uppercase letters, numbers, hyphens
-    ensembl_pattern = re.compile(r"ENSG\d+")      # Ensembl gene format
-    entrez_pattern = re.compile(r"^\d+$")         # Pure numeric IDs
-
-    # Score each pattern against sample of identifiers
-    hgnc, ensembl, entrez = 0, 0, 0
-    for gene in gene_series.head(20):  # Sample first 20 for efficiency
-        if ensembl_pattern.match(gene):
-            ensembl += 1
-        elif entrez_pattern.match(gene):
-            entrez += 1
-        elif hgnc_pattern.match(gene):
-            hgnc += 1
-
-    # Return the type with the highest match count
-    scores = {"HGNC": hgnc, "Ensembl": ensembl, "Entrez": entrez}
-    return max(scores, key=scores.get)
-
-
-
-
-
-
 @app.route('/analyze', methods=['POST'])
 def analyze():
     """Refactored analyze function using service modules."""
