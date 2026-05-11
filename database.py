@@ -4,7 +4,7 @@ Database models and setup for the Molecular AOP Analyser.
 Provides SQLite-based persistence for experiment metadata and analysis results.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import json
 import uuid as uuid_lib
@@ -48,7 +48,7 @@ class ExperimentRecord(Base):
     significant_genes = Column(Integer)
     
     # Timestamps  
-    upload_timestamp = Column(DateTime, default=datetime.utcnow, nullable=True)
+    upload_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=True)
     analysis_timestamp = Column(DateTime)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -85,7 +85,7 @@ class SharedResult(Base):
     __tablename__ = 'shared_results'
 
     uuid = Column(String(36), primary_key=True, default=lambda: str(uuid_lib.uuid4()))
-    created_at = Column(DateTime, default=lambda: datetime.utcnow(), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     expires_at = Column(DateTime, nullable=False)
 
     # Analysis identity
@@ -122,7 +122,7 @@ class SharedResult(Base):
         Returns:
             SharedResult instance with UUID and 30-day expiry
         """
-        expiry = datetime.utcnow() + timedelta(days=30)
+        expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=30)
         return cls(
             uuid=str(uuid_lib.uuid4()),
             expires_at=expiry,
@@ -148,7 +148,7 @@ def cleanup_expired_shared_results(session):
         session: SQLAlchemy database session
     """
     session.query(SharedResult).filter(
-        SharedResult.expires_at < datetime.utcnow()
+        SharedResult.expires_at < datetime.now(timezone.utc).replace(tzinfo=None)
     ).delete(synchronize_session=False)
     session.commit()
 
@@ -193,7 +193,7 @@ class BatchRecord(Base):
     description = Column(Text)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     completed_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=False)
 
@@ -269,7 +269,7 @@ def cleanup_expired_batches(session):
         session: SQLAlchemy database session
     """
     expired = session.query(BatchRecord).filter(
-        BatchRecord.expires_at < datetime.utcnow()
+        BatchRecord.expires_at < datetime.now(timezone.utc).replace(tzinfo=None)
     ).all()
     for batch in expired:
         session.query(ConditionRecord).filter_by(
@@ -358,7 +358,7 @@ class DatabaseManager:
                 owner=metadata.get('owner', ''),
                 description=metadata.get('description', ''),
                 upload_timestamp=datetime.fromisoformat(metadata['upload_timestamp']) 
-                    if metadata.get('upload_timestamp') else datetime.utcnow()
+                    if metadata.get('upload_timestamp') else datetime.now(timezone.utc).replace(tzinfo=None)
             )
             
             # Add analysis parameters if provided
@@ -369,7 +369,7 @@ class DatabaseManager:
                 record.id_column = analysis_params.get('id_column')
                 record.fc_column = analysis_params.get('fc_column')
                 record.pval_column = analysis_params.get('pval_column')
-                record.analysis_timestamp = datetime.utcnow()
+                record.analysis_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
             
             # Add results summary if provided
             if results:
