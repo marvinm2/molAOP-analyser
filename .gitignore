@@ -40,3 +40,9 @@ uploads/*
 
 # Demo data - exclude cisplatin datasets
 data/Cisplatin_Kidney/
+
+# Browser automation artifacts (screenshots, console logs)
+.playwright-mcp/
+
+# Case-study research scratchpad (private DESeq2 inputs + derived analyses)
+casestudy/
