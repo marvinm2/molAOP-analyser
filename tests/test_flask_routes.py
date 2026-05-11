@@ -2,6 +2,7 @@
 Integration tests for Flask routes and web functionality.
 """
 
+import io
 import pytest
 import json
 import re
@@ -68,10 +69,56 @@ class TestFlaskRoutes:
     def test_preview_route_missing_file(self, flask_client):
         """Test preview route with missing file."""
         response = flask_client.post('/preview', data={})
-        
+
         assert response.status_code == 400
         assert b'No dataset provided' in response.data
-    
+
+    def test_preview_route_with_uploaded_file(self, flask_client):
+        """Test preview route accepts a multipart-uploaded CSV (UPUX-04 regression guard).
+
+        Mirrors test_preview_route_with_demo_file but exercises the upload-your-own-data
+        path used by the drag-and-drop widget on the main page. Posts a real in-memory
+        CSV via io.BytesIO and asserts the column-selection step renders.
+
+        Field name `gene_file` matches the hidden file input in
+        templates/_single_analysis.html (line 48: name="gene_file").
+        """
+        csv_bytes = (
+            b"Gene_Symbol,log2FoldChange,padj\n"
+            b"BRCA1,2.5,0.001\n"
+            b"TP53,-0.8,0.05\n"
+            b"EGFR,2.1,0.0001\n"
+            b"MYC,0.3,0.5\n"
+            b"KRAS,-1.2,0.01\n"
+        )
+
+        response = flask_client.post(
+            '/preview',
+            data={
+                'gene_file': (io.BytesIO(csv_bytes), 'test_upload.csv'),
+                'dataset_id': 'TEST_UPLOAD',
+                'stressor': 'Test Chemical',
+                'owner': 'Test User',
+            },
+            content_type='multipart/form-data',
+        )
+
+        assert response.status_code == 200, (
+            f"Expected 200 from /preview multipart upload, got {response.status_code}; "
+            f"body excerpt: {response.data[:500]!r}"
+        )
+
+        body = response.data
+        assert (
+            b'Select column' in body
+            or b'log2FC' in body
+            or b'<select' in body
+        ), (
+            "Expected at least one column-selector substring "
+            "('Select column', 'log2FC', or '<select') in /preview response body; "
+            f"body excerpt: {body[:500]!r}"
+        )
+
     def test_analyze_route_success(self, flask_client, authenticated_client):
         """Test successful analysis route."""
         import pandas as pd
