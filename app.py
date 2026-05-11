@@ -699,19 +699,24 @@ def analyze():
         
         # Get cached reference sets and run enrichment analysis
         current_reference_sets, data_source = load_cached_reference_sets()
+
+        # Pre-build gene_logfc_map so the enrichment service can derive the
+        # observed Direction column ("N↑ / M↓") for each KE alongside the
+        # direction-agnostic Fisher result. Reused below for the per-KE
+        # gene mapping that drives the network + gene-by-KE CSV export.
+        gene_logfc_map = df_processed.set_index("ID")["log2FC"].to_dict()
+        gene_significance_map = df_processed.set_index("ID")["significant"].to_dict()
+
         enrichment_results = run_enrichment_analysis(
-            df_processed, current_reference_sets, ke_list, ke_title_map
+            df_processed, current_reference_sets, ke_list, ke_title_map,
+            gene_logfc_map=gene_logfc_map,
         )
-        
+
         # Build network visualization data
         cy_network = build_cytoscape_network(
             ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
             reference_sets=current_reference_sets,
         )
-        
-        # Build gene mapping for interactive features
-        gene_logfc_map = df_processed.set_index("ID")["log2FC"].to_dict()
-        gene_significance_map = df_processed.set_index("ID")["significant"].to_dict()
 
         # Plan 11-03 (D-04 passthrough): capture raw and adjusted p-value
         # columns from the user's upload so the gene-by-KE CSV export can

@@ -11,20 +11,30 @@ from statsmodels.stats.multitest import multipletests
 logger = logging.getLogger(__name__)
 
 def run_enrichment_analysis(
-    df: pd.DataFrame, 
-    reference_sets: Dict[str, Set[str]], 
+    df: pd.DataFrame,
+    reference_sets: Dict[str, Set[str]],
     ke_list: Set[str],
-    ke_title_map: Dict[str, str]
+    ke_title_map: Dict[str, str],
+    gene_logfc_map: Optional[Dict[str, float]] = None,
 ) -> pd.DataFrame:
     """
     Run Fisher's exact test enrichment analysis for Key Events.
-    
+
     Args:
         df: Processed gene expression dataframe with 'significant' column
         reference_sets: Dictionary mapping KE_ID to gene sets
         ke_list: Set of KE IDs to analyze
         ke_title_map: Mapping of KE IDs to titles
-    
+        gene_logfc_map: Optional mapping of gene to log2FC. When supplied,
+            the result DataFrame gains a ``Direction`` column rendering
+            ``"N↑ / M↓"`` -- counts of overlap genes with positive vs negative
+            log2FC. AOP KEs are intrinsically directional (e.g. titles like
+            "Down Regulation, HMGCS2" or "Inhibition, FoxA2") so curators need
+            the observed direction alongside the direction-agnostic Fisher p
+            to spot KEs whose overlap goes the wrong way. When ``None``, the
+            column is omitted (default behaviour unchanged for callers that
+            don't opt in).
+
     Returns:
         pd.DataFrame: Enrichment results sorted by FDR
     """
@@ -56,6 +66,8 @@ def run_enrichment_analysis(
     r_ke = []; r_title = []; r_total = []; r_sig_in = []; r_sig_not = []
     r_nsig_in = []; r_nsig_not = []; r_pct = []; r_odds = []; r_pval = []
     r_overlap = []; r_noverlap = []
+    r_direction = []  # populated only when gene_logfc_map is supplied
+    emit_direction = gene_logfc_map is not None
 
     for ke, ref_genes in filtered_reference_sets.items():
         try:
@@ -111,6 +123,21 @@ def run_enrichment_analysis(
             r_overlap.append(", ".join(sorted(sig_in_ke)))
             r_noverlap.append(a)
 
+            if emit_direction:
+                # Observed-direction counts over the significant overlap genes.
+                # log2FC == 0 (rare; only with threshold=0) counts as neither.
+                n_up = 0
+                n_down = 0
+                for g in sig_in_ke:
+                    fc = gene_logfc_map.get(g)
+                    if fc is None:
+                        continue
+                    if fc > 0:
+                        n_up += 1
+                    elif fc < 0:
+                        n_down += 1
+                r_direction.append(f"{n_up}↑ / {n_down}↓")
+
         except Exception as e:
             logger.error(f"Error processing KE {ke}: {e}")
             continue
@@ -119,12 +146,19 @@ def run_enrichment_analysis(
         logger.error("No enrichment results generated")
         raise ValueError("No enrichment results generated")
 
-    # Build DataFrame from columnar data and apply FDR correction
-    df_results = pd.DataFrame({
+    # Build DataFrame from columnar data and apply FDR correction.
+    # Column order matters: results.html and shared_results.html render the
+    # table by iterating dict keys, so `Direction` lands right after
+    # `num_overlap` -- read alongside the overlap count it summarises.
+    columns = {
         'Title': r_title,
         'p_value': r_pval,
         'FDR': multipletests(r_pval, method="fdr_bh")[1],
         'num_overlap': r_noverlap,
+    }
+    if emit_direction:
+        columns['Direction'] = r_direction
+    columns.update({
         'pct_sig_in_KE': r_pct,
         'total_KE_genes_in_dataset': r_total,
         'odds_ratio': r_odds,
@@ -135,6 +169,7 @@ def run_enrichment_analysis(
         'non_sig_in_KE': r_nsig_in,
         'non_sig_not_KE': r_nsig_not,
     })
+    df_results = pd.DataFrame(columns)
     df_results = df_results.sort_values("FDR")
 
     logger.info(f"Enrichment analysis completed: {len(df_results)} results generated")

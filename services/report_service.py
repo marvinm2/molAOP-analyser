@@ -378,15 +378,19 @@ class ReportGenerator:
             overlap_count = result.get('num_overlap', 0)
             ke_size = result.get('total_KE_genes_in_dataset', 0)
             odds_ratio = result.get('odds_ratio', 0)
-            
+            # Observed direction of overlap genes; empty for legacy shared
+            # records (or any caller that didn't pass gene_logfc_map).
+            direction = result.get('Direction', '')
+
             # Format odds ratio properly
             odds_ratio_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
-            
+
             table_rows += f"""
             <tr class="{'significant' if adj_pval < 0.05 else ''}">
                 <td>{ke_id}</td>
                 <td>{title}</td>
                 <td>{overlap_count}</td>
+                <td>{direction}</td>
                 <td>{ke_size}</td>
                 <td>{f"{pval:.2e}" if pval < 0.001 else f"{pval:.4f}"}</td>
                 <td>{f"{adj_pval:.2e}" if adj_pval < 0.001 else f"{adj_pval:.4f}"}</td>
@@ -409,6 +413,7 @@ class ReportGenerator:
                             <th>KE ID</th>
                             <th>Key Event Title</th>
                             <th># Overlap</th>
+                            <th>Direction</th>
                             <th>KE Gene Count</th>
                             <th>P-value</th>
                             <th>FDR</th>
@@ -854,33 +859,34 @@ class ReportGenerator:
             story.append(Spacer(1, 12))
             
             # Prepare table data (show top 15 results for space)
-            table_data = [['KE ID', 'Key Event Title', '# Overlap', 'P-value', 'FDR', 'Odds Ratio']]
-            
+            table_data = [['KE ID', 'Key Event Title', '# Overlap', 'Direction', 'P-value', 'FDR', 'Odds Ratio']]
+
             for result in report_data.enrichment_results[:15]:
                 pval = result.get('p_value', 0)
                 fdr = result.get('FDR', pval)
                 odds_ratio = result.get('odds_ratio', 0)
-                
+
                 # Format values
                 pval_str = f"{pval:.2e}" if pval < 0.001 else f"{pval:.4f}"
                 fdr_str = f"{fdr:.2e}" if fdr < 0.001 else f"{fdr:.4f}"
                 odds_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
-                
+
                 title = result.get('Title', 'N/A')
                 if len(title) > 40:
                     title = title[:37] + "..."
-                
+
                 table_data.append([
                     result.get('KE', 'N/A'),
                     title,
                     str(result.get('num_overlap', 0)),
+                    result.get('Direction', ''),
                     pval_str,
                     fdr_str,
                     odds_str
                 ])
-            
+
             # Create table with appropriate column widths
-            col_widths = [0.8*inch, 2.2*inch, 0.8*inch, 0.8*inch, 0.8*inch, 0.8*inch]
+            col_widths = [0.8*inch, 2.0*inch, 0.7*inch, 0.9*inch, 0.7*inch, 0.7*inch, 0.7*inch]
             enrichment_table = Table(table_data, colWidths=col_widths)
             
             # Style the table

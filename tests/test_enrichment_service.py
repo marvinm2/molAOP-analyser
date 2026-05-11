@@ -129,6 +129,45 @@ class TestRunEnrichmentAnalysis:
         # This test validates the function doesn't crash
         assert len(result) == 1
 
+    def test_direction_column_emitted_when_logfc_map_supplied(self):
+        """When gene_logfc_map is passed, the result carries a 'Direction'
+        column rendering observed up/down counts for the significant overlap.
+
+        Sets up 8 significant overlap genes with a deliberate sign mix
+        (5 up, 2 down, 1 at zero) and asserts the rendered string. Also
+        confirms back-compat: without the map, the column is absent.
+        """
+        # 20 total genes; first 8 are significant overlap with mixed signs.
+        # log2FCs: GENE0..4 up, GENE5..6 down, GENE7 at exactly 0 (excluded
+        # from both counts — threshold-0 edge case the implementation
+        # explicitly handles).
+        genes = [f"GENE{i}" for i in range(20)]
+        sig_flags = [True] * 8 + [False] * 12
+        df = pd.DataFrame({
+            'ID': genes,
+            'significant': sig_flags,
+            'log2FC': [1.5, 2.0, 0.8, 3.1, 1.1, -0.7, -1.4, 0.0] + [0.1] * 12,
+            'pval': [0.001] * 8 + [0.5] * 12,
+        })
+        reference_sets = {'KE:UP': {f"GENE{i}" for i in range(8)}}
+        ke_list = {'KE:UP'}
+        ke_title_map = {'KE:UP': 'Test KE'}
+        gene_logfc_map = dict(zip(df['ID'], df['log2FC']))
+
+        result = run_enrichment_analysis(
+            df, reference_sets, ke_list, ke_title_map,
+            gene_logfc_map=gene_logfc_map,
+        )
+        assert 'Direction' in result.columns
+        # 5 strictly positive, 2 strictly negative, 1 at zero (excluded).
+        assert result.iloc[0]['Direction'] == '5↑ / 2↓'
+
+        # Back-compat: without the map, no Direction column.
+        result_no_map = run_enrichment_analysis(
+            df, reference_sets, ke_list, ke_title_map,
+        )
+        assert 'Direction' not in result_no_map.columns
+
 
 class TestBuildKeGeneMapping:
     """Tests for KE-to-gene mapping builder."""

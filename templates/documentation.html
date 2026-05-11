@@ -218,6 +218,11 @@ CYP3A4         3.21             0.00001   0.0001
         <ul>
             <li><strong>Key Event Title:</strong> Name of the biological process or event</li>
             <li><strong># Overlap:</strong> Number of your significant genes associated with this KE</li>
+            <li><strong>Direction:</strong> Observed up/down counts of the overlap genes &mdash; e.g. <code>8&uarr; / 0&darr;</code>
+                means all 8 overlap genes had positive log<sub>2</sub>FC. The Fisher test itself is direction-agnostic; this
+                column lets you visually compare the observed direction to the KE's expected direction in its title
+                (e.g. a KE titled "Down Regulation, HMGCS2" should show mostly &darr; in a consistent dataset). Descriptive
+                only &mdash; no statistical test, no expected-direction inference; interpretation is yours.</li>
             <li><strong>% Enrichment:</strong> Percentage of KE genes that are significant in your dataset</li>
             <li><strong>P-value:</strong> Statistical significance from Fisher's exact test</li>
             <li><strong>FDR:</strong> False Discovery Rate (adjusted p-value) using Benjamini-Hochberg correction</li>
