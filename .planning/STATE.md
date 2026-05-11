@@ -18,18 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-06)
+See: .planning/PROJECT.md (updated 2026-05-11)
 
 **Core value:** Researchers and regulators can quickly determine which Key Events in a molecular AOP are activated by their transcriptomic data
-**Current focus:** Phase 12 — upload-widget-tech-debt-sweep
+**Current focus:** Planning next milestone (v3.0 shipped 2026-05-11)
 
 ## Current Position
 
-Phase: 12 — COMPLETE
-Plan: 5 of 5
-Status: Phase 12 complete
-Next recommended run: `/gsd-execute-phase 11`
-Last activity: 2026-05-11
+Milestone: v3.0 — SHIPPED 2026-05-11
+Status: Between milestones
+Next recommended run: `/gsd-new-milestone`
+Last activity: 2026-05-11 -- v3.0 archived and tagged
 
 ## Performance Metrics
 
