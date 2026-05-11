@@ -71,7 +71,7 @@ Requirements for v3.0 Cleanup, Gene-Set Export & UX Gaps milestone.
 
 ### Upload UX
 
-- [ ] **UPUX-04**: User can choose and upload a local CSV/TSV/TXT file from the upload page (currently demo-only despite the page advertising "upload your own data")
+- [x] **UPUX-04**: User can choose and upload a local CSV/TSV/TXT file from the upload page (currently demo-only despite the page advertising "upload your own data")
 
 ### Tech Debt
 
@@ -149,18 +149,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-04 | Phase 7 | Complete |
 | COMP-05 | Phase 7 | Complete |
 | COMP-06 | Phase 7 | Complete |
-| AOPD-07 | Phase 10 | Planned |
-| AOPD-08 | Phase 10 | Planned |
-| AOPD-09 | Phase 10 | Planned |
+| AOPD-07 | Phase 10 | Complete (2026-05-06) |
+| AOPD-08 | Phase 10 | Complete (2026-05-06) |
+| AOPD-09 | Phase 10 | Complete (2026-05-06) |
 | EXPO-03 | Phase 11 | Deferred-to-builder |
 | EXPO-04 | Phase 11 | Complete (2026-05-10) |
 | EXPO-05 | Phase 11 | Complete (2026-05-10) |
 | EXPO-06 | Phase 11 | Complete (2026-05-10) |
-| UPUX-04 | Phase 12 | Planned |
-| DEBT-01 | Phase 12 | Planned |
-| DEBT-02 | Phase 12 | Planned |
+| UPUX-04 | Phase 12 | Complete (2026-05-11) |
+| DEBT-01 | Phase 12 | Complete (2026-05-11) |
+| DEBT-02 | Phase 12 | Complete (2026-05-11) |
 | DEBT-03 | Phase 12 | Complete (2026-05-11) |
-| DEBT-04 | Phase 12 | Planned |
+| DEBT-04 | Phase 12 | Complete (2026-05-11) |
 
 **Coverage:**
 - v2.0 requirements: 27 total — mapped 27, unmapped 0 ✓
@@ -170,3 +170,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 *Requirements defined: 2026-02-27*
 *Last updated: 2026-05-10 — Phase 11 planning: EXPO-03 marked deferred-to-builder; GMT export served by molAOP Builder upstream*
 *Last updated: 2026-05-11 — Phase 12-03: DEBT-03 ticked (helpers.py print -> logger.debug migration verified, completed earlier in commit f711e30)*
+*Last updated: 2026-05-11 — Phase 12 complete: DEBT-01/02/04 traceability rows ticked Complete (post-verification cleanup)*

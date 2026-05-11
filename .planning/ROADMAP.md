@@ -33,9 +33,9 @@
 **Milestone Goal:** Pay down post-v2.0 tech debt, drop dead AOP-472 fallback data, close two long-standing UX gaps, and ship gene-set export so users can take their KE-conditioned significant-gene sets into downstream pathway-analysis tools.
 
 - [x] **Phase 10: AOP Source-of-Truth Cleanup** - Drop hardcoded AOP:472 rows and `kidney-472` config entry; document or dynamically derive `KIDNEY_AOP_IDS` (completed 2026-05-06)
-- [ ] **Phase 10.1: Demos Page Restructure** *(INSERTED)* - Move demos to `/demos` with recommended-AOP options per demo type; main page leads with upload-your-data
+- [x] **Phase 10.1: Demos Page Restructure** *(INSERTED)* - Move demos to `/demos` with recommended-AOP options per demo type; main page leads with upload-your-data (completed 2026-05-08)
 - [x] **Phase 11: Gene-Set Export** - GMT and CSV export of significant genes per KE on the results page; per-KE p-value/FDR embedded in Cytoscape network exports — completed 2026-05-10 (EXPO-03 deferred-to-builder)
-- [ ] **Phase 12: Upload Widget + Tech-Debt Sweep** - Real local file upload on upload page; datetime deprecation cleanup, dedup `guess_id_type()`, replace debug prints, drop dead legacy network builder
+- [x] **Phase 12: Upload Widget + Tech-Debt Sweep** - Real local file upload on upload page; datetime deprecation cleanup, dedup `guess_id_type()`, replace debug prints, drop dead legacy network builder (completed 2026-05-11)
 
 ## Phase Details
 
@@ -160,7 +160,7 @@ Plans:
 Plans:
 - [x] 10.1-01-PLAN.md — Backend foundation: Config.DEMO_AOP_RECOMMENDATIONS, /demos route, demos.html, nav entry, /preview accepts recommended_aops (autonomous) — completed 2026-05-06
 - [x] 10.1-02-PLAN.md — Frontend restructure: remove demo block, add banner, AOP picker filter toggle with sticky behavior, CSS modifiers (autonomous) — completed 2026-05-06
-- [ ] 10.1-03-PLAN.md — Manual UAT walk-through (checkpoint:human-verify)
+- [x] 10.1-03-PLAN.md — Manual UAT walk-through (checkpoint:human-verify) — completed 2026-05-08
 
 ### Phase 11: Gene-Set Export
 **Goal**: Users can export per-KE significant gene sets in formats consumable by downstream pathway-analysis tools, and Cytoscape network exports carry the per-KE significance metrics needed to interpret a static snapshot
@@ -202,7 +202,7 @@ Plans:
 - [x] 12-04-PLAN.md — DEBT-04: delete unused build_cytoscape_network_legacy from services/network_service.py (autonomous, wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 12-05-PLAN.md — UPUX-04: add multipart upload regression test in tests/test_flask_routes.py + tick REQUIREMENTS.md (autonomous, wave 3 — sequenced after 12-03 to avoid REQUIREMENTS.md write conflict)
+- [x] 12-05-PLAN.md — UPUX-04: add multipart upload regression test in tests/test_flask_routes.py + tick REQUIREMENTS.md (autonomous, wave 3 — sequenced after 12-03 to avoid REQUIREMENTS.md write conflict)
 
 ## Progress
 
@@ -221,6 +221,6 @@ Phases execute in numeric order: 4 → 5 → 6 → 7 → 8 → 9 → 10 → 10.1
 | 8. Comparison UI Polish | v2.0 | 2/2 | Complete | 2026-03-02 |
 | 9. Deployment Hardening | v2.0 | 1/1 | Complete | 2026-03-02 |
 | 10. AOP Source-of-Truth Cleanup | v3.0 | 2/2 | Complete   | 2026-05-06 |
-| 10.1. Demos Page Restructure (INSERTED) | v3.0 | 2/3 | In progress | - |
-| 11. Gene-Set Export | v3.0 | 0/4 | Planned | - |
-| 12. Upload Widget + Tech-Debt Sweep | v3.0 | 4/5 | In Progress|  |
+| 10.1. Demos Page Restructure (INSERTED) | v3.0 | 3/3 | Complete | 2026-05-08 |
+| 11. Gene-Set Export | v3.0 | 3/5 | Complete | 2026-05-10 |
+| 12. Upload Widget + Tech-Debt Sweep | v3.0 | 5/5 | Complete   | 2026-05-11 |
