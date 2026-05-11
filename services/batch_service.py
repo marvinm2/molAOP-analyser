@@ -12,7 +12,7 @@ import os
 import re
 import shutil
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
@@ -280,7 +280,7 @@ def _run_condition(
     from services.network_service import build_cytoscape_network
 
     cond.status = 'running'
-    cond.started_at = datetime.utcnow()
+    cond.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db_session.commit()
 
     # Build filepath from the batch upload directory
@@ -341,7 +341,7 @@ def _run_condition(
     cond.gene_count = total_genes
     cond.significant_genes = significant_genes
     cond.status = 'complete'
-    cond.completed_at = datetime.utcnow()
+    cond.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db_session.commit()
 
     logger.info(
@@ -433,7 +433,7 @@ def run_batch(batch_id: int, db_url: str, reference_sets: Dict) -> None:
         # Mark complete if not already failed/cancelled
         if batch.status == 'running':
             batch.status = 'complete'
-            batch.completed_at = datetime.utcnow()
+            batch.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             db_session.commit()
             logger.info(f'run_batch: batch {batch.uuid} complete.')
 

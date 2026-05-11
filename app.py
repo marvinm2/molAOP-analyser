@@ -414,7 +414,7 @@ def shared_results(uuid_str):
         record = session_db.query(SharedResult).filter_by(uuid=uuid_str).first()
         if not record:
             return render_template('shared_results.html', not_found=True), 404
-        if record.expires_at < datetime.datetime.utcnow():
+        if record.expires_at < datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None):
             return render_template('shared_results.html', expired=True), 410
         return render_template(
             'shared_results.html',
@@ -1356,7 +1356,7 @@ def batch_analyze():
             aop_label = entry.get('label', aop_id)
             break
 
-    expires_at = datetime.datetime.utcnow() + datetime.timedelta(days=Config.BATCH_RETENTION_DAYS)
+    expires_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=Config.BATCH_RETENTION_DAYS)
     batch_name = request.form.get('batch_name', '').strip() or f'Batch {batch_uuid[:8]}'
     owner = request.form.get('owner', '').strip()
     description = request.form.get('description', '').strip()
