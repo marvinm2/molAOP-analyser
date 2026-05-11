@@ -197,9 +197,9 @@ Plans:
 - [x] 12-01-PLAN.md — DEBT-01: migrate datetime.utcnow() to timezone-aware constructors across app.py, database.py, services/batch_service.py, tests/test_shared_results.py (autonomous, wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 12-02-PLAN.md — DEBT-02: delete duplicate guess_id_type definition from app.py (autonomous, wave 2)
-- [ ] 12-03-PLAN.md — DEBT-03: verify helpers.py print-free + tick REQUIREMENTS.md (autonomous, wave 2, doc-only)
-- [ ] 12-04-PLAN.md — DEBT-04: delete unused build_cytoscape_network_legacy from services/network_service.py (autonomous, wave 2)
+- [x] 12-02-PLAN.md — DEBT-02: delete duplicate guess_id_type definition from app.py (autonomous, wave 2)
+- [x] 12-03-PLAN.md — DEBT-03: verify helpers.py print-free + tick REQUIREMENTS.md (autonomous, wave 2, doc-only)
+- [x] 12-04-PLAN.md — DEBT-04: delete unused build_cytoscape_network_legacy from services/network_service.py (autonomous, wave 2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 12-05-PLAN.md — UPUX-04: add multipart upload regression test in tests/test_flask_routes.py + tick REQUIREMENTS.md (autonomous, wave 3 — sequenced after 12-03 to avoid REQUIREMENTS.md write conflict)
@@ -223,4 +223,4 @@ Phases execute in numeric order: 4 → 5 → 6 → 7 → 8 → 9 → 10 → 10.1
 | 10. AOP Source-of-Truth Cleanup | v3.0 | 2/2 | Complete   | 2026-05-06 |
 | 10.1. Demos Page Restructure (INSERTED) | v3.0 | 2/3 | In progress | - |
 | 11. Gene-Set Export | v3.0 | 0/4 | Planned | - |
-| 12. Upload Widget + Tech-Debt Sweep | v3.0 | 1/5 | In Progress|  |
+| 12. Upload Widget + Tech-Debt Sweep | v3.0 | 4/5 | In Progress|  |

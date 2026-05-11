@@ -76,9 +76,9 @@ Requirements for v3.0 Cleanup, Gene-Set Export & UX Gaps milestone.
 ### Tech Debt
 
 - [x] **DEBT-01**: All `datetime.utcnow()` call sites use timezone-aware `datetime.now(datetime.UTC)` instead (database.py, app.py, tests); pytest run produces no `DeprecationWarning` from datetime
-- [ ] **DEBT-02**: Duplicate `guess_id_type()` is removed from `app.py`; `services/data_service.py` is the single definition
+- [x] **DEBT-02**: Duplicate `guess_id_type()` is removed from `app.py`; `services/data_service.py` is the single definition
 - [x] **DEBT-03**: Debug `print()` statements in `helpers.py` are replaced with `logger.debug()`
-- [ ] **DEBT-04**: Unused `build_cytoscape_network_legacy()` is removed from `services/network_service.py`
+- [x] **DEBT-04**: Unused `build_cytoscape_network_legacy()` is removed from `services/network_service.py`
 
 ## Future Requirements
 

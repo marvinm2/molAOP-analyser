@@ -4,14 +4,14 @@ milestone: v3.0
 milestone_name: Cleanup, Gene-Set Export & UX Gaps
 status: executing
 stopped_at: Phase 12 context gathered
-last_updated: "2026-05-11T08:11:00.494Z"
+last_updated: "2026-05-11T08:14:27.384Z"
 last_activity: 2026-05-11
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 15
-  completed_plans: 9
-  percent: 60
+  completed_plans: 12
+  percent: 80
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-06)
 ## Current Position
 
 Phase: 12 (upload-widget-tech-debt-sweep) — EXECUTING
-Plan: 2 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Next recommended run: `/gsd-execute-phase 11`
 Last activity: 2026-05-11
@@ -51,6 +51,8 @@ Last activity: 2026-05-11
 | 11 (Gene-Set Export) | 1/4 | 3m | 3m |
 
 *Updated after each plan completion*
+| Phase 12 P04 | 5 | 1 tasks | 1 files |
+| Phase 12 P03 | 5 | - tasks | - files |
 
 ## Accumulated Context
 
@@ -124,6 +126,7 @@ Recent decisions affecting current work:
 - [10.1-02]: recommended-aops-data JSON data island placed outside {% if volcano_data %} but inside {% if recommended_aops %} — allows JS to read it even before volcano section renders
 - [10.1-02]: Test mock updated from MagicMock to real pd.DataFrame — MagicMock did not survive df[[col1,col2,col3]].dropna() slicing needed for volcano_data generation
 - [10.1-02]: Test assertion for upload-your-own path uses class="aop-filter-toggle" and <script id="recommended-aops-data" tag — bare strings appear in JS code as getElementById literals
+- [Phase ?]: DEBT-03 doc-only tick
 
 ### Roadmap Evolution
 
@@ -151,6 +154,6 @@ Resolved:
 
 ## Session Continuity
 
-Last session: 2026-05-11T08:11:00.482Z
+Last session: 2026-05-11T08:14:11.035Z
 Stopped at: Phase 12 context gathered
 Resume file: None
