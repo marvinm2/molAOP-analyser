@@ -2,6 +2,8 @@
 
 > Context document for building a tool that fetches Key Event (KE) mappings from the Molecular AOP Builder application.
 
+> *Updated 2026-05-14 for builder v2.8.0 / Phase 34 (Assessment Metadata Schema Parity). Additive change; existing parser code unaffected — `services/api_service.py` uses `.get()` patterns and ignores unknown keys.*
+
 ## What This System Is
 
 The Molecular AOP Builder maps **Key Events** (KEs) from the AOP-Wiki to:
@@ -51,6 +53,14 @@ List all approved KE-WikiPathways mappings. Supports filtering and pagination.
       "pathway_id": "WP1234",
       "pathway_title": "Xenobiotic metabolism",
       "confidence_level": "High",
+      "connection_type": "causative",
+      "assessment": {
+        "relationship": "causative",
+        "basis": "known",
+        "specificity": "specific",
+        "coverage": "complete",
+        "version": "v2"
+      },
       "provenance": {
         "suggestion_score": 0.87,
         "approved_by": "curator_username",
@@ -69,7 +79,21 @@ List all approved KE-WikiPathways mappings. Supports filtering and pagination.
 }
 ```
 
-**CSV columns:** `uuid, ke_id, ke_name, pathway_id, pathway_title, confidence_level, suggestion_score, approved_by, approved_at`
+**Assessment block (Phase 34, v2.8.0+):**
+
+| Field | Type | Allowed values |
+|---|---|---|
+| `assessment.relationship` | string \| null | `causative`, `responsive`, `bidirectional`, `unclear`, `null` |
+| `assessment.basis` | string \| null | `known`, `likely`, `possible`, `uncertain`, `null` |
+| `assessment.specificity` | string \| null | `specific`, `includes`, `loose`, `null` |
+| `assessment.coverage` | string \| null | `complete`, `keysteps`, `minor`, `null` |
+| `assessment.version` | string | `v1`, `v2` |
+
+See "v1 vs v2 assessment row semantics" below for legacy-row behaviour.
+
+**CSV columns:** `uuid, ke_id, ke_name, pathway_id, pathway_title, confidence_level, suggestion_score, approved_by, approved_at, proposed_by, connection_type, ke_aop_context, ke_bio_level, proposed_relationship, proposed_basis, proposed_specificity, proposed_coverage, assessment_version`
+
+(Phase 34 added the trailing five columns at the END of the existing list for column-positional consumer back-compat.)
 
 ---
 
@@ -88,6 +112,14 @@ Get a single KE-WP mapping by its stable UUID.
     "pathway_id": "WP1234",
     "pathway_title": "Xenobiotic metabolism",
     "confidence_level": "High",
+    "connection_type": "causative",
+    "assessment": {
+      "relationship": "causative",
+      "basis": "known",
+      "specificity": "specific",
+      "coverage": "complete",
+      "version": "v2"
+    },
     "provenance": {
       "suggestion_score": 0.87,
       "approved_by": "curator_username",
@@ -98,6 +130,18 @@ Get a single KE-WP mapping by its stable UUID.
 ```
 
 **Errors:** `404` if UUID not found.
+
+---
+
+### v1 vs v2 assessment row semantics
+
+> **Pre-v1.6 mappings** (created before the Phase 34 schema migration) emit `assessment.version = "v1"` and all four answer fields (`relationship`, `basis`, `specificity`, `coverage`) as `null`. Consumers should treat these as "legacy rows with derived `confidence_level` only" — the four-question rubric was added in v1.6 and was not asked of pre-existing rows.
+>
+> **v1.6+ mappings** (created via the wired mapper UI on the builder) emit `assessment.version = "v2"` and at least one of the four answer fields non-null. The model-layer rule (`_classify_assessment_version`) flips a mapping to `v2` when ANY of the four answers is non-NULL — partial submissions during the Phase 34 → Phase 37 transition window are still classified `v2`.
+>
+> The four assessment columns are also exposed at the top level of the CSV export (`proposed_relationship`, `proposed_basis`, `proposed_specificity`, `proposed_coverage`, `assessment_version`) — same value set as the nested JSON keys.
+
+**Sibling endpoint:** `GET /api/v1/reactome-mappings` (and `/{uuid}`) emits the identical `assessment` nested object and the same five trailing CSV columns — sibling parity for the rubric data is a Phase 34 invariant. (NOTE: `connection_type` is a WP-only top-level field — the `ke_reactome_mappings` table has no such column, only `ke_reactome_proposals.proposed_connection_type` exists. The four-question rubric in `assessment.*` is the cross-resource normalised representation.) The analyser does not currently consume the Reactome endpoint, but third-party consumers (e.g. `clusterProfiler` pipelines, FAIR exports) can rely on rubric-shape equivalence.
 
 ---
 
@@ -232,7 +276,13 @@ Get a citation string for the dataset.
 | `ke_name` | string | Key Event title from AOP-Wiki |
 | `pathway_id` | string | WikiPathways ID, e.g. `WP1234` |
 | `pathway_title` | string | Pathway name |
-| `confidence_level` | string | `High`, `Medium`, or `Low` |
+| `confidence_level` | string | `High`, `Medium`, or `Low` (rubric-derived) |
+| `connection_type` | string/null | Legacy v1 connection classification (`causative` / `responsive` / `other` / null). Superseded by `assessment.relationship` for v2 rows but kept populated for back-compat. |
+| `assessment.relationship` | string/null | Phase 34 v1.6+: KER stance — `causative` / `responsive` / `bidirectional` / `unclear` / null |
+| `assessment.basis` | string/null | Phase 34 v1.6+: evidence basis — `known` / `likely` / `possible` / `uncertain` / null |
+| `assessment.specificity` | string/null | Phase 34 v1.6+: KE-to-pathway specificity — `specific` / `includes` / `loose` / null |
+| `assessment.coverage` | string/null | Phase 34 v1.6+: pathway coverage of the KE — `complete` / `keysteps` / `minor` / null |
+| `assessment.version` | string | `v1` (legacy, pre-v1.6 rows) or `v2` (rubric-aware rows) |
 | `provenance.suggestion_score` | float/null | Hybrid scoring confidence (0.0-1.0) when suggested by the system |
 | `provenance.approved_by` | string/null | Curator who approved the mapping |
 | `provenance.approved_at` | string/null | ISO timestamp of approval |
