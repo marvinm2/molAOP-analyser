@@ -83,6 +83,18 @@
 .tour-actions {
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
+}
+
+/* --- Scoped sizing override for .btn inside the tooltip so the global landing-page
+   button styling does not blow the 360px max-width. --- */
+.tour-tooltip .btn {
+    padding: 6px 14px;
+    font-size: 13px;
+    min-width: 0;
+    width: auto;
+    flex: 0 0 auto;
+    line-height: 1.3;
 }
 
 /* --- Onboarding banner variant (extends .card--banner, adds multi-row layout) ---

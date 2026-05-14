@@ -54,18 +54,23 @@
 
     /* startDemoPreload — step 0 on_next: POST /preview with demo_file.
        GSE90122_TO90137.tsv = "PXR Agonist 1" per config.py:34 (RESEARCH §Assumptions A4).
-       Sets localStorage step to 2 before navigation so /preview resumes at step 1. */
+       columns_confirmed=true triggers auto-detected column confirmation server-side so the
+       /preview response renders the column-preview, thresholds, AND aop-picker anchors
+       (the latter two only mount inside `{% if volcano_data %}`). Sets step=1 (column-preview
+       index) so on arrival the resume block in DOMContentLoaded fires showStep(1). */
     function startDemoPreload() {
         const form = document.createElement('form');
         form.method = 'POST'; form.action = '/preview'; form.style.display = 'none';
-        [['demo_file','GSE90122_TO90137.tsv'],['recommended_aops','AOP:DEMO'],
+        [['demo_file','GSE90122_TO90137.tsv'],
+         ['recommended_aops','AOP:DEMO'],
+         ['columns_confirmed','true'],
          ['csrf_token',(document.querySelector('meta[name="csrf-token"]')||{}).content||'']
         ].forEach(function(pair) {
             const inp = document.createElement('input');
             inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
             form.appendChild(inp);
         });
-        setStep('2');
+        setStep('1');
         document.body.appendChild(form);
         form.submit();
     }
