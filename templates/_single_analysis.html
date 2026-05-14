@@ -29,7 +29,8 @@
             <input type="hidden" name="description" class="metadata-field">
 
             <div class="drop-zone" id="upload-drop-zone" role="button" tabindex="0"
-                 aria-label="Drag and drop files here or click to browse">
+                 aria-label="Drag and drop files here or click to browse"
+                 data-tour-target="upload-area">
                 <div class="drop-zone__icon">&#8613;</div>
                 <p class="drop-zone__text">Drag files here or click to browse</p>
                 <p class="drop-zone__hint">CSV, TSV, TXT &mdash; Max 10MB</p>
@@ -96,7 +97,7 @@
 </div>
 
 {% if preview and columns %}
-<div class="card card--narrow" id="centered-container">
+<div class="card card--narrow" id="centered-container" data-tour-target="column-preview">
     <h2>Preview top 5 rows</h2>
     <p>
         Below is a preview of the uploaded data. Please select the columns that contain:
@@ -336,7 +337,7 @@
             Log2FC threshold for enrichment:
         </label>
 
-        <div class="threshold-controls">
+        <div class="threshold-controls" data-tour-target="thresholds">
             <div style="margin-bottom: 10px;">
                 <strong style="color: #29235C; font-size: 14px;">Quick Options:</strong>
             </div>
@@ -391,7 +392,8 @@
             </div>
             <input type="hidden" name="aop_filter_mode" id="aop_filter_mode" value="recommended">
             {% endif %}
-            <div class="typeahead-wrapper" style="position: relative; max-width: 600px; margin: 0 auto;">
+            <div class="typeahead-wrapper" style="position: relative; max-width: 600px; margin: 0 auto;"
+                 data-tour-target="aop-picker">
                 <input type="text" id="aop_search" placeholder="Search AOPs by name or ID..."
                        autocomplete="off" class="wide-dropdown"
                        style="width: 100%; padding: 10px; font-size: 14px; box-sizing: border-box;">
