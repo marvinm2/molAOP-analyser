@@ -242,6 +242,17 @@
 {% block content %}
 <aside class="alert-band">This tool is under development &mdash; results and interface are subject to change.</aside>
 
+{# Phase 13: Guided Tour banner (TUTR-01). Visible regardless of active tab. Hidden client-side by tour.js when localStorage.molaop_tour_seen === 'true'. #}
+<section class="card card--banner card--banner--onboarding">
+  <h2>New here? Take a guided tour.</h2>
+  <p>Walk through every step of an analysis using the PXR demo dataset — no data of your own needed.</p>
+  <div class="card--banner__cta-row">
+    <button type="button" class="btn btn--accent" data-action="start-tour">Take the guided tour</button>
+    <a href="{{ url_for('demos') }}" class="btn btn--secondary">Browse demos &rarr;</a>
+  </div>
+  <a href="#" class="card--banner__dismiss" data-action="dismiss-tour-banner">Don't show again</a>
+</section>
+
 <!-- Landing tabs -->
 <div class="landing-tabs">
     <button class="landing-tab landing-tab--active" data-tab="single" type="button">Single Analysis</button>
