@@ -760,3 +760,40 @@ class TestDemosPage:
             # so we check for the HTML element tag (not just the bare string).
             assert b'class="aop-filter-toggle"' not in response.data
             assert b'<script id="recommended-aops-data"' not in response.data
+
+
+@pytest.mark.integration
+@pytest.mark.web
+class TestTourRoutes:
+    """Phase 13: Guided Tour — banner, button, anchors, docs re-launch."""
+
+    def test_banner_on_index(self, flask_client):
+        """TUTR-01: GET / renders the onboarding banner AND loads tour.js."""
+        response = flask_client.get('/')
+        assert response.status_code == 200
+        body = response.data
+        assert b'New here? Take a guided tour.' in body
+        assert b'data-action="start-tour"' in body
+        assert b'js/tour.js' in body
+
+    def test_button_on_demos(self, flask_client):
+        """TUTR-02: GET /demos renders the "Take the guided tour" button."""
+        response = flask_client.get('/demos')
+        assert response.status_code == 200
+        body = response.data
+        assert b'Take the guided tour' in body
+        assert b'data-action="start-tour"' in body
+
+    def test_anchors_present(self, flask_client):
+        """TUTR-03: GET / has the upload-area data-tour-target anchor (the one visible outside preview gate)."""
+        response = flask_client.get('/')
+        assert response.status_code == 200
+        assert b'data-tour-target="upload-area"' in response.data
+
+    def test_relaunch_link_in_docs(self, flask_client):
+        """TUTR-05: GET /documentation has the Getting Started section + tour launch link."""
+        response = flask_client.get('/documentation')
+        assert response.status_code == 200
+        body = response.data
+        assert b'id="getting-started"' in body
+        assert b'data-action="start-tour"' in body
