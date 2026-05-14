@@ -173,8 +173,9 @@
         const step = TOUR_STEPS[stepIdx];
         if (stepIdx === TOUR_STEPS.length - 1) { setSeen('true'); clearStep(); removeTip(); stepIdx=-1; return; }
         if (step.on_next === 'startDemoPreload') { removeTip(); startDemoPreload(); return; }
-        // Step 3 (aop-picker): user clicks Analyse themselves — dismiss tooltip, keep tour resumable
-        if (stepIdx === 3) { clearStep(); removeTip(); stepIdx=-1; return; }
+        // Step 3 (aop-picker): user clicks Analyse themselves — dismiss tooltip but bump step
+        // to 4 so the results-page resume block (savedNum >= 4) fires.
+        if (stepIdx === 3) { setStep('4'); removeTip(); stepIdx=-1; return; }
         showStep(stepIdx + 1);
     }
 
@@ -201,12 +202,18 @@
             if (!lnk) return; e.preventDefault(); setSeen('true'); hideBanner();
         });
 
-        // Inject hidden tour field into #enrichmentForm when tour is active (D-03)
+        // Inject hidden tour field into #enrichmentForm when tour is active (D-03).
+        // Also bump step to 4 on submit so /analyze resume block (savedNum >= 4) fires
+        // even when the user clicks Analyse without first dismissing the step-4 tooltip.
         const form = document.getElementById('enrichmentForm');
         if (form && getStep() !== null) {
             const inp = document.createElement('input');
             inp.type='hidden'; inp.name='tour'; inp.value='1';
             form.appendChild(inp);
+            form.addEventListener('submit', function() {
+                const n = parseInt(getStep(), 10);
+                if (!isNaN(n) && n < 4) setStep('4');
+            });
         }
 
         // Results-page resume: <meta name="tour-active"> AND step >= 4 (RESEARCH §Pitfall 1)
