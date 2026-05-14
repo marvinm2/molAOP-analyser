@@ -1,0 +1,148 @@
+/* ==========================================================================
+   PHASE 13: GUIDED TOUR
+   UI-SPEC §Component Inventory — all .tour-* and .card--banner--onboarding classes.
+   Brand palette: raw hex literals (no CSS custom properties — codebase convention).
+   ========================================================================== */
+
+/* --- Dimmer surface (paint-only; cutout achieved via box-shadow on .tour-highlight) --- */
+.tour-dimmer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 9000;
+}
+
+/* --- Spotlight highlight applied to the current step's target element --- */
+.tour-highlight {
+    position: relative;
+    z-index: 9001;
+    box-shadow: 0 0 0 9999px rgba(0,0,0,0.4);
+    border-radius: 6px;
+}
+
+/* --- Floating step card tooltip --- */
+.tour-tooltip {
+    position: absolute;
+    z-index: 9002;
+    max-width: 360px;
+    padding: 12px;
+    background: #ffffff;
+    border-left: 1.5px solid #E6007E;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    font-family: Inter, sans-serif;
+}
+
+/* --- Tooltip heading --- */
+.tour-tooltip__title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #29235C;
+    margin: 0 0 8px 0;
+    line-height: 1.3;
+}
+
+/* --- Tooltip body text --- */
+.tour-tooltip__body {
+    font-size: 14px;
+    font-weight: 400;
+    color: #29235C;
+    line-height: 1.5;
+    margin: 0 0 16px 0;
+}
+
+/* --- Footer row: progress dots (left) + action buttons (right) --- */
+.tour-tooltip__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+
+/* --- Step progress dot container --- */
+.tour-progress {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+/* --- Individual step dot (inactive state) --- */
+.tour-progress-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #d0d0e0;
+}
+
+/* --- Active step dot modifier --- */
+.tour-progress-dot--active {
+    background: #E6007E;
+}
+
+/* --- Right-side action button group --- */
+.tour-actions {
+    display: flex;
+    gap: 8px;
+}
+
+/* --- Onboarding banner variant (extends .card--banner, adds multi-row layout) ---
+   Does NOT redefine .card--banner itself — additive modifier only. */
+.card--banner--onboarding {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+}
+
+.card--banner--onboarding h2 {
+    margin: 0 0 8px 0;
+    color: #29235C;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.card--banner--onboarding p {
+    margin: 0 0 16px 0;
+    color: #29235C;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* --- CTA button row (desktop: side by side; mobile: stacked) --- */
+.card--banner__cta-row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+}
+
+/* --- Dismiss link (Don't show again) --- */
+.card--banner__dismiss {
+    text-align: right;
+    font-size: 12px;
+    color: #666;
+    text-decoration: underline;
+    cursor: pointer;
+    display: block;
+    margin-top: 8px;
+}
+
+/* --- Tour re-launch button spacing wrapper on /demos page (TUTR-02) --- */
+.tour-launch-row {
+    margin: 16px 0 24px 0;
+}
+
+/* --- Flash-prevention: hide onboarding banner when user has already seen the tour.
+   Paired with the pre-hydration inline <script> in templates/base.html that sets
+   <html data-tour-seen="1"> when localStorage.molaop_tour_seen === 'true'. --- */
+html[data-tour-seen="1"] .card--banner--onboarding {
+    display: none;
+}
+
+/* --- Responsive: stack CTA row vertically on narrow viewports --- */
+@media (max-width: 640px) {
+    .card--banner__cta-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+}
