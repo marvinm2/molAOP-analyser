@@ -4,6 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}molAOP Analyser{% endblock %}</title>
+    <!-- Phase 13: pre-hydration flash-of-banner prevention -->
+    <script>
+      (function() {
+        try {
+          if (localStorage.getItem('molaop_tour_seen') === 'true') {
+            document.documentElement.setAttribute('data-tour-seen', '1');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='img/favicon.ico') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/favicon-32.png') }}">
     <link rel="icon" type="image/png" sizes="192x192" href="{{ url_for('static', filename='img/favicon-192.png') }}">
@@ -12,6 +22,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css') }}">
     <meta name="csrf-token" content="{{ csrf_token }}">
     {% block head_extra %}{% endblock %}
 </head>
@@ -47,6 +58,7 @@
     </footer>
 
     <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+    <script src="{{ url_for('static', filename='js/tour.js') }}" defer></script>
     {% block scripts %}{% endblock %}
 
 </body>
