@@ -277,6 +277,10 @@
 {% endblock %}
 
 {% block content %}
+{# Phase 13: tour resume signal — read by static/js/tour.js (TUTR-03) #}
+{% if tour_active %}
+<meta name="tour-active" content="1">
+{% endif %}
 
     {% if metadata.get('batch_uuid') %}
     <!-- Breadcrumb back to batch summary when viewing individual condition results -->
@@ -316,7 +320,7 @@
     </div>
 
     <!-- Enrichment Results card -->
-    <div class="card card--wide">
+    <div class="card card--wide" data-tour-target="results-table">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
             <h2 style="margin: 0;">KE Enrichment Results</h2>
             <div style="display: inline-flex; gap: 8px; flex-wrap: wrap;">
@@ -438,7 +442,7 @@
     </div>
 
     <!-- AOP Network card -->
-    <div class="card card--wide">
+    <div class="card card--wide" data-tour-target="cytoscape">
         <h2>AOP Network</h2>
         <p style="font-size: 15px; color: #444; max-width: 800px; text-align: left;">
             This network diagram shows how the Key Events (KEs) are connected within the selected Adverse Outcome Pathway (AOP).
