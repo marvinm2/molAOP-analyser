@@ -797,3 +797,79 @@ class TestTourRoutes:
         body = response.data
         assert b'id="getting-started"' in body
         assert b'data-action="start-tour"' in body
+
+    def _analyze_form(self, **extra):
+        base = {
+            'filename': 'test.csv',
+            'id_column': 'Gene_Symbol',
+            'fc_column': 'log2FoldChange',
+            'pval_column': 'padj',
+            'aop_selection': 'AOP:1',
+            'logfc_threshold': '1.0',
+        }
+        base.update(extra)
+        return base
+
+    def _analyze_with(self, client, form):
+        """Run POST /analyze with the standard set of mocked dependencies and return the response."""
+        import pandas as pd
+
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53', 'EGFR', 'MYC', 'KRAS'],
+            'log2FC': [1.5, -0.8, 2.1, 0.3, -1.2],
+            'pval': [0.001, 0.05, 0.0001, 0.5, 0.01],
+            'significant': [True, False, True, False, True],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.05],
+            'num_overlap': [3], 'pct_sig_in_KE': [60.0],
+            'total_KE_genes_in_dataset': [5], 'odds_ratio': [3.5],
+            'overlap': ['BRCA1, EGFR, KRAS'], 'KE': ['KE:115'],
+            'sig_in_KE': [3], 'sig_not_KE': [0],
+            'non_sig_in_KE': [2], 'non_sig_not_KE': [0],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 5})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.build_ke_gene_mapping', return_value={}), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True):
+            return client.post('/analyze', data=form)
+
+    def test_tour_active_meta_emitted_when_tour_field_present(self, authenticated_client):
+        """TUTR-03: POST /analyze with tour=1 renders <meta name="tour-active"> in results.
+
+        Without this, the cross-page resume from step 4 (aop-picker) to step 5
+        (results-table) silently breaks — the tour engine reads this meta tag
+        to know the analysis was triggered from inside an active tour.
+        """
+        response = self._analyze_with(authenticated_client, self._analyze_form(tour='1'))
+        assert response.status_code == 200
+        assert b'<meta name="tour-active"' in response.data
+
+    def test_tour_active_meta_absent_without_tour_field(self, authenticated_client):
+        """TUTR-03: POST /analyze without tour field does NOT render the tour-active meta.
+
+        Guards against the meta tag accidentally appearing on every analysis,
+        which would auto-resume the tour for users who never started it.
+        """
+        response = self._analyze_with(authenticated_client, self._analyze_form())
+        assert response.status_code == 200
+        assert b'<meta name="tour-active"' not in response.data
+
+    def test_tour_active_meta_absent_when_tour_field_not_equal_one(self, authenticated_client):
+        """TUTR-03: app.py uses strict-equality compare on tour == '1' (threat T-13-09).
+
+        Any other value (empty string, 'true', '0', '2', random text) must NOT trip
+        the tour_active flag. Single-value allow-list, not boolean truthy.
+        """
+        for fuzz in ('', 'true', '0', '2', 'yes', 'on', 'tour'):
+            response = self._analyze_with(authenticated_client, self._analyze_form(tour=fuzz))
+            assert response.status_code == 200, f"non-200 for tour={fuzz!r}"
+            assert b'<meta name="tour-active"' not in response.data, f"meta unexpectedly emitted for tour={fuzz!r}"

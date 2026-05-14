@@ -158,6 +158,10 @@
 
     function showSkipPrompt() {
         if (!tipEl) return;
+        // Drop the previous focus trap — its closure references the now-detached
+        // Skip/Next nodes from the step tooltip. Without this, Tab inside the
+        // skip-prompt silently calls .focus() on detached nodes (WCAG SC 2.1.1).
+        if (trapH) { document.removeEventListener('keydown', trapH); trapH = null; }
         tipEl.innerHTML = '<p class="tour-tooltip__body">Skip this tour?</p>'+
             '<div class="tour-tooltip__footer"><div class="tour-actions">'+
             '<button type="button" class="btn btn--secondary" data-tour-action="skip-once">Skip this time</button>'+
@@ -167,6 +171,17 @@
         const b2 = tipEl.querySelector('[data-tour-action="dont-show"]');
         if (b1) { b1.focus(); b1.addEventListener('click', function() { clearStep(); removeTip(); stepIdx=-1; }); }
         if (b2) { b2.addEventListener('click', function() { setSeen('true'); clearStep(); removeTip(); stepIdx=-1; hideBanner(); }); }
+        // Re-register the focus trap against the new buttons so Tab/Shift+Tab
+        // cycles between "Skip this time" and "Don't show again".
+        trapH = function(e) {
+            if (e.key !== 'Tab') return;
+            const fc = [b1, b2].filter(Boolean);
+            if (!fc.length) return;
+            e.preventDefault();
+            const ci = fc.indexOf(document.activeElement);
+            fc[(ci + (e.shiftKey ? -1 : 1) + fc.length) % fc.length].focus();
+        };
+        document.addEventListener('keydown', trapH);
     }
 
     function handleNext() {
