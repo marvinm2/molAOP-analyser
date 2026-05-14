@@ -909,8 +909,9 @@ def analyze():
             ke_type_map=json.dumps(ke_type_map),
             ke_title_map=json.dumps(ke_title_map),
             metadata=stored_metadata,
+            tour_active=(request.form.get('tour') == '1'),  # Phase 13: guided tour resume signal (TUTR-03)
         )
-        
+
     except AOPAnalysisError as e:
         logger.error(f"AOP analysis error: {e}")
         error_response = format_error_response(e, include_details=app.debug)
