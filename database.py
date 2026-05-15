@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import json
 import uuid as uuid_lib
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Text, Float, ForeignKey, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
@@ -36,6 +36,7 @@ class ExperimentRecord(Base):
     
     # Analysis parameters
     aop_id = Column(String(100))
+    method = Column(String(20))  # 'ora' or 'gsea'; NULL for pre-Phase-14 rows (coerced on read)
     logfc_threshold = Column(Float)
     pval_cutoff = Column(Float)
     id_column = Column(String(100))
@@ -62,6 +63,7 @@ class ExperimentRecord(Base):
             'owner': self.owner,
             'description': self.description,
             'aop_id': self.aop_id,
+            'method': self.method or 'ora',  # D-05: coerce NULL (pre-Phase-14 rows) to 'ora'
             'logfc_threshold': self.logfc_threshold,
             'pval_cutoff': self.pval_cutoff,
             'id_column': self.id_column,
@@ -103,6 +105,7 @@ class SharedResult(Base):
     dataset_label = Column(String(500))
     gene_count = Column(Integer)
     significant_genes = Column(Integer)
+    method = Column(String(20))  # 'ora' or 'gsea'; NULL for pre-Phase-14 rows (coerced on read)
 
     @classmethod
     def create(cls, enrichment_table, network, ke_gene_map, ke_type_map,
@@ -136,6 +139,7 @@ class SharedResult(Base):
             dataset_label=metadata.get('dataset_id', ''),
             gene_count=metadata.get('gene_count'),
             significant_genes=metadata.get('significant_genes'),
+            method=metadata.get('method', 'ora'),  # D-06: persist method; legacy callers get 'ora' default
         )
 
 
@@ -279,6 +283,32 @@ def cleanup_expired_batches(session):
     session.commit()
 
 
+def _ensure_method_column(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for the 'method' column.
+
+    Adds ``method TEXT DEFAULT 'ora'`` to both ``experiments`` and
+    ``shared_results`` tables when the column is absent.  Safe to run on
+    every startup — the PRAGMA check makes the ALTER a no-op on databases
+    that already have the column (D-04, D-06).
+
+    Security note: both table names and the column literal are module-internal
+    constants — no user-supplied input is interpolated into the SQL statements.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    for table in ('experiments', 'shared_results'):
+        with engine.connect() as conn:
+            result = conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_cols = {row[1] for row in result}
+            if 'method' not in existing_cols:
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN method TEXT DEFAULT 'ora'")
+                )
+                conn.commit()
+                logger.info(f"Added 'method' column to '{table}' table (D-04 migration)")
+
+
 class DatabaseManager:
     """Manager class for database operations."""
     
@@ -314,7 +344,12 @@ class DatabaseManager:
             
             # Create all tables
             Base.metadata.create_all(bind=self.engine)
-            
+
+            # Idempotent additive migration: add 'method' column to pre-existing
+            # databases that lack it (D-04, D-06). No-op on fresh databases where
+            # the column is already present from the model definition above.
+            _ensure_method_column(self.engine)
+
             # Create session factory
             self.SessionLocal = sessionmaker(
                 autocommit=False,
@@ -364,6 +399,7 @@ class DatabaseManager:
             # Add analysis parameters if provided
             if analysis_params:
                 record.aop_id = analysis_params.get('aop_id')
+                record.method = analysis_params.get('method', 'ora')  # D-04: persist chosen method
                 record.logfc_threshold = analysis_params.get('logfc_threshold')
                 record.pval_cutoff = analysis_params.get('pval_cutoff')
                 record.id_column = analysis_params.get('id_column')
