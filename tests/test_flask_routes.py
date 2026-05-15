@@ -986,7 +986,7 @@ class TestHubPanel:
         """
         response = self._post_analyze(
             authenticated_client,
-            self._analyze_form_hub(method='fisher'),
+            self._analyze_form_hub(method='ora'),
             self._hub_list,
         )
         assert response.status_code == 200
