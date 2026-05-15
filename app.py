@@ -701,7 +701,7 @@ def analyze():
         
         # Load and process data using services
         df_raw = load_and_validate_data(filepath, id_col, fc_col, pval_col)
-        df_processed, stats = process_gene_expression(df_raw, logfc_threshold)
+        df_processed, stats = process_gene_expression(df_raw, logfc_threshold, pval_threshold=pval_threshold)
         
         # Generate volcano plot data for PDF reports
         volcano_data = []

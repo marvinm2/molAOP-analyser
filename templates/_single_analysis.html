@@ -333,6 +333,20 @@
         <input type="hidden" name="dosing" class="metadata-field">
         <input type="hidden" name="description" class="metadata-field">
 
+        <fieldset style="margin-bottom: 24px; border: 1px solid #ddd; padding: 12px;">
+            <legend style="color: #29235C; font-weight: 700; padding: 0 8px 8px;">Statistical method</legend>
+            <label style="display: block; margin-bottom: 8px;">
+                <input type="radio" name="method" value="ora" {% if (method or 'ora') == 'ora' %}checked{% endif %}>
+                Fisher's exact (over-representation)
+            </label>
+            <label style="display: block;">
+                <input type="radio" name="method" value="gsea" {% if method == 'gsea' %}checked{% endif %}>
+                GSEA (rank-based)
+            </label>
+            <p style="font-size: 13px; color: #666; margin-top: 8px; margin-bottom: 0;">Fisher's exact uses your significance thresholds below. GSEA ignores them and ranks every gene.</p>
+        </fieldset>
+
+        <div id="threshold-inputs">
         <label for="logfc_threshold" title="Threshold for log2 fold change to define significance.">
             Log2FC threshold for enrichment:
         </label>
@@ -360,6 +374,12 @@
                 Update Plot
             </button>
         </div>
+
+        <label for="pval_threshold" style="display: block; margin-top: 16px;">P-value threshold:</label>
+        <input type="number" step="0.001" min="0.001" max="1" name="pval_threshold" id="pval_threshold"
+               value="{{ pval_threshold or '0.05' }}"
+               title="Genes with raw p-value below this threshold are flagged as significant for Fisher's exact. Default 0.05.">
+        </div>
     </form>
 
     <form id="enrichmentForm" action="{{ url_for('analyze') }}" method="post" class="volcano-form">
@@ -370,6 +390,8 @@
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
         <input type="hidden" name="pval_adj_column" value="{{ selected_columns.pval_adj or '' }}">
         <input type="hidden" name="logfc_threshold" value="{{ logfc_threshold or '' }}">
+        <input type="hidden" name="method" id="method-mirror" value="{{ method or 'ora' }}">
+        <input type="hidden" name="pval_threshold" id="pval-mirror" value="{{ pval_threshold or '0.05' }}">
 
         <!-- Hidden metadata fields -->
         <input type="hidden" name="dataset_id" class="metadata-field">
