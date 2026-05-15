@@ -274,14 +274,14 @@
             font-style: italic;
         }
     </style>
+
+    {# Phase 13: tour resume signal — read by static/js/tour.js (TUTR-03). Lives in <head> for HTML validity (WR-02). #}
+    {% if tour_active %}
+    <meta name="tour-active" content="1">
+    {% endif %}
 {% endblock %}
 
 {% block content %}
-{# Phase 13: tour resume signal — read by static/js/tour.js (TUTR-03) #}
-{% if tour_active %}
-<meta name="tour-active" content="1">
-{% endif %}
-
     {% if metadata.get('batch_uuid') %}
     <!-- Breadcrumb back to batch summary when viewing individual condition results -->
     <a href="/batch/{{ metadata.get('batch_uuid') }}/summary" class="breadcrumb-link">&larr; Back to batch summary{% if metadata.get('batch_name') %}: {{ metadata.get('batch_name') }}{% endif %}</a>

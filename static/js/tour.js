@@ -218,10 +218,12 @@
         });
 
         // Inject hidden tour field into #enrichmentForm when tour is active (D-03).
-        // Also bump step to 4 on submit so /analyze resume block (savedNum >= 4) fires
-        // even when the user clicks Analyse without first dismissing the step-4 tooltip.
+        // Only steps 1-3 are valid /preview tour states; step 0 is banner-only on '/',
+        // step >= 4 is post-results (no form visible). Tighter guard avoids tour_active=true
+        // false positives when a user paused mid-tour and re-enters /preview outside the flow (WR-03).
         const form = document.getElementById('enrichmentForm');
-        if (form && getStep() !== null) {
+        const stepForInject = parseInt(getStep(), 10);
+        if (form && !isNaN(stepForInject) && stepForInject >= 1 && stepForInject <= 3) {
             const inp = document.createElement('input');
             inp.type='hidden'; inp.name='tour'; inp.value='1';
             form.appendChild(inp);
