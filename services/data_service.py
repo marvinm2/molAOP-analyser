@@ -4,7 +4,7 @@ Data processing service for gene expression data and reference sets.
 import pandas as pd
 import logging
 import re
-from typing import Dict, Set, Tuple, List, Any
+from typing import Dict, Set, Tuple, List, Any, Optional
 from scipy.stats import combine_pvalues
 from config import Config
 from exceptions import FileProcessingError, DataValidationError, AOPDataError
@@ -67,21 +67,25 @@ def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: st
         logger.error(f"Failed to load data from {filepath}: {e}")
         raise FileProcessingError(f"Unexpected error loading file: {e}", filename=filepath)
 
-def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0, pval_threshold: Optional[float] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Process gene expression data and combine duplicates.
-    
+
     Args:
         df: Raw gene expression dataframe
         logfc_threshold: Threshold for significant fold change
-    
+        pval_threshold: Optional p-value threshold for the significance flag.
+            When None, falls back to Config.PVAL_CUTOFF (the legacy default 0.05).
+            Out-of-range or unparseable values should be coerced to None by the
+            caller before invocation.
+
     Returns:
         Tuple of (processed_dataframe, stats_dict)
     """
     # Combine duplicate genes
     grouped = df.groupby('ID')
     combined_rows = []
-    
+
     for gene, group in grouped:
         if len(group) == 1:
             # Convert Series to dict to maintain consistency
@@ -92,26 +96,30 @@ def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0) -> T
             avg_fc = group['log2FC'].astype(float).mean()
             _, combined_p = combine_pvalues(group['pval'].astype(float), method='fisher')
             combined_rows.append({'ID': gene, 'log2FC': avg_fc, 'pval': combined_p})
-    
+
     df_processed = pd.DataFrame(combined_rows)
     df_processed['ID'] = df_processed['ID'].astype(str).str.strip().str.upper()
-    
+
+    # Resolve effective p-value cutoff (user override or legacy default)
+    effective_pval = pval_threshold if pval_threshold is not None else Config.PVAL_CUTOFF
+
     # Add significance flag
     df_processed['significant'] = (
-        (df_processed['log2FC'].abs() >= logfc_threshold) & 
-        (df_processed['pval'] <= Config.PVAL_CUTOFF)
+        (df_processed['log2FC'].abs() >= logfc_threshold) &
+        (df_processed['pval'] <= effective_pval)
     )
-    
+
     # Calculate statistics
     n_sig = df_processed['significant'].sum()
     n_total = len(df_processed)
     n_non_sig = n_total - n_sig
-    
+
     stats = {
         'total_genes': n_total,
         'significant_genes': n_sig,
         'non_significant_genes': n_non_sig,
-        'logfc_threshold': logfc_threshold
+        'logfc_threshold': logfc_threshold,
+        'pval_threshold': effective_pval
     }
     
     logger.info(f"Processed {stats['total_genes']} unique genes: {stats['significant_genes']} significant, {stats['non_significant_genes']} non-significant")
