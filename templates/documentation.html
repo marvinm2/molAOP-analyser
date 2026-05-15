@@ -190,6 +190,50 @@ CYP3A4         3.21             0.00001   0.0001
             For example, OR = 3.5 means genes in this KE are 3.5 times more likely to be significant than expected by chance.
         </p>
 
+        <h3>Choosing between Fisher's exact and GSEA</h3>
+
+        <p>
+          <strong>What each test measures.</strong>
+          Fisher's exact test asks whether the proportion of <em>significant</em> genes
+          (those passing your log<sub>2</sub>FC and p-value thresholds) inside a Key
+          Event's gene set is higher than expected by chance — it is a hard-threshold,
+          over-representation test on a 2&times;2 contingency table. GSEA asks instead
+          whether the Key Event's gene set is collectively shifted toward the top
+          (up-regulated) or bottom (down-regulated) of the full ranked list, without
+          needing any threshold.
+        </p>
+
+        <p>
+          <strong>Input requirements.</strong>
+          Fisher's exact needs a binary significance call per gene — so it depends on
+          the thresholds you choose below the volcano plot. GSEA needs only a ranking
+          metric per gene; this tool builds it as
+          <code>sign(log<sub>2</sub>FC) &times; &minus;log<sub>10</sub>(p)</code> so
+          that direction and confidence both contribute. When you pick GSEA, the
+          threshold inputs are hidden because they have no effect on the result.
+        </p>
+
+        <p>
+          <strong>When to use which.</strong>
+          Use Fisher's exact when you want a confirmatory answer with explicit
+          thresholds — for example, when a regulator expects a defined significance
+          call. Use GSEA when you want an exploratory, direction-aware view that
+          catches coherent shifts where no individual gene crosses your threshold.
+          Both methods use the same Key Event gene sets, so results are directly
+          comparable.
+        </p>
+
+        <p>
+          <strong>Caveats.</strong>
+          Fisher's exact assumes genes are independent — which is rarely strictly
+          true — and a single highly-expressed gene cannot rescue a non-significant
+          Key Event. GSEA reports a leading-edge subset for each Key Event (the
+          genes that drive the enrichment score); inspect these to confirm the
+          signal is biologically coherent and not driven by one or two outliers.
+          Both methods are FDR-corrected (Benjamini&ndash;Hochberg for Fisher; the
+          GSEA permutation procedure produces its own FDR q-values).
+        </p>
+
         <h3>Background Universe</h3>
         <p>
             The enrichment analysis uses <strong>all genes in your uploaded dataset</strong> as the background universe.
