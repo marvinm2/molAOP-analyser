@@ -237,3 +237,47 @@ def build_ke_gene_mapping(
     total_genes = sum(len(genes) for genes in ke_gene_map.values())
     logger.debug(f"Built KE-gene mapping for {len(ke_gene_map)} KEs with {total_genes} genes (filtered to only include genes with expression data)")
     return ke_gene_map
+
+
+def run_enrichment(
+    method: str,
+    df: pd.DataFrame,
+    reference_sets: Dict[str, Set[str]],
+    ke_list: Set[str],
+    ke_title_map: Dict[str, str],
+    **kwargs: Any,
+) -> pd.DataFrame:
+    """Dispatch enrichment to the Fisher or GSEA backend (D-02).
+
+    Routes the call to ``run_enrichment_analysis`` (ORA / Fisher's exact) or
+    ``run_gsea_analysis`` (gseapy.prerank) based on ``method``.  The GSEA
+    import is lazy — inside the ``method == 'gsea'`` branch — so the Fisher-
+    only hot path incurs zero gseapy import cost (mirrors the lazy-import
+    pattern at services/data_service.py:200).
+
+    Args:
+        method: 'ora' for Fisher's exact (over-representation analysis) or
+            'gsea' for rank-based GSEA via gseapy.prerank.
+        df: Processed gene expression DataFrame passed through to the backend.
+        reference_sets: KE_ID → gene set mapping passed through to the backend.
+        ke_list: Set of KE IDs to analyse.
+        ke_title_map: KE_ID → human-readable title mapping.
+        **kwargs: Additional keyword arguments forwarded to the chosen backend.
+            For ORA: ``gene_logfc_map`` drives the Direction column.
+            For GSEA: ``gene_logfc_map`` is suppressed by the caller (D-14).
+
+    Returns:
+        pd.DataFrame from the chosen backend, sorted by FDR ascending.
+
+    Raises:
+        ValueError: If ``method`` is not 'ora' or 'gsea' (defence in depth —
+            the route-level whitelist check at app.py:/analyze is the first
+            layer; this raise is the second layer so direct service-layer
+            callers cannot accidentally pass an unknown method).
+    """
+    if method == 'ora':
+        return run_enrichment_analysis(df, reference_sets, ke_list, ke_title_map, **kwargs)
+    if method == 'gsea':
+        from services.gsea_service import run_gsea_analysis
+        return run_gsea_analysis(df, reference_sets, ke_list, ke_title_map, **kwargs)
+    raise ValueError(f"Unknown enrichment method: {method!r}. Expected 'ora' or 'gsea'.")
