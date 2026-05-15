@@ -1075,7 +1075,7 @@ def generate_report():
             network_data=json.loads(request.form.get('network_data', '{}')) if request.form.get('network_data') else None,
             network_png=network_png_data,
             software_versions=get_software_versions(),
-            method=metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
+            method=request.form.get('method') or metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
         )
         
         # Generate report based on format

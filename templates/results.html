@@ -646,6 +646,7 @@
             <input type="hidden" name="aop_label" value="{{ metadata.get('aop_label', '') }}">
             <input type="hidden" name="logfc_threshold" value="{{ threshold }}">
             <input type="hidden" name="pval_cutoff" value="0.05">
+            <input type="hidden" name="method" value="{{ method or 'ora' }}">
             <input type="hidden" name="id_column" value="{{ metadata.get('id_column', '') }}">
             <input type="hidden" name="fc_column" value="{{ metadata.get('fc_column', '') }}">
             <input type="hidden" name="pval_column" value="{{ metadata.get('pval_column', '') }}">

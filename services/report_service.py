@@ -102,6 +102,13 @@ class ReportData:
         if self.analysis_timestamp is None:
             self.analysis_timestamp = datetime.now()
 
+    @property
+    def method_label(self) -> str:
+        """Human-readable label for the enrichment method shown in reports."""
+        if self.method == 'gsea':
+            return 'GSEA (rank-based)'
+        return "Fisher's exact (over-representation)"
+
 
 class ReportGenerator:
     """Main report generation class supporting HTML and PDF formats."""
