@@ -873,3 +873,177 @@ class TestTourRoutes:
             response = self._analyze_with(authenticated_client, self._analyze_form(tour=fuzz))
             assert response.status_code == 200, f"non-200 for tour={fuzz!r}"
             assert b'<meta name="tour-active"' not in response.data, f"meta unexpectedly emitted for tour={fuzz!r}"
+
+
+@pytest.mark.integration
+@pytest.mark.web
+class TestHubPanel:
+    """Phase 15: Hub Gene Stats — integration tests for the hub panel on /analyze.
+
+    These tests are intentionally RED at Wave 0 because app.compute_hub_genes does not
+    exist as a patchable attribute yet (Plan 15-02 adds the import to app.py).
+    """
+
+    # --- Module-level fixtures ---
+
+    _ke_gene_map = {
+        'KE:1': [
+            {'id': 'TP53', 'log2FC': 2.1, 'significant': True, 'pvalue_raw': 0.001, 'pvalue_adj': 0.01},
+            {'id': 'BRCA1', 'log2FC': -1.5, 'significant': False, 'pvalue_raw': 0.3, 'pvalue_adj': 0.55},
+        ],
+        'KE:2': [
+            {'id': 'TP53', 'log2FC': 2.1, 'significant': True, 'pvalue_raw': 0.001, 'pvalue_adj': 0.01},
+            {'id': 'MYC', 'log2FC': 0.8, 'significant': False, 'pvalue_raw': 0.2, 'pvalue_adj': 0.45},
+        ],
+        'KE:3': [
+            {'id': 'TP53', 'log2FC': 2.1, 'significant': True, 'pvalue_raw': 0.001, 'pvalue_adj': 0.01},
+        ],
+    }
+
+    _hub_list = [
+        {
+            'gene': 'TP53', 'ke_count': 3,
+            'ke_ids': ['KE:1', 'KE:2', 'KE:3'],
+            'ke_titles': ['KE 1 title', 'KE 2 title', 'KE 3 title'],
+            'log2fc': 2.1, 'pvalue_adj': 0.01, 'significant': True, 'is_hub': True,
+        },
+        {
+            'gene': 'BRCA1', 'ke_count': 1,
+            'ke_ids': ['KE:1'],
+            'ke_titles': ['KE 1 title'],
+            'log2fc': -1.5, 'pvalue_adj': 0.55, 'significant': False, 'is_hub': False,
+        },
+        {
+            'gene': 'MYC', 'ke_count': 1,
+            'ke_ids': ['KE:2'],
+            'ke_titles': ['KE 2 title'],
+            'log2fc': 0.8, 'pvalue_adj': 0.45, 'significant': False, 'is_hub': False,
+        },
+    ]
+
+    # 26-gene hub_list for test_hub_list_all_genes_passed
+    # (server passes full list; DataTables paginates to 25 client-side)
+    _hub_list_26 = [
+        {
+            'gene': f'GENE{i:02d}', 'ke_count': 1,
+            'ke_ids': ['KE:1'], 'ke_titles': ['KE 1 title'],
+            'log2fc': 0.5, 'pvalue_adj': 0.05, 'significant': False, 'is_hub': False,
+        }
+        for i in range(26)
+    ]
+
+    def _analyze_form_hub(self, **extra):
+        """Base POST data for /analyze that exercises the hub panel path."""
+        base = {
+            'filename': 'test.csv',
+            'id_column': 'Gene_Symbol',
+            'fc_column': 'log2FoldChange',
+            'pval_column': 'padj',
+            'aop_selection': 'AOP:1',
+            'logfc_threshold': '1.0',
+        }
+        base.update(extra)
+        return base
+
+    def _post_analyze(self, client, form, hub_list):
+        """Run POST /analyze with the full mock stack including compute_hub_genes."""
+        import pandas as pd
+
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53', 'MYC'],
+            'log2FC': [1.5, 2.1, 0.8],
+            'pval': [0.001, 0.001, 0.2],
+            'significant': [True, True, False],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.05],
+            'num_overlap': [2], 'pct_sig_in_KE': [66.7],
+            'total_KE_genes_in_dataset': [3], 'odds_ratio': [3.5],
+            'overlap': ['BRCA1, TP53'], 'KE': ['KE:1'],
+            'sig_in_KE': [2], 'sig_not_KE': [0],
+            'non_sig_in_KE': [1], 'non_sig_not_KE': [0],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
+             patch('app.load_aop_data', return_value=({'KE:1'}, edges_df, {'KE:1': 'KE'}, {'KE:1': 'Test KE'})), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.build_ke_gene_mapping', return_value=self._ke_gene_map), \
+             patch('app.compute_hub_genes', return_value=hub_list), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True):
+            return client.post('/analyze', data=form)
+
+    def test_hub_panel_present_ora(self, authenticated_client):
+        """HUBG-01: POST /analyze with method=fisher (ORA) renders the Hub genes panel.
+
+        Asserts response 200, b'Hub genes' heading, and b'hubGenesTable' DataTable ID.
+        RED at Wave 0 — app.compute_hub_genes does not exist as a patchable attribute.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form_hub(method='fisher'),
+            self._hub_list,
+        )
+        assert response.status_code == 200
+        assert b'Hub genes' in response.data
+        assert b'hubGenesTable' in response.data
+
+    def test_hub_panel_present_gsea(self, authenticated_client):
+        """HUBG-01: POST /analyze with method=gsea also renders the Hub genes panel identically.
+
+        Panel renders the same HTML structure regardless of enrichment method.
+        RED at Wave 0 — app.compute_hub_genes does not exist as a patchable attribute.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form_hub(method='gsea'),
+            self._hub_list,
+        )
+        assert response.status_code == 200
+        assert b'Hub genes' in response.data
+        assert b'hubGenesTable' in response.data
+
+    def test_hub_list_all_genes_passed(self, authenticated_client):
+        """HUBG-04: Server passes the full hub list; no server-side truncation to 25.
+
+        DataTables paginates to 25 rows client-side. When hub_list has 26+ entries,
+        all gene symbols must appear in the rendered response.data.
+        RED at Wave 0 — app.compute_hub_genes does not exist as a patchable attribute.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form_hub(),
+            self._hub_list_26,
+        )
+        assert response.status_code == 200
+        # All 26 gene symbols must be in the response (no server-side truncation)
+        for entry in self._hub_list_26:
+            gene_bytes = entry['gene'].encode('utf-8')
+            assert gene_bytes in response.data, (
+                f"Gene {entry['gene']!r} not found in response; "
+                "server must pass the full hub_list without truncating to 25"
+            )
+
+    def test_hub_list_in_template(self, authenticated_client):
+        """HUBG-07: A known fixture gene symbol appears in response.data; the variable name does not.
+
+        The template must render hub_list contents as HTML (e.g. table rows) so gene
+        symbols appear in the body. The Python variable name 'hub_list' must NOT be
+        present as a literal string in the rendered HTML (would indicate a template error).
+        RED at Wave 0 — app.compute_hub_genes does not exist as a patchable attribute.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form_hub(),
+            self._hub_list,
+        )
+        assert response.status_code == 200
+        # A known gene symbol from the fixture must appear in rendered HTML
+        assert b'TP53' in response.data
+        # The Python variable name must NOT appear as a literal in the HTML body
+        assert b'hub_list' not in response.data
