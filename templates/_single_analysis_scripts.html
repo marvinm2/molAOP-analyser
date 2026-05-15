@@ -197,6 +197,37 @@
     });
 })();
 
+// IIFE: toggle #threshold-inputs visibility/disabled state based on method radio,
+// and keep the hidden #method-mirror / #pval-mirror inputs in #enrichmentForm
+// in sync with the user's radio + pval threshold choices. Re-runs on every
+// HTMX partial swap because the partial reloads this whole <script> block.
+(function () {
+    const radios = document.querySelectorAll('input[name="method"]');
+    const wrapper = document.getElementById('threshold-inputs');
+    if (!radios.length || !wrapper) return;
+
+    const methodMirror = document.getElementById('method-mirror');
+    const pvalMirror = document.getElementById('pval-mirror');
+    const pvalInput = document.getElementById('pval_threshold');
+
+    function applyMethod() {
+        const selected = document.querySelector('input[name="method"]:checked');
+        const isGsea = selected && selected.value === 'gsea';
+        wrapper.style.display = isGsea ? 'none' : '';
+        wrapper.querySelectorAll('input').forEach(i => { i.disabled = isGsea; });
+        if (methodMirror && selected) methodMirror.value = selected.value;
+        if (pvalMirror && pvalInput) pvalMirror.value = pvalInput.value;
+    }
+
+    radios.forEach(r => r.addEventListener('change', applyMethod));
+    if (pvalInput) {
+        pvalInput.addEventListener('input', () => {
+            if (pvalMirror) pvalMirror.value = pvalInput.value;
+        });
+    }
+    applyMethod();
+})();
+
 // Globals exposed for inline onclick handlers in _single_analysis.html.
 function setThreshold(value) {
     document.getElementById('logfc_threshold').value = value;
