@@ -299,14 +299,15 @@ class ReportGenerator:
     
     def _generate_analysis_parameters(self, report_data: ReportData) -> str:
         """Generate analysis parameters section."""
-        return f"""
-        <section class="analysis-params">
-            <h2>Analysis Settings</h2>
-            <div class="params-grid">
+        if report_data.method == 'gsea':
+            threshold_items = """
                 <div class="param-item">
-                    <label>Selected AOP:</label>
-                    <span>{report_data.aop_label} (ID: {report_data.aop_id})</span>
+                    <label>Ranking metric:</label>
+                    <span>sign(log2FC) × −log10(p)</span>
                 </div>
+            """
+        else:
+            threshold_items = f"""
                 <div class="param-item">
                     <label>Log2FC Threshold:</label>
                     <span>{report_data.logfc_threshold}</span>
@@ -315,6 +316,20 @@ class ReportGenerator:
                     <label>P-value Cutoff:</label>
                     <span>{report_data.pval_cutoff}</span>
                 </div>
+            """
+        return f"""
+        <section class="analysis-params">
+            <h2>Analysis Settings</h2>
+            <div class="params-grid">
+                <div class="param-item">
+                    <label>Method:</label>
+                    <span>{report_data.method_label}</span>
+                </div>
+                <div class="param-item">
+                    <label>Selected AOP:</label>
+                    <span>{report_data.aop_label} (ID: {report_data.aop_id})</span>
+                </div>
+                {threshold_items}
                 <div class="param-item">
                     <label>Gene ID Column:</label>
                     <span>{report_data.id_column}</span>
@@ -379,6 +394,8 @@ class ReportGenerator:
             </section>
             """
         
+        is_gsea = report_data.method == 'gsea'
+
         # Create table rows
         table_rows = ""
         for result in report_data.enrichment_results[:20]:  # Show top 20 results
@@ -387,41 +404,60 @@ class ReportGenerator:
             adj_pval = result.get('FDR', pval)
             ke_id = result.get('KE', 'N/A')
             title = result.get('Title', 'N/A')
-            overlap_count = result.get('num_overlap', 0)
             ke_size = result.get('total_KE_genes_in_dataset', 0)
-            odds_ratio = result.get('odds_ratio', 0)
-            # Observed direction of overlap genes; empty for legacy shared
-            # records (or any caller that didn't pass gene_logfc_map).
-            direction = result.get('Direction', '')
+            pval_str = f"{pval:.2e}" if pval < 0.001 else f"{pval:.4f}"
+            adj_pval_str = f"{adj_pval:.2e}" if adj_pval < 0.001 else f"{adj_pval:.4f}"
+            row_class = 'significant' if adj_pval < 0.05 else ''
 
-            # Format odds ratio properly
-            odds_ratio_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
-
-            table_rows += f"""
-            <tr class="{'significant' if adj_pval < 0.05 else ''}">
+            if is_gsea:
+                nes = result.get('NES', 0)
+                nes_str = f"{nes:.2f}" if isinstance(nes, (int, float)) else str(nes)
+                lead = result.get('lead_genes', '')
+                # Export carries the FULL untruncated gene list.
+                lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
+                table_rows += f"""
+            <tr class="{row_class}">
+                <td>{ke_id}</td>
+                <td>{title}</td>
+                <td>{nes_str}</td>
+                <td>{pval_str}</td>
+                <td>{adj_pval_str}</td>
+                <td>{ke_size}</td>
+                <td>{lead_str}</td>
+            </tr>
+            """
+            else:
+                overlap_count = result.get('num_overlap', 0)
+                odds_ratio = result.get('odds_ratio', 0)
+                # Observed direction of overlap genes; empty for legacy shared
+                # records (or any caller that didn't pass gene_logfc_map).
+                direction = result.get('Direction', '')
+                odds_ratio_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
+                table_rows += f"""
+            <tr class="{row_class}">
                 <td>{ke_id}</td>
                 <td>{title}</td>
                 <td>{overlap_count}</td>
                 <td>{direction}</td>
                 <td>{ke_size}</td>
-                <td>{f"{pval:.2e}" if pval < 0.001 else f"{pval:.4f}"}</td>
-                <td>{f"{adj_pval:.2e}" if adj_pval < 0.001 else f"{adj_pval:.4f}"}</td>
+                <td>{pval_str}</td>
+                <td>{adj_pval_str}</td>
                 <td>{odds_ratio_str}</td>
             </tr>
             """
-        
-        return f"""
-        <section class="enrichment-section">
-            <h2>Key Event Enrichment Results</h2>
-            <p class="section-description">
-                Statistical enrichment analysis of significantly differentially expressed genes 
-                against Key Event gene sets. Results are ranked by adjusted p-value.
-            </p>
-            
-            <div class="table-container">
-                <table class="enrichment-table">
-                    <thead>
-                        <tr>
+
+        if is_gsea:
+            header_row = """
+                            <th>KE ID</th>
+                            <th>Key Event Title</th>
+                            <th>NES</th>
+                            <th>P-value</th>
+                            <th>FDR</th>
+                            <th>KE Gene Count</th>
+                            <th>Lead Edge Genes</th>
+            """
+        else:
+            header_row = """
                             <th>KE ID</th>
                             <th>Key Event Title</th>
                             <th># Overlap</th>
@@ -430,6 +466,21 @@ class ReportGenerator:
                             <th>P-value</th>
                             <th>FDR</th>
                             <th>Odds Ratio</th>
+            """
+
+        return f"""
+        <section class="enrichment-section">
+            <h2>Key Event Enrichment Results</h2>
+            <p class="section-description">
+                Statistical enrichment analysis of significantly differentially expressed genes
+                against Key Event gene sets. Results are ranked by adjusted p-value.
+            </p>
+
+            <div class="table-container">
+                <table class="enrichment-table">
+                    <thead>
+                        <tr>
+                            {header_row}
                         </tr>
                     </thead>
                     <tbody>
