@@ -143,7 +143,7 @@ class TestFlaskRoutes:
         with patch('app.load_and_validate_data', return_value=processed_df), \
              patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 5})), \
              patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
-             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.build_ke_gene_mapping', return_value={}), \
              patch('app.guess_id_type', return_value='HGNC'), \
@@ -206,7 +206,7 @@ class TestFlaskRoutes:
         with patch('app.load_and_validate_data', return_value=processed_df), \
              patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
              patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
-             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
@@ -287,7 +287,7 @@ class TestFlaskRoutes:
         with patch('app.load_and_validate_data', return_value=processed_df), \
              patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
              patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
-             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
@@ -382,7 +382,7 @@ class TestFlaskRoutes:
         with patch('app.load_and_validate_data', return_value=processed_df), \
              patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 2})), \
              patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
-             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
@@ -586,7 +586,7 @@ class TestFlaskRoutes:
              patch('app.load_and_validate_data', return_value=processed_df), \
              patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 5})), \
              patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
-             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.build_ke_gene_mapping', return_value={}), \
              patch('app.guess_id_type', return_value='HGNC'), \
@@ -833,7 +833,7 @@ class TestTourRoutes:
         with patch('app.load_and_validate_data', return_value=processed_df), \
              patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 5})), \
              patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
-             patch('app.run_enrichment_analysis', return_value=enrichment_df), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.build_ke_gene_mapping', return_value={}), \
              patch('app.guess_id_type', return_value='HGNC'), \

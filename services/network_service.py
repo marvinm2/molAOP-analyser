@@ -44,6 +44,7 @@ def build_cytoscape_network(
     ke_title_map: Dict[str, str],
     ke_type_map: Dict[str, str],
     reference_sets: Dict[str, Set[str]] = None,
+    method: str = 'ora',
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Build Cytoscape.js network data structure.
@@ -58,6 +59,11 @@ def build_cytoscape_network(
             with no gene set get a `no-genes` class so the frontend can
             render them as smaller / muted nodes — making the curation gap
             visually obvious without hiding the KE from the AOP topology.
+        method: 'ora' (default, Fisher's exact) or 'gsea'. Under GSEA, each
+            KE node carries ``data.method='gsea'`` and ``data.nes=<clamped>``
+            alongside ``data.logfc=0`` (neutral surrogate preserving the
+            field for legacy .cyjs readers per D-10). Under ORA the payload
+            is bytewise identical to pre-Phase-14 exports (D-10 back-compat).
 
     Returns:
         Dictionary with 'nodes' and 'edges' keys for Cytoscape.js
@@ -80,11 +86,18 @@ def build_cytoscape_network(
             # column is lowercase 'p_value' (see enrichment_service.py:125).
             p_value = _to_native(enrichment_row.get('p_value'))
             fdr = _to_native(enrichment_row.get('FDR'))
+            # D-10/D-12: extract and belt-and-suspenders clamp NES under GSEA.
+            # The gsea_service already clamped to ±3 but the network builder
+            # must not trust upstream (two independent clamps per D-12 spec).
+            nes = _to_native(enrichment_row.get('NES')) if method == 'gsea' else None
+            if nes is not None:
+                nes = max(-3.0, min(3.0, float(nes)))
         else:
             odds_ratio = 0
             is_significant = False
             p_value = None
             fdr = None
+            nes = None
 
         # Get KE metadata
         label = ke_title_map.get(ke, ke)
@@ -98,16 +111,29 @@ def build_cytoscape_network(
         if reference_sets is not None and not has_gene_set:
             classes.append("no-genes")
 
+        # D-10: build node payload with method-aware fields.
+        # 'method' is always included so the frontend can branch on a single
+        # attribute. Under GSEA, 'nes' is added and 'logfc' is set to 0 (a
+        # neutral surrogate that renders mid-gradient grey for legacy .cyjs
+        # readers that pre-date Phase 14 — preserves field shape per D-10).
+        # Under ORA, 'logfc' carries the odds_ratio as before (no change).
+        node_payload = {
+            "id": ke,
+            "label": label,
+            "ke_type": ke_type,
+            "has_gene_set": has_gene_set,
+            "p_value": p_value,   # EXPO-06: per-KE significance in .cyjs export
+            "fdr": fdr,           # EXPO-06: per-KE significance in .cyjs export
+            "method": method,     # D-10: frontend gradient selector
+        }
+        if method == 'gsea':
+            node_payload["nes"] = nes
+            node_payload["logfc"] = 0  # neutral surrogate per D-10 back-compat
+        else:
+            node_payload["logfc"] = odds_ratio  # ORA: odds ratio as color surrogate
+
         node_data = {
-            "data": {
-                "id": ke,
-                "label": label,
-                "logfc": odds_ratio,  # Using odds ratio as surrogate for color scaling
-                "ke_type": ke_type,
-                "has_gene_set": has_gene_set,
-                "p_value": p_value,   # EXPO-06: per-KE significance in .cyjs export
-                "fdr": fdr,           # EXPO-06: per-KE significance in .cyjs export
-            },
+            "data": node_payload,
             "classes": " ".join(classes)
         }
 
