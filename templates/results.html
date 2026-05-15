@@ -407,7 +407,9 @@
                             'sig_in_KE': 'Sig in KE',
                             'sig_not_KE': 'Sig not KE',
                             'non_sig_in_KE': 'Non-sig in KE',
-                            'non_sig_not_KE': 'Non-sig not KE'
+                            'non_sig_not_KE': 'Non-sig not KE',
+                            'NES': 'NES',
+                            'lead_genes': 'Lead Edge Genes'
                         } %}
                         {% for col in table[0].keys() %}
                         <th>{{ column_names.get(col, col) }}</th>
@@ -418,6 +420,18 @@
                     {% for row in table %}
                     <tr>
                         {% for col, val in row.items() %}
+                        {% if col == 'lead_genes' %}
+                            {% set genes = val if (val is iterable and val is not string) else (val or '').split(', ') %}
+                            {% if genes and genes|length > 8 %}
+                            <td title="{{ genes|join(', ') }}">{{ genes[:8]|join(', ') }} (+{{ genes|length - 8 }} more)</td>
+                            {% elif genes %}
+                            <td title="{{ genes|join(', ') }}">{{ genes|join(', ') }}</td>
+                            {% else %}
+                            <td></td>
+                            {% endif %}
+                        {% elif col == 'NES' %}
+                            <td>{{ "%.2f"|format(val) }}</td>
+                        {% else %}
                         <td>
                             {% if col in ['p_value', 'FDR'] %}
                                 {% if val < 0.001 %}
@@ -433,6 +447,7 @@
                                 {{ val }}
                             {% endif %}
                         </td>
+                        {% endif %}
                         {% endfor %}
                     </tr>
                     {% endfor %}
