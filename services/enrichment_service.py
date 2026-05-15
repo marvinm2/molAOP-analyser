@@ -279,5 +279,9 @@ def run_enrichment(
         return run_enrichment_analysis(df, reference_sets, ke_list, ke_title_map, **kwargs)
     if method == 'gsea':
         from services.gsea_service import run_gsea_analysis
+        # gene_logfc_map is an ORA-only kwarg (drives the Direction column).
+        # The /analyze route passes it as None under GSEA (D-14); drop it so
+        # it is not forwarded to run_gsea_analysis, which does not accept it.
+        kwargs.pop('gene_logfc_map', None)
         return run_gsea_analysis(df, reference_sets, ke_list, ke_title_map, **kwargs)
     raise ValueError(f"Unknown enrichment method: {method!r}. Expected 'ora' or 'gsea'.")
