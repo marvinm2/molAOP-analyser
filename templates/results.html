@@ -520,6 +520,17 @@
                 </div>
 
                 <!-- Color Scale -->
+                {% if method == 'gsea' %}
+                <div class="network-legend__scale">
+                    <strong style="color: #29235C; font-size: 13px;">KE NES Scale:</strong>
+                    <div class="network-legend__gradient">
+                        <span style="font-size: 11px; margin-right: 5px;">&minus;3</span>
+                        <div style="width: 100px; height: 12px; background: linear-gradient(to right, #307BBF, #FFFFFF, #d73027); border: 1px solid #999;"></div>
+                        <span style="font-size: 11px; margin-left: 5px;">+3</span>
+                        <span style="font-size: 11px; margin-left: 10px; color: #666;">Negative NES &larr; 0 &rarr; Positive NES</span>
+                    </div>
+                </div>
+                {% else %}
                 <div class="network-legend__scale">
                     <strong style="color: #29235C; font-size: 13px;">Gene Expression Scale (log&#8322;FC):</strong>
                     <div class="network-legend__gradient">
@@ -529,6 +540,7 @@
                         <span style="font-size: 11px; margin-left: 10px; color: #666;">Downregulated &larr; &rarr; Upregulated</span>
                     </div>
                 </div>
+                {% endif %}
             </div>
         </div>
 
@@ -742,6 +754,20 @@ function defaultLogFCColor(logfc) {
     return `rgb(${r},${g},${b})`;
 }
 
+// --- NES gradient for GSEA KE nodes (UI-SPEC §Color, locked stops) ---
+function nesColor(nes) {
+    const v = Math.max(-3, Math.min(3, parseFloat(nes) || 0));
+    if (v === 0) return '#FFFFFF';
+    const t = (v + 3) / 6;
+    const lerp = (a, b, k) => Math.round(a + (b - a) * k);
+    if (t < 0.5) {
+        const k = t * 2;
+        return `rgb(${lerp(48,255,k)},${lerp(123,255,k)},${lerp(191,255,k)})`;
+    }
+    const k = (t - 0.5) * 2;
+    return `rgb(${lerp(255,215,k)},${lerp(255,48,k)},${lerp(255,39,k)})`;
+}
+
 // --- Spinner functions ---
 function showSpinner(message) {
     document.getElementById('network-spinner-msg').textContent = message || 'Rendering network...';
@@ -821,6 +847,13 @@ const cy = cytoscape({
         selector: 'node.gene.significant',
         style: {
             'border-color': 'green'
+        }
+    },
+    // GSEA mode: KE nodes coloured by NES (server-clamped to ±3; nesColor() also clamps).
+    {
+        selector: 'node[method = "gsea"]',
+        style: {
+            'background-color': ele => nesColor(ele.data('nes'))
         }
     },
     {
