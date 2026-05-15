@@ -888,15 +888,22 @@ class ReportGenerator:
         # Input Data Summary
         story.append(Paragraph("Input Data Summary", heading_style))
         
+        if report_data.method == 'gsea':
+            threshold_rows = [['Ranking metric', 'sign(log2FC) × −log10(p)']]
+        else:
+            threshold_rows = [
+                ['Log2FC Threshold', str(report_data.logfc_threshold)],
+                ['P-value Cutoff', str(report_data.pval_cutoff)],
+            ]
+
         summary_data = [
             ['Metric', 'Value'],
+            ['Method', report_data.method_label],
             ['Filename', report_data.filename],
             ['Total Genes', f"{report_data.gene_count:,}"],
             ['Significant Genes', f"{report_data.significant_genes:,}"],
             ['Gene ID Type', report_data.id_type],
-            ['Log2FC Threshold', str(report_data.logfc_threshold)],
-            ['P-value Cutoff', str(report_data.pval_cutoff)]
-        ]
+        ] + threshold_rows
         
         summary_table = Table(summary_data, colWidths=[2.5*inch, 3.5*inch])
         summary_table.setStyle(TableStyle([
@@ -921,35 +928,59 @@ class ReportGenerator:
             story.append(Paragraph("Statistical enrichment analysis results ranked by FDR", normal_style))
             story.append(Spacer(1, 12))
             
+            is_gsea = report_data.method == 'gsea'
+
             # Prepare table data (show top 15 results for space)
-            table_data = [['KE ID', 'Key Event Title', '# Overlap', 'Direction', 'P-value', 'FDR', 'Odds Ratio']]
+            if is_gsea:
+                table_data = [['KE ID', 'Key Event Title', 'NES', 'P-value', 'FDR', 'KE Gene Count', 'Lead Edge Genes']]
+            else:
+                table_data = [['KE ID', 'Key Event Title', '# Overlap', 'Direction', 'P-value', 'FDR', 'Odds Ratio']]
 
             for result in report_data.enrichment_results[:15]:
                 pval = result.get('p_value', 0)
                 fdr = result.get('FDR', pval)
-                odds_ratio = result.get('odds_ratio', 0)
 
                 # Format values
                 pval_str = f"{pval:.2e}" if pval < 0.001 else f"{pval:.4f}"
                 fdr_str = f"{fdr:.2e}" if fdr < 0.001 else f"{fdr:.4f}"
-                odds_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
 
                 title = result.get('Title', 'N/A')
                 if len(title) > 40:
                     title = title[:37] + "..."
 
-                table_data.append([
-                    result.get('KE', 'N/A'),
-                    title,
-                    str(result.get('num_overlap', 0)),
-                    result.get('Direction', ''),
-                    pval_str,
-                    fdr_str,
-                    odds_str
-                ])
+                if is_gsea:
+                    nes = result.get('NES', 0)
+                    nes_str = f"{nes:.2f}" if isinstance(nes, (int, float)) else str(nes)
+                    lead = result.get('lead_genes', '')
+                    # Export carries the FULL untruncated gene list.
+                    lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
+                    table_data.append([
+                        result.get('KE', 'N/A'),
+                        title,
+                        nes_str,
+                        pval_str,
+                        fdr_str,
+                        str(result.get('total_KE_genes_in_dataset', 0)),
+                        lead_str,
+                    ])
+                else:
+                    odds_ratio = result.get('odds_ratio', 0)
+                    odds_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
+                    table_data.append([
+                        result.get('KE', 'N/A'),
+                        title,
+                        str(result.get('num_overlap', 0)),
+                        result.get('Direction', ''),
+                        pval_str,
+                        fdr_str,
+                        odds_str
+                    ])
 
             # Create table with appropriate column widths
-            col_widths = [0.8*inch, 2.0*inch, 0.7*inch, 0.9*inch, 0.7*inch, 0.7*inch, 0.7*inch]
+            if is_gsea:
+                col_widths = [0.6*inch, 1.6*inch, 0.6*inch, 0.8*inch, 0.8*inch, 0.8*inch, 1.8*inch]
+            else:
+                col_widths = [0.8*inch, 2.0*inch, 0.7*inch, 0.9*inch, 0.7*inch, 0.7*inch, 0.7*inch]
             enrichment_table = Table(table_data, colWidths=col_widths)
             
             # Style the table
