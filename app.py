@@ -25,7 +25,7 @@ from services.api_service import fetch_reference_sets_from_api
 from exceptions import AOPAnalysisError, format_error_response
 from utils import cleanup_file, validate_file_path
 from services.data_service import load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data
-from services.enrichment_service import run_enrichment_analysis, build_ke_gene_mapping
+from services.enrichment_service import run_enrichment_analysis, build_ke_gene_mapping, run_enrichment
 from services.network_service import build_cytoscape_network
 from services.column_detector import column_detector
 from services.gene_id_validator import gene_id_validator
@@ -430,6 +430,7 @@ def shared_results(uuid_str):
             dataset_label=record.dataset_label,
             gene_count=record.gene_count,
             significant_genes=record.significant_genes,
+            method=record.method or 'ora',  # D-06: coerce NULL (pre-Phase-14 shared links) to 'ora'
         )
     finally:
         session_db.close()
@@ -568,6 +569,16 @@ def preview():
     except (TypeError, ValueError):
         logfc_threshold = None
 
+    # Parse p-value threshold (optional; falls back to Config.PVAL_CUTOFF downstream).
+    # /preview is informational — out-of-range values fall back to None rather than 400.
+    pval_threshold = request.form.get("pval_threshold")
+    try:
+        pval_threshold = float(pval_threshold)
+        if not (0 < pval_threshold <= 1):
+            raise ValueError("pval_threshold out of range")
+    except (TypeError, ValueError):
+        pval_threshold = None
+
     # Prepare volcano plot configuration
     pval_cutoff = Config.PVAL_CUTOFF  # Statistical significance threshold (typically 0.05)
     pval_y = -math.log10(pval_cutoff)  # Y-axis position for significance line
@@ -612,6 +623,9 @@ def preview():
         # Carry session metadata through so the visible inputs survive HTMX
         # re-renders. Lets the /demos CTA pre-seed dataset_id (see above).
         metadata=session.get('experiment_metadata', {}) or {},
+        # Phase 14: preserve user's method and pval_threshold across HTMX re-renders
+        pval_threshold=pval_threshold,
+        method=request.form.get('method', 'ora'),
     )
 
     # HTMX swaps in just the partial — no full-page reload, no scroll-to-top.
@@ -639,15 +653,31 @@ def analyze():
             'fc_column': request.form.get('fc_column'),
             'pval_column': request.form.get('pval_column'),
             'aop_selection': request.form.get('aop_selection'),
-            'logfc_threshold': request.form.get('logfc_threshold', '0.0')
+            'logfc_threshold': request.form.get('logfc_threshold', '0.0'),
+            'method': request.form.get('method', 'ora'),
+            'pval_threshold': request.form.get('pval_threshold'),
         }
-        
+
         # Validate form data
         is_valid, errors = validate_form_data(form_data)
         if not is_valid:
             error_msg = "Validation errors: " + "; ".join(errors)
             log_validation_error("form_validation", error_msg, form_data)
             return error_msg, 400
+
+        # Phase 14 security: whitelist method (T-14-01) and range-check pval_threshold (T-14-02).
+        # These checks are BEFORE any expensive computation.
+        if form_data['method'] not in ('ora', 'gsea'):
+            return "Invalid method. Choose 'Fisher's exact' or 'GSEA' on the analysis form.", 400
+
+        try:
+            pval_threshold = float(form_data['pval_threshold']) if form_data['pval_threshold'] else None
+        except (TypeError, ValueError):
+            pval_threshold = None
+        if pval_threshold is not None and not (0 < pval_threshold <= 1):
+            return f"P-value threshold must be between 0 (exclusive) and 1 (inclusive). Got: {pval_threshold}.", 400
+
+        method = form_data['method']
         
         # Extract validated parameters
         filename = form_data['filename']
@@ -707,15 +737,19 @@ def analyze():
         gene_logfc_map = df_processed.set_index("ID")["log2FC"].to_dict()
         gene_significance_map = df_processed.set_index("ID")["significant"].to_dict()
 
-        enrichment_results = run_enrichment_analysis(
+        # Phase 14: dispatch to Fisher (ORA) or GSEA based on form-supplied method.
+        # gene_logfc_map drives the Direction column for ORA only (D-14: suppressed under GSEA).
+        enrichment_results = run_enrichment(
+            method,
             df_processed, current_reference_sets, ke_list, ke_title_map,
-            gene_logfc_map=gene_logfc_map,
+            gene_logfc_map=gene_logfc_map if method == 'ora' else None,
         )
 
         # Build network visualization data
         cy_network = build_cytoscape_network(
             ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
             reference_sets=current_reference_sets,
+            method=method,
         )
 
         # Plan 11-03 (D-04 passthrough): capture raw and adjusted p-value
@@ -833,8 +867,9 @@ def analyze():
                 aop_label = v.get('label', aop_id)
                 break
         stored_metadata['aop_label'] = aop_label
+        stored_metadata['method'] = method
         stored_metadata['logfc_threshold'] = logfc_threshold
-        stored_metadata['pval_cutoff'] = Config.PVAL_CUTOFF
+        stored_metadata['pval_cutoff'] = pval_threshold if pval_threshold is not None else Config.PVAL_CUTOFF
         stored_metadata['id_column'] = id_col
         stored_metadata['fc_column'] = fc_col
         stored_metadata['pval_column'] = pval_col
@@ -851,8 +886,9 @@ def analyze():
             if stored_metadata:
                 analysis_params = {
                     'aop_id': aop_id,
+                    'method': method,
                     'logfc_threshold': logfc_threshold,
-                    'pval_cutoff': Config.PVAL_CUTOFF,
+                    'pval_cutoff': pval_threshold if pval_threshold is not None else Config.PVAL_CUTOFF,
                     'id_column': id_col,
                     'fc_column': fc_col,
                     'pval_column': pval_col,
@@ -909,6 +945,8 @@ def analyze():
             ke_type_map=json.dumps(ke_type_map),
             ke_title_map=json.dumps(ke_title_map),
             metadata=stored_metadata,
+            method=method,
+            pval_threshold=pval_threshold,
             tour_active=(request.form.get('tour') == '1'),  # Phase 13: guided tour resume signal (TUTR-03)
         )
 
@@ -1036,7 +1074,8 @@ def generate_report():
             volcano_data=json.loads(request.form.get('volcano_data', '[]')) if request.form.get('volcano_data') else None,
             network_data=json.loads(request.form.get('network_data', '{}')) if request.form.get('network_data') else None,
             network_png=network_png_data,
-            software_versions=get_software_versions()
+            software_versions=get_software_versions(),
+            method=metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
         )
         
         # Generate report based on format

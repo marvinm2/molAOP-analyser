@@ -88,6 +88,11 @@ class ReportData:
     network_data: Optional[Dict[str, Any]] = None
     network_png: Optional[str] = None  # Base64 encoded PNG/JPEG data or SVG string
     
+    # Phase 14: enrichment method ('ora' or 'gsea'). Defaulted so all existing
+    # ReportData(...) constructions outside the /generate_report route remain
+    # compatible. Plan 04 reads this field to branch report header and table columns.
+    method: str = 'ora'
+
     # System information
     analysis_timestamp: datetime = None
     software_versions: Optional[Dict[str, str]] = None
