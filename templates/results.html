@@ -770,38 +770,54 @@ $(document).ready(function() {
     });
 });
 
-// --- Hub genes DataTable init ---
+// --- Hub genes DataTable init (guarded: inert when panel is in empty state) ---
 let hubGenesTable;
-$(document).ready(function() {
-    hubGenesTable = $('#hubGenesTable').DataTable({
-        dom: 'Bfrtip',
-        autoWidth: true,
-        order: [[1, 'desc']],
-        pageLength: 25,
-        lengthMenu: [[25, -1], ['25', 'All']],
-        columnDefs: [
-            { type: 'num', targets: [1, 3, 4] },
-            { visible: false, targets: [5] }
-        ],
-        buttons: [
-            {
-                extend: 'csv',
-                text: 'Export hub genes',
-                filename: function() {
-                    var rawAop = ('{{ metadata.get("aop_id", "AOP") | default("AOP") }}' || 'AOP');
-                    var rawLabel = ('{{ metadata.get("dataset_id", "") | default("") }}' || 'unnamed');
-                    var aopNorm = rawAop.replace(/:/g, '');
-                    var labelNorm = rawLabel.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
-                    return 'molAOP_' + aopNorm + '_' + labelNorm + '_hub_genes';
-                },
-                exportOptions: {
-                    columns: [0, 1, 2, 3, 4],
-                    format: { body: function(data) { return _csvEscape(data); } }
-                }
-            }
-        ]
+if (document.getElementById('hubGenesTable')) {
+    // "Significant genes only" toggle: custom search filter keyed on hidden column 5.
+    $.fn.dataTable.ext.search.push(function(settings, data) {
+        if (settings.nTable.id !== 'hubGenesTable') return true;
+        var sigOnlyEl = document.getElementById('sig-only-toggle');
+        if (!sigOnlyEl || !sigOnlyEl.checked) return true;
+        return data[5] === 'true';
     });
-});
+
+    $(document).ready(function() {
+        hubGenesTable = $('#hubGenesTable').DataTable({
+            dom: 'Bfrtip',
+            autoWidth: true,
+            order: [[1, 'desc']],
+            pageLength: 25,
+            lengthMenu: [[25, -1], ['25', 'All']],
+            columnDefs: [
+                { type: 'num', targets: [1, 3, 4] },
+                { visible: false, targets: [5] }
+            ],
+            buttons: [
+                {
+                    extend: 'csv',
+                    text: 'Export hub genes',
+                    className: 'btn btn--accent',
+                    filename: function() {
+                        var rawAop = ('{{ metadata.get("aop_id", "AOP") | default("AOP") }}' || 'AOP');
+                        var rawLabel = ('{{ metadata.get("dataset_id", "") | default("") }}' || 'unnamed');
+                        var aopNorm = rawAop.replace(/:/g, '');
+                        var labelNorm = rawLabel.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
+                        return 'molAOP_' + aopNorm + '_' + labelNorm + '_hub_genes';
+                    },
+                    exportOptions: {
+                        columns: [0, 1, 2, 3, 4],
+                        format: { body: function(data) { return _csvEscape(data); } }
+                    }
+                }
+            ]
+        });
+
+        // "Significant genes only" toggle change handler (HUBG-03, D-10)
+        document.getElementById('sig-only-toggle').addEventListener('change', function() {
+            hubGenesTable.draw();
+        });
+    });
+}
 
 function downloadCSV() {
     resultsTable.button('.buttons-csv').trigger();
