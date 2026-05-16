@@ -701,6 +701,71 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   CONFIDENCE BADGE — Phase 16 (AUTC-01)
+   Promotes existing text-color .confidence-* classes to filled inline badges.
+   Existing .confidence-high/.confidence-medium/.confidence-low kept for
+   backward compatibility.
+   ========================================================================== */
+
+.confidence-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: white;
+    margin-left: 8px;
+    line-height: 1;
+}
+
+.confidence-badge--high {
+    background-color: #45A6B2; /* Teal */
+}
+
+.confidence-badge--medium {
+    background-color: #EB5B25; /* Orange */
+}
+
+.confidence-badge--low {
+    background-color: #9A1C57; /* Deep Magenta */
+}
+
+.confidence-badge--very-low {
+    background-color: #9A1C57; /* Deep Magenta */
+}
+
+.confidence-badge--undetected {
+    background-color: #EB5B25; /* Orange */
+    border: 1px solid #9A1C57; /* Deep Magenta outline — signals required action */
+}
+
+/* Reasons list inside .column-hint */
+.column-hint__reasons {
+    list-style: disc;
+    padding-left: 16px;
+    margin: 4px 0;
+    font-style: normal; /* override italic on .column-hint */
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+}
+
+.column-hint__reasons li {
+    margin-bottom: 2px;
+}
+
+/* Static generic explainer line */
+.column-type-explainer {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    font-weight: 400;
+    font-style: italic;
+    line-height: 1.4;
+    /* color inherits #29235C from .column-hint */
+}
+
+/* ==========================================================================
    METADATA SUMMARY CARD
    ========================================================================== */
 
