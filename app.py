@@ -102,6 +102,10 @@ def inject_csrf_token():
     """Make CSRF token available in all templates."""
     return dict(csrf_token=generate_csrf())
 
+# AUTC-01: Expose the detector's qualitative confidence label helper to Jinja2 templates.
+# Templates call confidence_label(match.confidence) to get "High"/"Medium"/"Low"/"Very Low".
+app.jinja_env.globals['confidence_label'] = column_detector.get_confidence_description
+
 _UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 
 def _validate_uuid(uuid_str):
