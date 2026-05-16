@@ -960,6 +960,17 @@ const cy = cytoscape({
             'border-color': 'green'
         }
     },
+    // Hub gene badge: magenta ring on genes appearing in >=3 KEs (Phase 15 D-07).
+    // Ordered after node.gene.significant so #E6007E overrides green when hub + significant.
+    {
+        selector: 'node.hub',
+        style: {
+            'border-width': 3,
+            'border-color': '#E6007E',
+            'width': 28,
+            'height': 28
+        }
+    },
     // GSEA mode: KE nodes coloured by NES (server-clamped to ±3; nesColor() also clamps).
     {
         selector: 'node[method = "gsea"]',
@@ -1067,10 +1078,12 @@ cy.on('tap', 'node', function(event) {
                     const geneId = geneObj.id;
                     // Shared gene node dedup: only add if not already in graph
                     if (cy.getElementById(geneId).length === 0) {
+                        var cls = geneObj.significant ? 'gene significant' : 'gene';
+                        if (hubGeneSet.has(geneId)) cls += ' hub';
                         cy.add({
                             group: 'nodes',
                             data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
-                            classes: geneObj.significant ? 'gene significant' : 'gene'
+                            classes: cls
                         });
                     }
                     // Dedup edges by deterministic ID
@@ -1116,10 +1129,12 @@ function expandAll() {
                     genes.forEach(function(geneObj) {
                         var geneId = geneObj.id;
                         if (cy.getElementById(geneId).length === 0) {
+                            var expandCls = geneObj.significant ? 'gene significant' : 'gene';
+                            if (hubGeneSet.has(geneId)) expandCls += ' hub';
                             cy.add({
                                 group: 'nodes',
                                 data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
-                                classes: geneObj.significant ? 'gene significant' : 'gene'
+                                classes: expandCls
                             });
                         }
                         var edgeId = keId + '_' + geneId;
