@@ -656,7 +656,11 @@
                         {{ h.ke_titles[:5]|join(', ') }}{% if h.ke_titles|length > 5 %} (+{{ h.ke_titles|length - 5 }} more){% endif %}
                     </td>
                     <td>{{ "%.3f"|format(h.log2fc) }}</td>
-                    <td>
+                    {# Adj. p-value sorts via the data-order attribute below: the displayed
+                       values (— for None, %.2e scientific notation) are not numerically
+                       parseable by DataTables, so data-order carries the raw float — with a
+                       1.0 sentinel for None so None rows sort last when ascending (WR-03). #}
+                    <td data-order="{{ h.pvalue_adj if h.pvalue_adj is not none else 1.0 }}">
                         {% if h.pvalue_adj is none %}&mdash;{% elif h.pvalue_adj < 0.001 %}{{ "%.2e"|format(h.pvalue_adj) }}{% else %}{{ "%.4f"|format(h.pvalue_adj) }}{% endif %}
                     </td>
                     <td style="display:none">{{ 'true' if h.significant else 'false' }}</td>
@@ -789,7 +793,10 @@ if (document.getElementById('hubGenesTable')) {
             pageLength: 25,
             lengthMenu: [[25, -1], ['25', 'All']],
             columnDefs: [
-                { type: 'num', targets: [1, 3, 4] },
+                // Target 4 (Adj. p-value) is intentionally omitted: that column sorts
+                // via a data-order attribute on its <td>, because its displayed values
+                // (— and scientific notation) are not parseable by 'num' type (WR-03).
+                { type: 'num', targets: [1, 3] },
                 { visible: false, targets: [5] }
             ],
             buttons: [
