@@ -1717,5 +1717,81 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   Phase 15: Hub genes panel BEM components (HUBG-01..07)
+   Tokens: xs=4px, sm=8px, md=16px, lg=24px, xl=32px
+   Palette: #29235C (brand dark), #307BBF (supporting blue), #E6007E (magenta)
+   ========================================================================== */
+
+/* Hub genes panel card — wraps .card .card--wide, no extra box-shadow needed */
+.hub-panel {
+    margin-bottom: 24px;
+}
+
+/* Flex row: panel heading + subtext on the left, toggle group on the right */
+.hub-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0 16px 0;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+/* Panel h3 heading */
+.hub-panel__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #29235C;
+    margin: 0;
+}
+
+/* Flex row holding the two toggle controls */
+.hub-panel__controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* Individual toggle group: label + checkbox pair */
+.hub-panel__toggle-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* Toggle wrapper — label element acting as clickable row */
+.hub-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Toggle label text */
+.hub-toggle__label {
+    font-weight: 400;
+    color: #29235C;
+}
+
+/* Native checkbox base — accent-color scoped per toggle id below */
+.hub-toggle__input {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+}
+
+/* "Show gene nodes" toggle — network-layer control uses supporting blue */
+#show-gene-nodes-toggle {
+    accent-color: #307BBF;
+}
+
+/* "Significant genes only" toggle — significance filter uses Primary Magenta */
+#sig-only-toggle {
+    accent-color: #E6007E;
+}
+
+/* ==========================================================================
    END OF STYLESHEET
    ========================================================================== */
