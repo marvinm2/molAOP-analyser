@@ -616,19 +616,32 @@
     </div>
 
     <!-- Hub genes panel (Phase 15 HUBG-01..07) -->
-    <div class="card card--wide">
-        <h3>Hub genes</h3>
-        <p style="font-size: 14px; color: #555; margin-bottom: 15px;">
-            Genes that appear in multiple Key Events within the selected AOP. Hub genes (appearing in
-            &ge;{{ hub_list | selectattr('is_hub') | list | length > 0 and 3 or 3 }} or more KEs) are
-            highlighted with a magenta border in the network.
-        </p>
+    <div class="card card--wide hub-panel">
+        <div class="hub-panel__header">
+            <div>
+                <h3 class="hub-panel__title">Hub genes</h3>
+                <p style="font-size: 12px; font-weight: 400; color: #29235C; margin: 4px 0 0 0;">
+                    Genes from your upload ranked by how many Key Events they appear in within the selected AOP.
+                </p>
+            </div>
+            <div class="hub-panel__controls">
+                <label class="hub-toggle">
+                    <input type="checkbox" id="show-gene-nodes-toggle" class="hub-toggle__input">
+                    <span class="hub-toggle__label">Show gene nodes</span>
+                </label>
+                <label class="hub-toggle">
+                    <input type="checkbox" id="sig-only-toggle" class="hub-toggle__input">
+                    <span class="hub-toggle__label">Significant genes only</span>
+                </label>
+            </div>
+        </div>
+        {% if hub_list %}
         <table id="hubGenesTable" class="display" style="width:100%">
             <thead>
                 <tr>
-                    <th>Gene</th>
-                    <th># KEs</th>
-                    <th>Key Events</th>
+                    <th>Gene Symbol</th>
+                    <th># KEs in AOP</th>
+                    <th>KE list</th>
                     <th>log2FC</th>
                     <th>Adj. p-value</th>
                     <th>Significant</th>
@@ -651,6 +664,12 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% else %}
+        <div style="padding: 24px; text-align: center; color: #555;">
+            <h4 style="font-size: 16px; font-weight: 600; color: #29235C; margin-bottom: 8px;">No hub genes found</h4>
+            <p style="font-size: 14px; margin: 0;">None of the genes in your upload were found in the Key Event gene sets for this AOP. Try a different AOP or check that your gene symbols are human HGNC symbols.</p>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Share Results card -->
