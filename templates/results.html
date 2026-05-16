@@ -652,8 +652,12 @@
                 <tr data-significant="{{ 'true' if h.significant else 'false' }}">
                     <td>{{ h.gene }}</td>
                     <td>{{ h.ke_count }}</td>
-                    <td {% if h.ke_titles|length > 5 %}title="{{ h.ke_titles|join(', ') }}"{% endif %}>
-                        {{ h.ke_titles[:5]|join(', ') }}{% if h.ke_titles|length > 5 %} (+{{ h.ke_titles|length - 5 }} more){% endif %}
+                    {# KE titles are joined with ' | ' rather than ', ' because KE titles
+                       themselves contain commas (e.g. "Synthesis, De Novo FA") — a comma
+                       delimiter would make a multi-KE list ambiguous in the panel and the
+                       exported CSV (which reads this rendered cell text). #}
+                    <td {% if h.ke_titles|length > 5 %}title="{{ h.ke_titles|join(' | ') }}"{% endif %}>
+                        {{ h.ke_titles[:5]|join(' | ') }}{% if h.ke_titles|length > 5 %} (+{{ h.ke_titles|length - 5 }} more){% endif %}
                     </td>
                     <td>{{ "%.3f"|format(h.log2fc) }}</td>
                     {# Adj. p-value sorts via the data-order attribute below: the displayed
