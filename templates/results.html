@@ -1262,6 +1262,78 @@ function collapseAll() {
     updateNetworkStats();
 }
 
+// --- Show gene nodes toggle (Phase 15 D-04, D-05, HUBG-05, HUBG-06) ---
+// showGeneNodes: bulk-adds the gene-node layer for all KEs at once.
+// Reuses the expandAll cy.batch() + dedup pattern; does NOT use expandedKEs guards
+// because the toggle manages visibility wholesale, not per-KE state.
+function showGeneNodes() {
+    showSpinner('Adding gene nodes...');
+    requestAnimationFrame(function() {
+        try {
+            cy.batch(function() {
+                Object.keys(keToGenes).forEach(function(keId) {
+                    var genes = keToGenes[keId] || [];
+                    genes.forEach(function(geneObj) {
+                        var geneId = geneObj.id;
+                        if (cy.getElementById(geneId).length === 0) {
+                            var classes = 'gene';
+                            if (geneObj.significant) classes += ' significant';
+                            if (hubGeneSet.has(geneId)) classes += ' hub';
+                            cy.add({
+                                group: 'nodes',
+                                data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
+                                classes: classes
+                            });
+                        }
+                        var edgeId = keId + '_' + geneId;
+                        if (cy.getElementById(edgeId).length === 0) {
+                            cy.add({
+                                group: 'edges',
+                                data: { id: edgeId, source: geneId, target: keId },
+                                classes: 'gene-link'
+                            });
+                        }
+                    });
+                });
+            });
+            // Second pass: fix Pitfall 2 — apply hub class to any gene node that was
+            // individually expanded (via per-KE tap) before the toggle was activated.
+            cy.nodes('.gene').forEach(function(n) {
+                if (hubGeneSet.has(n.id())) n.addClass('hub');
+            });
+            var layout = cy.layout({ name: 'cose', animate: true, animationDuration: 500 });
+            layout.promiseOn('layoutstop').then(function() {
+                hideSpinner();
+                updateNetworkStats();
+            });
+            layout.run();
+        } catch (e) {
+            console.error('Error in showGeneNodes:', e);
+            hideSpinner();
+        }
+    });
+}
+
+// hideGeneNodes: removes the gene-node layer and restores the KE-only network.
+// Clears highlighted class to avoid stale highlights (D-05).
+function hideGeneNodes() {
+    cy.batch(function() { cy.nodes('.gene').remove(); });
+    cy.elements().removeClass('highlighted');
+    cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 60, rankSep: 80, padding: 30 }).run();
+    updateNetworkStats();
+}
+
+// Wire the "Show gene nodes" toggle (D-05: default OFF, no run on page load).
+if (document.getElementById('show-gene-nodes-toggle')) {
+    document.getElementById('show-gene-nodes-toggle').addEventListener('change', function() {
+        if (this.checked) {
+            showGeneNodes();
+        } else {
+            hideGeneNodes();
+        }
+    });
+}
+
 function downloadPNG() {
   const png = cy.png({ full: true, scale: 2 });
   const link = document.createElement('a');
