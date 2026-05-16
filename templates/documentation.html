@@ -91,6 +91,7 @@
         <ul>
             <li><a href="#getting-started">Getting Started</a></li>
             <li><a href="#input-format">Input File Format Specification</a></li>
+            <li><a href="#column-detector">Column Auto-Detection</a></li>
             <li><a href="#statistical-methods">Statistical Methods</a></li>
             <li><a href="#interpreting-results">Interpreting Results</a></li>
             <li><a href="#batch-analysis">Batch Analysis Tutorial</a></li>
@@ -145,6 +146,37 @@ CYP3A4         3.21             0.00001   0.0001
             <li>log&#x2082;FC values can be any real number (typically between -10 and +10)</li>
             <li>Missing values (NA, NaN) in gene ID column will cause those rows to be skipped</li>
         </ul>
+    </div>
+
+    <!-- Section: Column Auto-Detection (Phase 16, AUTC-03) -->
+    <div class="doc-section" id="column-detector">
+        <h2>Column Auto-Detection</h2>
+        <p>The column detector automatically identifies which columns in your uploaded file contain gene identifiers, fold-change values, and p-values, so you can confirm or correct its choices with full context.</p>
+
+        <h3>How the detector works</h3>
+        <p>When you upload a file, the detector analyses both column names and the data they contain to identify the most likely role of each column. It assigns a confidence score based on how closely the column's name and values match the expected patterns for each column type.</p>
+        <ul>
+            <li><strong>Gene ID:</strong> Detects gene symbol name/format patterns (e.g. GAPDH, ENSG&hellip;), or Entrez integer IDs.</li>
+            <li><strong>log2FC:</strong> Detects numeric values in log2-scale range (roughly &minus;10 to +10), near-zero mean, both positive and negative values.</li>
+            <li><strong>p-value:</strong> Detects numeric values strictly in [0, 1], mix of significant and non-significant values.</li>
+            <li><strong>Adjusted p-value:</strong> Same criteria as p-value; column name containing 'adj', 'fdr', 'padj', or 'qvalue'.</li>
+        </ul>
+
+        <h3>Confidence levels</h3>
+        <table>
+            <thead>
+                <tr><th>Level</th><th>Threshold</th><th>Meaning</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>High</td><td>&ge; 80%</td><td>Strong match &mdash; column name and content both align. Safe to proceed.</td></tr>
+                <tr><td>Medium</td><td>&ge; 60%</td><td>Probable match &mdash; review before running analysis.</td></tr>
+                <tr><td>Low</td><td>&ge; 30%</td><td>Weak match &mdash; override recommended.</td></tr>
+                <tr><td>Very Low</td><td>&lt; 30%</td><td>Not detected &mdash; manual selection required.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Overriding a detected column</h3>
+        <p>Every column selector shows a dropdown below the detected value. You can pick a different column from your file at any time before running the analysis &mdash; the detected choice is a starting point, not a lock. Use the confidence badge and the reasons list shown beneath each selector to decide whether to keep or override the automatic selection.</p>
     </div>
 
     <!-- Section 2: Statistical Methods -->

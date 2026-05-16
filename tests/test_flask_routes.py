@@ -1352,3 +1352,60 @@ class TestBatchUploadConfidencePayload:
             "Expected verbatim gene-ID explainer string (UI-SPEC Component 4) in "
             "templates/batch.html; batch and single-analysis paths must use identical help text"
         )
+
+
+class TestColumnDetectorDocumentation:
+    """AUTC-03: /documentation page contains the #column-detector section."""
+
+    def test_documentation_has_column_detector_section(self, flask_client):
+        """AUTC-03: GET /documentation renders the #column-detector doc-section with all required elements."""
+        response = flask_client.get('/documentation')
+        assert response.status_code == 200
+        body = response.data
+
+        # TOC anchor link
+        assert b'href="#column-detector"' in body, (
+            "Expected href=\"#column-detector\" in documentation TOC"
+        )
+
+        # Section id
+        assert b'id="column-detector"' in body, (
+            "Expected id=\"column-detector\" on the new doc-section div"
+        )
+
+        # h2 heading
+        assert b'Column Auto-Detection' in body, (
+            "Expected h2 heading 'Column Auto-Detection' in the #column-detector section"
+        )
+
+        # h3 subsections
+        assert b'How the detector works' in body, (
+            "Expected h3 'How the detector works' in the #column-detector section"
+        )
+        assert b'Confidence levels' in body, (
+            "Expected h3 'Confidence levels' in the #column-detector section"
+        )
+        assert b'Overriding a detected column' in body, (
+            "Expected h3 'Overriding a detected column' in the #column-detector section"
+        )
+
+        # Confidence level table rows
+        assert b'High' in body
+        assert b'Medium' in body
+        assert b'Low' in body
+        assert b'Very Low' in body
+        assert b'80%' in body, "Expected 80% threshold for High confidence level"
+        assert b'60%' in body, "Expected 60% threshold for Medium confidence level"
+        assert b'30%' in body, "Expected 30% threshold for Low confidence level"
+
+        # Source order: #column-detector appears after #input-format and before #statistical-methods
+        body_str = body.decode('utf-8')
+        pos_input = body_str.find('id="input-format"')
+        pos_detector = body_str.find('id="column-detector"')
+        pos_stats = body_str.find('id="statistical-methods"')
+        assert pos_input < pos_detector, (
+            "#column-detector must appear after #input-format in document source order"
+        )
+        assert pos_detector < pos_stats, (
+            "#column-detector must appear before #statistical-methods in document source order"
+        )
