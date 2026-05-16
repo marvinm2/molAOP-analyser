@@ -615,6 +615,44 @@
         </div>
     </div>
 
+    <!-- Hub genes panel (Phase 15 HUBG-01..07) -->
+    <div class="card card--wide">
+        <h3>Hub genes</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 15px;">
+            Genes that appear in multiple Key Events within the selected AOP. Hub genes (appearing in
+            &ge;{{ hub_list | selectattr('is_hub') | list | length > 0 and 3 or 3 }} or more KEs) are
+            highlighted with a magenta border in the network.
+        </p>
+        <table id="hubGenesTable" class="display" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Gene</th>
+                    <th># KEs</th>
+                    <th>Key Events</th>
+                    <th>log2FC</th>
+                    <th>Adj. p-value</th>
+                    <th>Significant</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for h in hub_list %}
+                <tr data-significant="{{ 'true' if h.significant else 'false' }}">
+                    <td>{{ h.gene }}</td>
+                    <td>{{ h.ke_count }}</td>
+                    <td {% if h.ke_titles|length > 5 %}title="{{ h.ke_titles|join(', ') }}"{% endif %}>
+                        {{ h.ke_titles[:5]|join(', ') }}{% if h.ke_titles|length > 5 %} (+{{ h.ke_titles|length - 5 }} more){% endif %}
+                    </td>
+                    <td>{{ "%.3f"|format(h.log2fc) }}</td>
+                    <td>
+                        {% if h.pvalue_adj is none %}&mdash;{% elif h.pvalue_adj < 0.001 %}{{ "%.2e"|format(h.pvalue_adj) }}{% else %}{{ "%.4f"|format(h.pvalue_adj) }}{% endif %}
+                    </td>
+                    <td style="display:none">{{ 'true' if h.significant else 'false' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
     <!-- Share Results card -->
     <div class="card card--wide">
         <h3>Share Results</h3>
@@ -699,6 +737,10 @@ const keTypeMap = {{ ke_type_map | safe }};
 const fdrByKe = {};
 tableData.forEach(function(row) { fdrByKe[row.KE] = row.FDR; });
 
+// Hub gene data island (Phase 15 HUBG-01..07)
+const hubData = {{ hub_list | tojson | safe }};
+const hubGeneSet = new Set(hubData.filter(function(h) { return h.is_hub; }).map(function(h) { return h.gene; }));
+
 // --- DataTables init with CSV export support ---
 let resultsTable;
 $(document).ready(function() {
@@ -706,6 +748,39 @@ $(document).ready(function() {
         dom: 'Bfrtip',
         autoWidth: true,
         buttons: ['copy', 'csv', 'excel', 'print']
+    });
+});
+
+// --- Hub genes DataTable init ---
+let hubGenesTable;
+$(document).ready(function() {
+    hubGenesTable = $('#hubGenesTable').DataTable({
+        dom: 'Bfrtip',
+        autoWidth: true,
+        order: [[1, 'desc']],
+        pageLength: 25,
+        lengthMenu: [[25, -1], ['25', 'All']],
+        columnDefs: [
+            { type: 'num', targets: [1, 3, 4] },
+            { visible: false, targets: [5] }
+        ],
+        buttons: [
+            {
+                extend: 'csv',
+                text: 'Export hub genes',
+                filename: function() {
+                    var rawAop = ('{{ metadata.get("aop_id", "AOP") | default("AOP") }}' || 'AOP');
+                    var rawLabel = ('{{ metadata.get("dataset_id", "") | default("") }}' || 'unnamed');
+                    var aopNorm = rawAop.replace(/:/g, '');
+                    var labelNorm = rawLabel.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'unnamed';
+                    return 'molAOP_' + aopNorm + '_' + labelNorm + '_hub_genes';
+                },
+                exportOptions: {
+                    columns: [0, 1, 2, 3, 4],
+                    format: { body: function(data) { return _csvEscape(data); } }
+                }
+            }
+        ]
     });
 });
 

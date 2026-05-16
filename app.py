@@ -37,6 +37,7 @@ from services.batch_service import (
     get_cisplatin_demo_files, validate_batch_columns, harmonise_backgrounds, run_batch,
 )
 from services.comparison_service import build_comparison_matrix, CONDITION_PALETTE
+from services.hub_service import compute_hub_genes
 
 # Configure logging — JSON format when LOG_FORMAT=json (production), human-readable otherwise
 if os.environ.get('LOG_FORMAT') == 'json':
@@ -845,7 +846,8 @@ def analyze():
             gene_pvalue_raw_map=gene_pvalue_raw_map,
             gene_pvalue_adj_map=gene_pvalue_adj_map,
         )
-        
+        hub_list = compute_hub_genes(ke_gene_map, ke_title_map)
+
         # Guess gene ID type for display
         id_type = guess_id_type(df_processed['ID'])
         
@@ -948,6 +950,7 @@ def analyze():
             method=method,
             pval_threshold=pval_threshold,
             tour_active=(request.form.get('tour') == '1'),  # Phase 13: guided tour resume signal (TUTR-03)
+            hub_list=hub_list,  # Phase 15: hub gene ranking (HUBG-01..07)
         )
 
     except AOPAnalysisError as e:
