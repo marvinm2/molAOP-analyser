@@ -1252,10 +1252,17 @@ def batch_upload():
             columns = df_head.columns.tolist()
             try:
                 suggestions_obj = column_detector.detect_columns(df_head)
+                # AUTC-01 / D-05: extend payload with per-column confidence + label fields
                 suggestions = {
                     'id_col': suggestions_obj.best_gene_id.column_name if suggestions_obj.best_gene_id else None,
+                    'id_confidence': suggestions_obj.best_gene_id.confidence if suggestions_obj.best_gene_id else None,
+                    'id_label': column_detector.get_confidence_description(suggestions_obj.best_gene_id.confidence) if suggestions_obj.best_gene_id else None,
                     'fc_col': suggestions_obj.best_log2fc.column_name if suggestions_obj.best_log2fc else None,
+                    'fc_confidence': suggestions_obj.best_log2fc.confidence if suggestions_obj.best_log2fc else None,
+                    'fc_label': column_detector.get_confidence_description(suggestions_obj.best_log2fc.confidence) if suggestions_obj.best_log2fc else None,
                     'pval_col': suggestions_obj.best_pvalue.column_name if suggestions_obj.best_pvalue else None,
+                    'pval_confidence': suggestions_obj.best_pvalue.confidence if suggestions_obj.best_pvalue else None,
+                    'pval_label': column_detector.get_confidence_description(suggestions_obj.best_pvalue.confidence) if suggestions_obj.best_pvalue else None,
                 }
             except Exception:
                 suggestions = {}
@@ -1288,10 +1295,17 @@ def batch_upload():
             columns = df_head.columns.tolist()
             try:
                 suggestions_obj = column_detector.detect_columns(df_head)
+                # AUTC-01 / D-05: extend payload with per-column confidence + label fields
                 suggestions = {
                     'id_col': suggestions_obj.best_gene_id.column_name if suggestions_obj.best_gene_id else None,
+                    'id_confidence': suggestions_obj.best_gene_id.confidence if suggestions_obj.best_gene_id else None,
+                    'id_label': column_detector.get_confidence_description(suggestions_obj.best_gene_id.confidence) if suggestions_obj.best_gene_id else None,
                     'fc_col': suggestions_obj.best_log2fc.column_name if suggestions_obj.best_log2fc else None,
+                    'fc_confidence': suggestions_obj.best_log2fc.confidence if suggestions_obj.best_log2fc else None,
+                    'fc_label': column_detector.get_confidence_description(suggestions_obj.best_log2fc.confidence) if suggestions_obj.best_log2fc else None,
                     'pval_col': suggestions_obj.best_pvalue.column_name if suggestions_obj.best_pvalue else None,
+                    'pval_confidence': suggestions_obj.best_pvalue.confidence if suggestions_obj.best_pvalue else None,
+                    'pval_label': column_detector.get_confidence_description(suggestions_obj.best_pvalue.confidence) if suggestions_obj.best_pvalue else None,
                 }
             except Exception:
                 suggestions = {}
