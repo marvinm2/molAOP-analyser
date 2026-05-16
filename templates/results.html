@@ -960,6 +960,17 @@ const cy = cytoscape({
             'border-color': 'green'
         }
     },
+    // Hub gene badge: magenta ring on genes appearing in >=3 KEs (Phase 15 D-07).
+    // Ordered after node.gene.significant so #E6007E overrides green when hub + significant.
+    {
+        selector: 'node.hub',
+        style: {
+            'border-width': 3,
+            'border-color': '#E6007E',
+            'width': 28,
+            'height': 28
+        }
+    },
     // GSEA mode: KE nodes coloured by NES (server-clamped to ±3; nesColor() also clamps).
     {
         selector: 'node[method = "gsea"]',
@@ -1005,6 +1016,16 @@ const cy = cytoscape({
             'background-color': '#ccc',
             'border-color': '#aaa',
             'border-width': 1
+        }
+    },
+    // Transient highlight class — applied by highlightGene() on panel-row click (Phase 15 D-06).
+    // Border-based emphasis; opacity boost makes the node stand out from surrounding network.
+    {
+        selector: 'node.highlighted',
+        style: {
+            'border-width': 4,
+            'border-color': '#307BBF',
+            'opacity': 1
         }
     }
 ],
@@ -1067,10 +1088,12 @@ cy.on('tap', 'node', function(event) {
                     const geneId = geneObj.id;
                     // Shared gene node dedup: only add if not already in graph
                     if (cy.getElementById(geneId).length === 0) {
+                        var cls = geneObj.significant ? 'gene significant' : 'gene';
+                        if (hubGeneSet.has(geneId)) cls += ' hub';
                         cy.add({
                             group: 'nodes',
                             data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
-                            classes: geneObj.significant ? 'gene significant' : 'gene'
+                            classes: cls
                         });
                     }
                     // Dedup edges by deterministic ID
@@ -1116,10 +1139,12 @@ function expandAll() {
                     genes.forEach(function(geneObj) {
                         var geneId = geneObj.id;
                         if (cy.getElementById(geneId).length === 0) {
+                            var expandCls = geneObj.significant ? 'gene significant' : 'gene';
+                            if (hubGeneSet.has(geneId)) expandCls += ' hub';
                             cy.add({
                                 group: 'nodes',
                                 data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
-                                classes: geneObj.significant ? 'gene significant' : 'gene'
+                                classes: expandCls
                             });
                         }
                         var edgeId = keId + '_' + geneId;
@@ -1245,6 +1270,178 @@ function collapseAll() {
     expandedKEs.clear();
     cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 60, rankSep: 80, padding: 30 }).run();
     updateNetworkStats();
+}
+
+// --- Show gene nodes toggle (Phase 15 D-04, D-05, HUBG-05, HUBG-06) ---
+// showGeneNodes: bulk-adds the gene-node layer for all KEs at once.
+// Reuses the expandAll cy.batch() + dedup pattern; does NOT use expandedKEs guards
+// because the toggle manages visibility wholesale, not per-KE state.
+function showGeneNodes() {
+    showSpinner('Adding gene nodes...');
+    requestAnimationFrame(function() {
+        try {
+            cy.batch(function() {
+                Object.keys(keToGenes).forEach(function(keId) {
+                    var genes = keToGenes[keId] || [];
+                    genes.forEach(function(geneObj) {
+                        var geneId = geneObj.id;
+                        if (cy.getElementById(geneId).length === 0) {
+                            var classes = 'gene';
+                            if (geneObj.significant) classes += ' significant';
+                            if (hubGeneSet.has(geneId)) classes += ' hub';
+                            cy.add({
+                                group: 'nodes',
+                                data: { id: geneId, label: geneId, logfc: geneObj.log2FC || 0 },
+                                classes: classes
+                            });
+                        }
+                        var edgeId = keId + '_' + geneId;
+                        if (cy.getElementById(edgeId).length === 0) {
+                            cy.add({
+                                group: 'edges',
+                                data: { id: edgeId, source: geneId, target: keId },
+                                classes: 'gene-link'
+                            });
+                        }
+                    });
+                });
+            });
+            // Second pass: fix Pitfall 2 — apply hub class to any gene node that was
+            // individually expanded (via per-KE tap) before the toggle was activated.
+            cy.nodes('.gene').forEach(function(n) {
+                if (hubGeneSet.has(n.id())) n.addClass('hub');
+            });
+            var layout = cy.layout({ name: 'cose', animate: true, animationDuration: 500 });
+            layout.promiseOn('layoutstop').then(function() {
+                hideSpinner();
+                updateNetworkStats();
+            });
+            layout.run();
+        } catch (e) {
+            console.error('Error in showGeneNodes:', e);
+            hideSpinner();
+        }
+    });
+}
+
+// hideGeneNodes: removes the gene-node layer and restores the KE-only network.
+// Clears highlighted class to avoid stale highlights (D-05).
+function hideGeneNodes() {
+    cy.batch(function() { cy.nodes('.gene').remove(); });
+    cy.elements().removeClass('highlighted');
+    cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 60, rankSep: 80, padding: 30 }).run();
+    updateNetworkStats();
+}
+
+// Wire the "Show gene nodes" toggle (D-05: default OFF, no run on page load).
+if (document.getElementById('show-gene-nodes-toggle')) {
+    document.getElementById('show-gene-nodes-toggle').addEventListener('change', function() {
+        if (this.checked) {
+            showGeneNodes();
+        } else {
+            hideGeneNodes();
+        }
+    });
+}
+
+// --- Hub gene panel → network highlight (Phase 15 HUBG-05, D-06) ---
+// highlightGene: applies a transient highlighted class to the given gene node
+// and to all KE nodes whose gene list contains that gene (reverse lookup via keToGenes).
+function highlightGene(geneId) {
+    cy.nodes().removeClass('highlighted');
+    cy.edges().removeClass('highlighted');
+    var geneNode = cy.getElementById(geneId);
+    if (geneNode.length === 0) return;
+    geneNode.addClass('highlighted');
+    Object.keys(keToGenes).forEach(function(keId) {
+        var members = keToGenes[keId] || [];
+        if (members.some(function(g) { return g.id === geneId; })) {
+            cy.getElementById(keId).addClass('highlighted');
+        }
+    });
+}
+
+// Hub-node tap handler (D-08): tapping a gene node with the hub class opens the
+// existing KE-click side drawer populated with that gene's KE list.
+// Reuses openHubDrawer which follows the same innerHTML-safe approach as buildDrawerHTML
+// (all user-derived strings set via textContent, not innerHTML).
+cy.on('tap', 'node.hub', function(event) {
+    var node = event.target;
+    var geneId = node.data('id');
+    // Find this gene's entry in hubData
+    var hubEntry = null;
+    for (var i = 0; i < hubData.length; i++) {
+        if (hubData[i].gene === geneId) { hubEntry = hubData[i]; break; }
+    }
+    if (!hubEntry) return;
+
+    // Build drawer content safely via DOM manipulation (textContent, no innerHTML for user data).
+    var drawer = document.getElementById('ke-drawer');
+    var content = document.getElementById('ke-drawer-content');
+
+    // Clear previous content
+    while (content.firstChild) { content.removeChild(content.firstChild); }
+
+    var metaDiv = document.createElement('div');
+    metaDiv.className = 'ke-drawer__meta';
+    var typeDiv = document.createElement('div');
+    typeDiv.className = 'ke-drawer__type';
+    typeDiv.textContent = 'Hub gene';
+    var keCountDiv = document.createElement('div');
+    keCountDiv.className = 'ke-drawer__fdr';
+    keCountDiv.textContent = 'KEs: ' + hubEntry.ke_count;
+    metaDiv.appendChild(typeDiv);
+    metaDiv.appendChild(keCountDiv);
+    content.appendChild(metaDiv);
+
+    var titleEl = document.createElement('h4');
+    titleEl.className = 'ke-drawer__ke-title';
+    titleEl.textContent = geneId;
+    content.appendChild(titleEl);
+
+    var keListDiv = document.createElement('div');
+    keListDiv.className = 'ke-drawer__gene-list';
+    var keListHeading = document.createElement('h5');
+    keListHeading.textContent = 'Key Events (' + hubEntry.ke_ids.length + ')';
+    keListDiv.appendChild(keListHeading);
+    var keScrollDiv = document.createElement('div');
+    keScrollDiv.className = 'ke-drawer__gene-scroll';
+    hubEntry.ke_ids.forEach(function(keId, idx) {
+        var title = hubEntry.ke_titles[idx] || keId;
+        var keDiv = document.createElement('div');
+        keDiv.className = 'ke-drawer__gene';
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'ke-drawer__gene-name';
+        nameSpan.textContent = title;
+        keDiv.appendChild(nameSpan);
+        keScrollDiv.appendChild(keDiv);
+    });
+    keListDiv.appendChild(keScrollDiv);
+    content.appendChild(keListDiv);
+
+    drawer.classList.add('ke-drawer--open');
+    // Stop tap from also triggering the KE-node expand handler on background
+    event.stopPropagation();
+});
+
+// Panel-row click: highlight gene on network, auto-reveal gene-node layer if needed (D-06).
+if (document.getElementById('hubGenesTable')) {
+    $('#hubGenesTable tbody').on('click', 'tr', function() {
+        var rowData = hubGenesTable.row(this).data();
+        if (!rowData) return;
+        var gene = rowData[0];  // Gene Symbol is column 0
+
+        var toggleEl = document.getElementById('show-gene-nodes-toggle');
+        if (!toggleEl.checked) {
+            // D-06: auto-flip the toggle ON then defer highlight until layout is done
+            toggleEl.checked = true;
+            showGeneNodes();
+            cy.one('layoutstop', function() { highlightGene(gene); });
+        } else {
+            highlightGene(gene);
+        }
+        document.getElementById('cy').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
 }
 
 function downloadPNG() {
