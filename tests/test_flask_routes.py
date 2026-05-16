@@ -1184,3 +1184,171 @@ class TestColumnConfidenceUI:
             "Do not remove or move this attribute. "
             f"Body excerpt: {response.data[:500]!r}"
         )
+
+
+@pytest.mark.integration
+@pytest.mark.web
+class TestBatchUploadConfidencePayload:
+    """Phase 16 (AUTC-01/D-05): /batch/upload suggestions payload carries confidence + label fields.
+
+    Tests assert that the JSON response from POST /batch/upload includes, per file:
+    - id_confidence, id_label alongside id_col
+    - fc_confidence, fc_label alongside fc_col
+    - pval_confidence, pval_label alongside pval_col
+    - All three are null when a column type cannot be detected.
+    """
+
+    # Well-formed CSV with clearly named gene/FC/pvalue columns — detector detects all three.
+    _good_csv = (
+        b"Gene_Symbol,log2FoldChange,pvalue\n"
+        b"BRCA1,2.5,0.001\n"
+        b"TP53,-0.8,0.05\n"
+        b"EGFR,2.1,0.0001\n"
+        b"MYC,0.3,0.5\n"
+        b"KRAS,-1.2,0.01\n"
+        b"PTEN,1.8,0.002\n"
+        b"AKT1,-0.5,0.3\n"
+        b"MDM2,0.9,0.08\n"
+        b"RB1,-1.5,0.007\n"
+        b"CDK2,2.2,0.0003\n"
+    )
+
+    # CSV where no p-value column can be reliably detected (only integer counts).
+    _no_pval_csv = (
+        b"Gene_Symbol,ReadCount\n"
+        b"BRCA1,150\n"
+        b"TP53,200\n"
+        b"EGFR,175\n"
+        b"MYC,130\n"
+        b"KRAS,220\n"
+    )
+
+    def _post_batch_upload(self, flask_client, csv_bytes, filename='test_batch.csv'):
+        """Helper: POST a CSV to /batch/upload via multipart upload."""
+        return flask_client.post(
+            '/batch/upload',
+            data={
+                'files[]': (io.BytesIO(csv_bytes), filename),
+            },
+            content_type='multipart/form-data',
+        )
+
+    def test_suggestions_payload_contains_nine_keys(self, flask_client):
+        """D-05: /batch/upload suggestions dict must carry all nine confidence + label keys.
+
+        POST /batch/upload with a well-formed CSV. The JSON response
+        files[0].suggestions must contain all nine keys:
+        id_col, id_confidence, id_label, fc_col, fc_confidence, fc_label,
+        pval_col, pval_confidence, pval_label.
+        """
+        response = self._post_batch_upload(flask_client, self._good_csv)
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}; body: {response.data[:500]!r}"
+        )
+        data = json.loads(response.data)
+        assert 'files' in data and len(data['files']) > 0, (
+            "Expected 'files' list in /batch/upload response"
+        )
+        suggestions = data['files'][0]['suggestions']
+        required_keys = [
+            'id_col', 'id_confidence', 'id_label',
+            'fc_col', 'fc_confidence', 'fc_label',
+            'pval_col', 'pval_confidence', 'pval_label',
+        ]
+        missing = [k for k in required_keys if k not in suggestions]
+        assert not missing, (
+            f"Missing keys in /batch/upload suggestions: {missing}. "
+            f"Got: {list(suggestions.keys())}"
+        )
+
+    def test_confidence_fields_are_valid_for_detected_columns(self, flask_client):
+        """D-05: For detected columns, *_confidence is float in [0,1] and *_label is valid string.
+
+        POST /batch/upload with a well-formed CSV (all three column types detectable).
+        id_confidence must be a float in [0, 1] and id_label must be one of the
+        four qualitative level strings.
+        """
+        response = self._post_batch_upload(flask_client, self._good_csv)
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        suggestions = data['files'][0]['suggestions']
+
+        valid_labels = {'High', 'Medium', 'Low', 'Very Low'}
+        for prefix in ('id', 'fc', 'pval'):
+            col = suggestions.get(f'{prefix}_col')
+            confidence = suggestions.get(f'{prefix}_confidence')
+            label = suggestions.get(f'{prefix}_label')
+            if col is not None:
+                assert isinstance(confidence, (int, float)), (
+                    f"{prefix}_confidence must be a number, got {type(confidence)}: {confidence}"
+                )
+                assert 0.0 <= confidence <= 1.0, (
+                    f"{prefix}_confidence must be in [0,1], got {confidence}"
+                )
+                assert label in valid_labels, (
+                    f"{prefix}_label must be one of {valid_labels}, got {label!r}"
+                )
+
+    def test_undetected_column_fields_are_null(self, flask_client):
+        """D-05: For an undetected column type, *_col, *_confidence, and *_label are all null.
+
+        POST /batch/upload with a CSV where p-value cannot be detected.
+        pval_col, pval_confidence, and pval_label must all be JSON null (None).
+        """
+        response = self._post_batch_upload(flask_client, self._no_pval_csv)
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}; body: {response.data[:500]!r}"
+        )
+        data = json.loads(response.data)
+        suggestions = data['files'][0]['suggestions']
+        # p-value column should not be detected for a CSV with only integer counts
+        assert suggestions.get('pval_col') is None, (
+            f"Expected pval_col to be null for CSV with no p-value column, "
+            f"got: {suggestions.get('pval_col')!r}"
+        )
+        assert suggestions.get('pval_confidence') is None, (
+            f"Expected pval_confidence to be null, got: {suggestions.get('pval_confidence')!r}"
+        )
+        assert suggestions.get('pval_label') is None, (
+            f"Expected pval_label to be null, got: {suggestions.get('pval_label')!r}"
+        )
+
+    def test_batch_html_contains_badge_helper_and_explainer(self, flask_client):
+        """D-01/D-02: batch.html contains the badge DOM helper and verbatim explainer strings.
+
+        This is a source-level assertion on the batch wizard template (mirroring the
+        data-tour / data-island substring assertions used elsewhere in the test suite).
+        Asserts:
+        - confidence-badge CSS class reference is present in the template
+        - makeConfidenceBadge helper uses document.createElement (safe DOM construction)
+        - .title DOM property assignment is used (not innerHTML) for the tooltip
+        - The verbatim gene-ID explainer string from UI-SPEC Component 4 is present
+          (same canonical wording as the single-analysis path, per Plan 16-01)
+        """
+        response = flask_client.get('/')
+        # The batch tab template is inlined in the index page
+        batch_response = flask_client.get('/?tab=batch')
+        assert batch_response.status_code == 200
+
+        # Read the batch.html source directly — template is served as part of index.html
+        # and as a standalone page via GET /batch (which redirects) but the template
+        # source is what matters for static assertions. Use open() on the template file.
+        import os
+        template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'batch.html')
+        with open(template_path, 'r', encoding='utf-8') as fh:
+            source = fh.read()
+
+        assert 'confidence-badge' in source, (
+            "Expected 'confidence-badge' CSS class reference in templates/batch.html"
+        )
+        assert 'document.createElement' in source, (
+            "Expected document.createElement (safe DOM construction) in templates/batch.html"
+        )
+        assert '.title' in source, (
+            "Expected .title DOM property assignment for tooltip in templates/batch.html; "
+            "must not use innerHTML for the explainer tooltip"
+        )
+        assert 'Detector looks for: gene symbol name/format patterns' in source, (
+            "Expected verbatim gene-ID explainer string (UI-SPEC Component 4) in "
+            "templates/batch.html; batch and single-analysis paths must use identical help text"
+        )
