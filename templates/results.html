@@ -806,7 +806,20 @@ if (document.getElementById('hubGenesTable')) {
                     },
                     exportOptions: {
                         columns: [0, 1, 2, 3, 4],
-                        format: { body: function(data) { return _csvEscape(data); } }
+                        format: {
+                            body: function(data) {
+                                // Guard-only CSV cell sanitiser for the hub-genes export.
+                                // Prepends a single quote to cells starting with = + - @ so
+                                // spreadsheet apps do not execute them as formulas (CSV-injection
+                                // guard, threat T-15-09 / T-11-08). RFC-4180 comma/quote escaping
+                                // is intentionally NOT done here — DataTables applies its own
+                                // RFC-4180 quoting; doing it here too produced triple-quoted
+                                // malformed cells for multi-KE rows (WR-02).
+                                var s = (data === null || data === undefined) ? '' : String(data);
+                                if (s.length > 0 && '=+-@'.indexOf(s.charAt(0)) !== -1) { s = "'" + s; }
+                                return s;
+                            }
+                        }
                     }
                 }
             ]
