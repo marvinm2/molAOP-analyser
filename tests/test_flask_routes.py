@@ -1047,3 +1047,140 @@ class TestHubPanel:
         assert b'TP53' in response.data
         # The Python variable name must NOT appear as a literal in the HTML body
         assert b'hub_list' not in response.data
+
+
+@pytest.mark.integration
+@pytest.mark.web
+class TestColumnConfidenceUI:
+    """Phase 16 (AUTC-01/AUTC-02): Column confidence badges + reasons list in single-analysis preview.
+
+    Tests assert that the /preview response:
+    - D-01: Contains a colour-coded confidence badge (confidence-badge confidence-badge--*)
+            for each column type when the detector confidently identifies columns.
+    - D-02: Contains the reasons list (<ul class="column-hint__reasons">) and a static
+            generic explainer (<small class="column-type-explainer">) for each column.
+    - D-03: Shows confidence-badge--undetected + "Couldn't auto-detect" when a column
+            type cannot be detected.
+    - Guided tour anchor: data-tour-target="column-preview" is preserved.
+    """
+
+    # A well-formed CSV with clearly named columns — detector should detect all four.
+    _good_csv = (
+        b"Gene_Symbol,log2FoldChange,pvalue,padj\n"
+        b"BRCA1,2.5,0.001,0.005\n"
+        b"TP53,-0.8,0.05,0.12\n"
+        b"EGFR,2.1,0.0001,0.0005\n"
+        b"MYC,0.3,0.5,0.9\n"
+        b"KRAS,-1.2,0.01,0.03\n"
+        b"PTEN,1.8,0.002,0.01\n"
+        b"AKT1,-0.5,0.3,0.6\n"
+        b"MDM2,0.9,0.08,0.2\n"
+        b"RB1,-1.5,0.007,0.02\n"
+        b"CDK2,2.2,0.0003,0.002\n"
+    )
+
+    # A CSV with only one numeric column — the p-value cannot be detected reliably.
+    # We ensure the gene_id column is obvious but use integer data for other columns
+    # so the detector cannot reliably identify a p-value vs. log2FC column.
+    _no_pval_csv = (
+        b"Gene_Symbol,SomeValues\n"
+        b"BRCA1,150\n"
+        b"TP53,200\n"
+        b"EGFR,175\n"
+        b"MYC,130\n"
+        b"KRAS,220\n"
+    )
+
+    def _post_preview(self, flask_client, csv_bytes, filename='test.csv'):
+        """Helper: POST a CSV to /preview via multipart upload."""
+        return flask_client.post(
+            '/preview',
+            data={
+                'gene_file': (io.BytesIO(csv_bytes), filename),
+                'dataset_id': 'TEST_CONFIDENCE',
+                'stressor': 'Test',
+                'owner': 'Test User',
+            },
+            content_type='multipart/form-data',
+        )
+
+    def test_confidence_badge_rendered_for_detected_columns(self, flask_client):
+        """D-01: A confidence badge appears when columns are confidently detected.
+
+        POST /preview with a well-formed CSV.  The response must contain at least
+        one filled confidence badge (the class prefix confidence-badge confidence-badge--).
+        """
+        response = self._post_preview(flask_client, self._good_csv)
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}; body: {response.data[:500]!r}"
+        )
+        assert b'confidence-badge confidence-badge--' in response.data, (
+            "Expected a filled confidence badge (class 'confidence-badge confidence-badge--*') "
+            "in /preview response for a well-formed CSV. "
+            f"Body excerpt: {response.data[:1000]!r}"
+        )
+
+    def test_reasons_list_rendered_for_detected_columns(self, flask_client):
+        """D-02 reasons: The detector reasons list appears when columns are detected.
+
+        POST /preview with a well-formed CSV.  The response must contain a
+        <ul class="column-hint__reasons"> element.
+        """
+        response = self._post_preview(flask_client, self._good_csv)
+        assert response.status_code == 200
+        assert b'column-hint__reasons' in response.data, (
+            "Expected <ul class=\"column-hint__reasons\"> in /preview response. "
+            f"Body excerpt: {response.data[:1000]!r}"
+        )
+
+    def test_static_explainer_rendered(self, flask_client):
+        """D-02 explainer: The static column-type explainer appears for all column types.
+
+        POST /preview with a well-formed CSV.  The response must contain
+        class="column-type-explainer" for the gene-ID explainer.
+        """
+        response = self._post_preview(flask_client, self._good_csv)
+        assert response.status_code == 200
+        assert b'column-type-explainer' in response.data, (
+            "Expected class=\"column-type-explainer\" in /preview response. "
+            f"Body excerpt: {response.data[:1000]!r}"
+        )
+        assert b'Detector looks for: gene symbol name/format patterns' in response.data, (
+            "Expected verbatim gene-ID explainer text in /preview response. "
+            f"Body excerpt: {response.data[:1000]!r}"
+        )
+
+    def test_undetected_badge_when_column_not_detected(self, flask_client):
+        """D-03: The undetected badge appears when a column type cannot be detected.
+
+        POST /preview with a CSV that has only a gene column and an integer column
+        (no numeric log2FC-shaped data). The p-value and log2FC columns cannot be
+        detected, so at least one undetected badge must appear.
+        """
+        response = self._post_preview(flask_client, self._no_pval_csv)
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}; body: {response.data[:500]!r}"
+        )
+        assert b'confidence-badge--undetected' in response.data, (
+            "Expected confidence-badge--undetected in /preview response for a CSV "
+            "where some columns cannot be detected. "
+            f"Body excerpt: {response.data[:1000]!r}"
+        )
+        assert b"Couldn't auto-detect" in response.data, (
+            "Expected \"Couldn't auto-detect\" text in /preview response. "
+            f"Body excerpt: {response.data[:1000]!r}"
+        )
+
+    def test_tour_anchor_preserved(self, flask_client):
+        """Phase 13 tour anchor: data-tour-target=\"column-preview\" must remain on the outer card.
+
+        The Phase 13 guided tour highlights the column step via this anchor.
+        Any /preview response must keep it intact regardless of detection outcome.
+        """
+        response = self._post_preview(flask_client, self._good_csv)
+        assert response.status_code == 200
+        assert b'data-tour-target="column-preview"' in response.data, (
+            "Expected data-tour-target=\"column-preview\" in /preview response. "
+            "Do not remove or move this attribute. "
+            f"Body excerpt: {response.data[:500]!r}"
+        )
