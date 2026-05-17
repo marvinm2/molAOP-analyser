@@ -1781,7 +1781,7 @@ async function handleReportSubmit(event) {
 // D-04: iframe src is empty until the toggle is clicked.
 // T-999.4-02-01: wpId is validated against /^WP\d+$/ before any URL assignment.
 // D-02: no gene/log2FC/expression data is passed into the iframe URL.
-if (document.getElementById('pathway-view-toggle')) {
+(function() {
     const EMBED_BASE = "https://pathway-viewer.toolforge.org/embed/";
     const PATHWAY_BASE = "https://www.wikipathways.org/pathways/";
     const pathwayToggle = document.getElementById('pathway-view-toggle');
@@ -1793,10 +1793,21 @@ if (document.getElementById('pathway-view-toggle')) {
     const pathwayBadge = document.getElementById('pathway-confidence-badge');
     let pathwayFirstShow = true;
 
+    // Gate on the elements the picker logic actually dereferences. If the
+    // template markup is ever partially edited (e.g. the <select> renamed)
+    // the block no-ops cleanly instead of throwing a null-dereference error.
+    if (!pathwayToggle || !pathwayContent || !pathwayIframe || !pathwayPicker) {
+        return;
+    }
+
     // setPathway: validates wpId and sets the iframe src + popup link href.
-    // Returns early (no assignment) if wpId does not match /^WP\d+$/.
+    // On a malformed wpId it clears BOTH the iframe src and the popup link
+    // href so the two controls never silently disagree (e.g. iframe stuck on
+    // a previous valid pathway while the popup link points elsewhere).
     function setPathway(wpId) {
         if (!/^WP\d+$/.test(wpId)) {
+            if (pathwayIframe) { pathwayIframe.src = ''; }
+            if (pathwayPopupLink) { pathwayPopupLink.href = '#'; }
             return;
         }
         if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = ''; }
@@ -1847,6 +1858,6 @@ if (document.getElementById('pathway-view-toggle')) {
     pathwayIframe.addEventListener('load', function() {
         if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = 'none'; }
     });
-}
+})();
 </script>
 {% endblock %}
