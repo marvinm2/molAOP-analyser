@@ -10,11 +10,17 @@ The function is intentionally free of any gene or expression data (SPEC R4 /
 D-02 — no user log2FC / expression values belong in the picker entries).
 """
 import logging
+import re
 from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+# WikiPathways IDs are always "WP" followed by one or more digits. Builder API
+# records are third-party data the analyser does not control, so the WP ID is
+# validated server-side before it reaches the picker markup / iframe URL.
+_WPID_RE = re.compile(r"^WP\d+$")
 
 
 def build_wp_picker_data(
@@ -102,6 +108,15 @@ def build_wp_picker_data(
 
         # Resolve WP ID — API uses "pathway_id", CSV uses "WP_ID"
         wp_id = record.get("WP_ID") or record.get("pathway_id", "")
+
+        # Validate WP ID server-side (defence in depth — the client-side regex
+        # in setPathway() only protects the iframe). A malformed pathway_id is
+        # skipped rather than producing a silently-broken picker option.
+        if not _WPID_RE.match(wp_id):
+            logger.warning(
+                "build_wp_picker_data: skipping malformed wp_id %r", wp_id
+            )
+            continue
 
         entry = {
             "ke_id": ke_id,
