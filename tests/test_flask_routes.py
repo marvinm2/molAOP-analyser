@@ -1408,3 +1408,125 @@ class TestColumnDetectorDocumentation:
         assert pos_detector < pos_stats, (
             "#column-detector must appear before #statistical-methods in document source order"
         )
+
+
+@pytest.mark.integration
+@pytest.mark.web
+class TestPathwayView:
+    """Phase 999.4 (PinPath): Pathway-view section conditional rendering on /analyze.
+
+    Tests assert that the /analyze results page:
+    - Includes a div with id="pathway-view-section" when build_wp_picker_data returns
+      a non-empty list (mapped AOP — SPEC R6).
+    - Does NOT include that div when build_wp_picker_data returns None (no KE-WP
+      mappings for the selected AOP — D-10).
+
+    Both tests are RED at Wave 0 because:
+    - app.build_wp_picker_data is not yet an importable attribute of app.py (added in Plan 01).
+    - results.html has no pathway-view-section div (added in Plan 02).
+    """
+
+    _ke_gene_map = {
+        'KE:1': [
+            {'id': 'TP53', 'log2FC': 2.1, 'significant': True, 'pvalue_raw': 0.001, 'pvalue_adj': 0.01},
+            {'id': 'BRCA1', 'log2FC': -1.5, 'significant': False, 'pvalue_raw': 0.3, 'pvalue_adj': 0.55},
+        ],
+    }
+
+    # A minimal picker entry representing one KE-WP pair
+    _picker_entry = {
+        'ke_id': 'KE:1',
+        'ke_title': 'Test Key Event',
+        'wp_id': 'WP368',
+        'wp_title': 'Fatty acid beta-oxidation',
+        'confidence_level': 'high',
+        'enrichment_rank': 0,
+    }
+
+    def _analyze_form(self, **extra):
+        """Base POST data for /analyze."""
+        base = {
+            'filename': 'test.csv',
+            'id_column': 'Gene_Symbol',
+            'fc_column': 'log2FoldChange',
+            'pval_column': 'padj',
+            'aop_selection': 'AOP:1',
+            'logfc_threshold': '1.0',
+        }
+        base.update(extra)
+        return base
+
+    def _post_analyze(self, client, form, wp_picker_data):
+        """Run POST /analyze with the full mock stack including build_wp_picker_data.
+
+        Copies the TestHubPanel._post_analyze mock stack verbatim and adds one extra
+        context-manager patch for app.build_wp_picker_data.
+        """
+        import pandas as pd
+
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53', 'MYC'],
+            'log2FC': [1.5, 2.1, 0.8],
+            'pval': [0.001, 0.001, 0.2],
+            'significant': [True, True, False],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.05],
+            'num_overlap': [2], 'pct_sig_in_KE': [66.7],
+            'total_KE_genes_in_dataset': [3], 'odds_ratio': [3.5],
+            'overlap': ['BRCA1, TP53'], 'KE': ['KE:1'],
+            'sig_in_KE': [2], 'sig_not_KE': [0],
+            'non_sig_in_KE': [1], 'non_sig_not_KE': [0],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
+             patch('app.load_aop_data', return_value=({'KE:1'}, edges_df, {'KE:1': 'KE'}, {'KE:1': 'Test KE'})), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.build_ke_gene_mapping', return_value=self._ke_gene_map), \
+             patch('app.compute_hub_genes', return_value=[]), \
+             patch('app.build_wp_picker_data', return_value=wp_picker_data), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True):
+            return client.post('/analyze', data=form)
+
+    def test_results_has_pathway_view(self, authenticated_client):
+        """POST /analyze with a non-empty picker list renders the pathway-view-section div.
+
+        When build_wp_picker_data returns a non-empty list (mapped AOP), the results
+        page must contain a div with id="pathway-view-section" (SPEC R6 / D-10).
+        RED at Wave 0 — app.build_wp_picker_data not yet in app.py; section not yet
+        in results.html.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form(),
+            wp_picker_data=[self._picker_entry],
+        )
+        assert response.status_code == 200
+        assert b'pathway-view-section' in response.data, (
+            "Expected 'pathway-view-section' in response when wp_picker_data is non-empty. "
+            f"Body excerpt: {response.data[:500]!r}"
+        )
+
+    def test_no_pathway_view_when_unmapped(self, authenticated_client):
+        """POST /analyze with wp_picker_data=None does NOT render the pathway-view-section div.
+
+        When build_wp_picker_data returns None (AOP has no KE-WP mappings), the
+        pathway-view section must be absent from the results page (D-10).
+        RED at Wave 0 — app.build_wp_picker_data not yet in app.py.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form(),
+            wp_picker_data=None,
+        )
+        assert response.status_code == 200
+        assert b'pathway-view-section' not in response.data, (
+            "Expected 'pathway-view-section' to be ABSENT when wp_picker_data is None. "
+            f"Body excerpt: {response.data[:500]!r}"
+        )
