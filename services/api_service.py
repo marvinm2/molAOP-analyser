@@ -95,6 +95,77 @@ def fetch_all_ke_wp_mappings(session, base_url, timeout):
     return all_records
 
 
+def fetch_ke_wp_records(config):
+    """Fetch raw KE-WP mapping records from the Builder API for the WP picker.
+
+    Returns the full record list from ``fetch_all_ke_wp_mappings`` unchanged so
+    that each record retains its ``ke_id``, ``pathway_id``, ``pathway_title``,
+    and ``confidence_level`` fields.  These records are consumed directly by
+    ``build_wp_picker_data()`` in ``services/pathway_picker_service.py``.
+
+    Note: ``fetch_reference_sets_from_api()`` is intentionally left untouched —
+    the reference-set loading pipeline is a separate concern from the picker-data
+    pipeline (Option A from the research notes — additive, no refactor).
+
+    Parameters
+    ----------
+    config : Config
+        Application config object providing ``BUILDER_API_URL`` and
+        ``BUILDER_API_TIMEOUT`` attributes.
+
+    Returns
+    -------
+    list[dict]
+        Raw mapping records; each record contains at minimum ``ke_id``,
+        ``pathway_id``, ``pathway_title``, and ``confidence_level``.
+
+    Raises
+    ------
+    ValueError
+        If ``config.BUILDER_API_URL`` is empty or falsy (API not configured).
+    requests.HTTPError
+        On non-2xx API responses after all retries are exhausted.
+    """
+    if not config.BUILDER_API_URL:
+        raise ValueError("BUILDER_API_URL not configured; API integration is disabled")
+
+    session = _make_api_session()
+    records = fetch_all_ke_wp_mappings(
+        session=session,
+        base_url=config.BUILDER_API_URL,
+        timeout=config.BUILDER_API_TIMEOUT,
+    )
+
+    logger.info("fetch_ke_wp_records: fetched %d raw KE-WP records from API", len(records))
+    return records
+
+
+def load_ke_wp_records_csv(csv_path="data/KE-WP.csv"):
+    """Load KE-WP mapping records from the local CSV fallback file.
+
+    Reads the two-column CSV at ``csv_path`` and returns the rows as a list of
+    dicts each with keys ``KE_ID`` and ``WP_ID``.  This is the fallback record
+    source used when the Builder API is unreachable, providing the same interface
+    as ``fetch_ke_wp_records()`` but with less metadata (no ``pathway_title`` or
+    ``confidence_level`` columns).
+
+    Parameters
+    ----------
+    csv_path : str
+        Path to the CSV file (default: ``"data/KE-WP.csv"``).
+
+    Returns
+    -------
+    list[dict]
+        List of dicts, each with keys ``KE_ID`` (e.g. ``"KE:245"``) and
+        ``WP_ID`` (e.g. ``"WP2876"``).
+    """
+    df = pd.read_csv(csv_path)
+    records = df.to_dict("records")
+    logger.info("load_ke_wp_records_csv: loaded %d KE-WP records from %s", len(records), csv_path)
+    return records
+
+
 def fetch_reference_sets_from_api(config):
     """Orchestrate API fetching and build reference sets.
 
