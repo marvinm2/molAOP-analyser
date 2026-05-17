@@ -615,6 +615,35 @@
         </div>
     </div>
 
+    <!-- Pathway view section (Phase 999.4 PinPath) -->
+    {% if wp_picker_data %}
+    <div class="card card--wide pathway-view" id="pathway-view-section">
+        <div class="pathway-view__header">
+            <div>
+                <h3 class="pathway-view__title">Pathway view</h3>
+                <p class="pathway-view__caption">Bare WikiPathways diagram for the Key Event's mapped pathway. No expression data is overlaid.</p>
+            </div>
+            <button id="pathway-view-toggle" class="btn btn--primary">Show pathway view</button>
+        </div>
+        <div id="pathway-view-content" style="display:none;">
+            <div class="pathway-view__picker-row">
+                <label for="pathway-picker">Select a pathway</label>
+                <select id="pathway-picker" class="pathway-view__picker">
+                    {% for entry in wp_picker_data %}
+                    <option value="{{ entry.wp_id }}" data-wp="{{ entry.wp_id }}" data-confidence="{{ entry.confidence_level }}">{{ entry.ke_id }} {{ entry.ke_title }} — {{ entry.wp_title }} ({{ entry.wp_id }})</option>
+                    {% endfor %}
+                </select>
+                <span id="pathway-confidence-badge" class="confidence-badge"></span>
+                <a id="pathway-popup-link" class="pathway-view__popup-link" href="#" target="_blank" rel="noopener noreferrer">Open full pathway →</a>
+            </div>
+            <div class="pathway-view__iframe-wrapper">
+                <p id="pathway-loading-msg" class="pathway-view__loading">Loading pathway diagram...</p>
+                <iframe id="pathway-iframe" class="pathway-view__iframe" src="" title="WikiPathways pathway viewer" loading="lazy"></iframe>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Hub genes panel (Phase 15 HUBG-01..07) -->
     <div class="card card--wide hub-panel">
         <div class="hub-panel__header">
@@ -1741,6 +1770,76 @@ async function handleReportSubmit(event) {
   }
 
   return false;
+}
+
+// --- Pathway view section (Phase 999.4 PinPath) ---
+// Lazy embed of the WikiPathways Toolforge viewer.
+// D-04: iframe src is empty until the toggle is clicked.
+// T-999.4-02-01: wpId is validated against /^WP\d+$/ before any URL assignment.
+// D-02: no gene/log2FC/expression data is passed into the iframe URL.
+if (document.getElementById('pathway-view-toggle')) {
+    const EMBED_BASE = "https://pathway-viewer.toolforge.org/embed/";
+    const PATHWAY_BASE = "https://www.wikipathways.org/pathways/";
+    const pathwayToggle = document.getElementById('pathway-view-toggle');
+    const pathwayContent = document.getElementById('pathway-view-content');
+    const pathwayIframe = document.getElementById('pathway-iframe');
+    const pathwayPicker = document.getElementById('pathway-picker');
+    const pathwayPopupLink = document.getElementById('pathway-popup-link');
+    const pathwayLoadingMsg = document.getElementById('pathway-loading-msg');
+    const pathwayBadge = document.getElementById('pathway-confidence-badge');
+    let pathwayFirstShow = true;
+
+    // setPathway: validates wpId and sets the iframe src + popup link href.
+    // Returns early (no assignment) if wpId does not match /^WP\d+$/.
+    function setPathway(wpId) {
+        if (!/^WP\d+$/.test(wpId)) {
+            return;
+        }
+        if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = ''; }
+        pathwayIframe.src = EMBED_BASE + wpId;
+        pathwayPopupLink.href = PATHWAY_BASE + wpId + ".html";
+    }
+
+    // updateBadge: sets the confidence badge class and text.
+    // Hides the badge span when level is empty (CSV fallback — no confidence data).
+    function updateBadge(level) {
+        pathwayBadge.className = 'confidence-badge' + (level ? ' confidence-badge--' + level : '');
+        pathwayBadge.textContent = level ? level.charAt(0).toUpperCase() + level.slice(1) : '';
+        pathwayBadge.style.display = level ? '' : 'none';
+    }
+
+    // Toggle handler: show/hide the viewer content on button click.
+    pathwayToggle.addEventListener('click', function() {
+        if (pathwayContent.style.display === 'none') {
+            pathwayContent.style.display = 'block';
+            pathwayToggle.textContent = 'Hide pathway view';
+            // On first reveal, load the first picker option.
+            if (pathwayFirstShow && pathwayPicker && pathwayPicker.options.length > 0) {
+                pathwayFirstShow = false;
+                var firstOption = pathwayPicker.options[0];
+                setPathway(firstOption.dataset.wp);
+                updateBadge(firstOption.dataset.confidence);
+            }
+        } else {
+            pathwayContent.style.display = 'none';
+            pathwayToggle.textContent = 'Show pathway view';
+        }
+    });
+
+    // Picker change handler: swap the iframe and update the badge on selection.
+    pathwayPicker.addEventListener('change', function() {
+        var selectedOption = this.options[this.selectedIndex];
+        if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = ''; }
+        setPathway(selectedOption.dataset.wp);
+        updateBadge(selectedOption.dataset.confidence);
+    });
+
+    // iframe load handler: hide the loading message once the frame has loaded.
+    // Note: onerror is intentionally NOT used — it does not fire for
+    // X-Frame-Options blocks (RESEARCH Anti-Pattern 6).
+    pathwayIframe.addEventListener('load', function() {
+        if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = 'none'; }
+    });
 }
 </script>
 {% endblock %}
