@@ -21,7 +21,7 @@ from config import Config, ExperimentMetadata
 from validation import validate_form_data, validate_file_upload, log_validation_error
 from helpers import load_reference_sets
 from cache_manager import cache, cached_data_loader, get_reference_cache
-from services.api_service import fetch_reference_sets_from_api
+from services.api_service import fetch_reference_sets_from_api, fetch_ke_wp_records, load_ke_wp_records_csv
 from exceptions import AOPAnalysisError, format_error_response
 from utils import cleanup_file, validate_file_path
 from services.data_service import load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data
@@ -38,6 +38,7 @@ from services.batch_service import (
 )
 from services.comparison_service import build_comparison_matrix, CONDITION_PALETTE
 from services.hub_service import compute_hub_genes
+from services.pathway_picker_service import build_wp_picker_data
 
 # Configure logging — JSON format when LOG_FORMAT=json (production), human-readable otherwise
 if os.environ.get('LOG_FORMAT') == 'json':
@@ -852,6 +853,36 @@ def analyze():
         )
         hub_list = compute_hub_genes(ke_gene_map, ke_title_map)
 
+        # Assemble WP picker data for the Pathway view section (Phase 999.4 PinPath).
+        # Select the raw KE-WP record source based on data_source from
+        # load_cached_reference_sets(): api/cache -> Builder API (retains titles +
+        # confidence); csv -> local CSV fallback (KE_ID/WP_ID only, no titles).
+        # An API failure on this non-critical call falls back silently to CSV.
+        if data_source in ('api', 'cache'):
+            try:
+                raw_ke_wp_records = fetch_ke_wp_records(Config)
+                wp_title_map = {
+                    rec["pathway_id"]: rec["pathway_title"]
+                    for rec in raw_ke_wp_records
+                }
+            except Exception as _picker_exc:
+                logger.warning(
+                    "fetch_ke_wp_records failed, falling back to CSV: %s", _picker_exc
+                )
+                raw_ke_wp_records = load_ke_wp_records_csv('data/KE-WP.csv')
+                wp_title_map = {}
+        else:
+            raw_ke_wp_records = load_ke_wp_records_csv('data/KE-WP.csv')
+            wp_title_map = {}
+
+        wp_picker_data = build_wp_picker_data(
+            ke_list=ke_list,
+            ke_wp_records=raw_ke_wp_records,
+            enrichment_results=enrichment_results,
+            ke_title_map=ke_title_map,
+            wp_title_map=wp_title_map,
+        ) or None  # None when empty so {% if wp_picker_data %} is falsy (SPEC R6 / D-10)
+
         # Guess gene ID type for display
         id_type = guess_id_type(df_processed['ID'])
         
@@ -955,6 +986,7 @@ def analyze():
             pval_threshold=pval_threshold,
             tour_active=(request.form.get('tour') == '1'),  # Phase 13: guided tour resume signal (TUTR-03)
             hub_list=hub_list,  # Phase 15: hub gene ranking (HUBG-01..07)
+            wp_picker_data=wp_picker_data,  # Phase 999.4: pathway view picker (None when no mappings)
         )
 
     except AOPAnalysisError as e:
