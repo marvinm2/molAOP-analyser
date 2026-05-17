@@ -59,6 +59,30 @@ function showStep(n) {
 }
 
 // -------------------------------------------------------------------------
+// Column confidence badge helpers (AUTC-01 / AUTC-02 — batch path)
+// Explainer strings mirror the single-analysis wording so both upload paths
+// give identical help.
+// -------------------------------------------------------------------------
+var COLUMN_EXPLAINERS = {
+    id:   'Detector looks for: gene symbol name/format patterns (e.g. GAPDH, ENSG…), or Entrez integer IDs.',
+    fc:   'Detector looks for: numeric values, log2-scale range (roughly −10 to +10), near-zero mean, both positive and negative values.',
+    pval: 'Detector looks for: numeric values strictly in [0, 1], mix of significant and non-significant values, absence of exact 0 or 1 values.'
+};
+
+/**
+ * Build a confidence badge <span> using safe DOM construction only.
+ * Badge label goes through textContent; explainer tooltip via the .title
+ * DOM property — never innerHTML, so a malicious CSV header cannot inject markup.
+ */
+function makeConfidenceBadge(labelText, levelClass, tooltipText) {
+    var span = document.createElement('span');
+    span.className = 'confidence-badge confidence-badge--' + levelClass;
+    span.textContent = labelText;
+    span.title = tooltipText;
+    return span;
+}
+
+// -------------------------------------------------------------------------
 // File queue rendering
 // -------------------------------------------------------------------------
 function renderFileList() {
@@ -83,29 +107,45 @@ function renderFileList() {
         const meta = document.createElement('div');
         meta.className = 'file-card__meta';
 
-        // Base info: size or demo label
-        var parts = [];
+        // Base info: size or demo label, plus row count after upload
+        var baseParts = [];
         if (entry.isDemo) {
-            parts.push('Demo file');
+            baseParts.push('Demo file');
         } else {
-            parts.push(formatBytes(entry.size));
+            baseParts.push(formatBytes(entry.size));
         }
-
-        // Row count (populated after upload)
         if (entry.rowCount != null) {
-            parts.push(entry.rowCount + ' rows');
+            baseParts.push(entry.rowCount + ' rows');
         }
+        meta.appendChild(document.createTextNode(baseParts.join('  \u2014  ')));
 
-        // Detected columns (populated after upload)
+        // Detected columns: render inline confidence badges after upload.
+        // Column names go through createTextNode; badge text through textContent;
+        // explainer tooltip through .title \u2014 no innerHTML used on CSV-derived values.
         if (entry.suggestions) {
-            var cols = [];
-            if (entry.suggestions.id_col) cols.push('ID: ' + entry.suggestions.id_col);
-            if (entry.suggestions.fc_col) cols.push('FC: ' + entry.suggestions.fc_col);
-            if (entry.suggestions.pval_col) cols.push('p: ' + entry.suggestions.pval_col);
-            if (cols.length > 0) parts.push(cols.join(', '));
-        }
+            var colDefs = [
+                { key: 'id',   prefix: 'ID' },
+                { key: 'fc',   prefix: 'FC' },
+                { key: 'pval', prefix: 'p'  }
+            ];
+            colDefs.forEach(function(def) {
+                var colName    = entry.suggestions[def.key + '_col'];
+                var confidence = entry.suggestions[def.key + '_confidence'];
+                var label      = entry.suggestions[def.key + '_label'];
+                var explainer  = COLUMN_EXPLAINERS[def.key];
 
-        meta.textContent = parts.join('  \u2014  ');
+                meta.appendChild(document.createTextNode('  \u2014  ' + def.prefix + ': '));
+
+                if (colName) {
+                    meta.appendChild(document.createTextNode(colName + ' '));
+                    var pct = Math.round((confidence || 0) * 100);
+                    var levelClass = (label || '').toLowerCase().replace(' ', '-');
+                    meta.appendChild(makeConfidenceBadge(label + ' ' + pct + '%', levelClass, explainer));
+                } else {
+                    meta.appendChild(makeConfidenceBadge('Not detected', 'undetected', explainer));
+                }
+            });
+        }
 
         info.appendChild(name);
         info.appendChild(meta);

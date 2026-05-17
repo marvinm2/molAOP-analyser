@@ -1315,44 +1315,41 @@ class TestBatchUploadConfidencePayload:
             f"Expected pval_label to be null, got: {suggestions.get('pval_label')!r}"
         )
 
-    def test_batch_html_contains_badge_helper_and_explainer(self, flask_client):
-        """D-01/D-02: batch.html contains the badge DOM helper and verbatim explainer strings.
+    def test_batch_scripts_contains_badge_helper_and_explainer(self, flask_client):
+        """D-01/D-02: the live batch wizard partial has the badge DOM helper and explainer strings.
 
-        This is a source-level assertion on the batch wizard template (mirroring the
-        data-tour / data-island substring assertions used elsewhere in the test suite).
-        Asserts:
-        - confidence-badge CSS class reference is present in the template
+        The batch wizard is served as the `?tab=batch` view of index.html, which
+        includes `_batch_analysis_scripts.html` — that partial is the live code path.
+        Asserts on that partial's source:
+        - confidence-badge CSS class reference is present
         - makeConfidenceBadge helper uses document.createElement (safe DOM construction)
         - .title DOM property assignment is used (not innerHTML) for the tooltip
         - The verbatim gene-ID explainer string from UI-SPEC Component 4 is present
           (same canonical wording as the single-analysis path, per Plan 16-01)
         """
-        response = flask_client.get('/')
-        # The batch tab template is inlined in the index page
         batch_response = flask_client.get('/?tab=batch')
         assert batch_response.status_code == 200
 
-        # Read the batch.html source directly — template is served as part of index.html
-        # and as a standalone page via GET /batch (which redirects) but the template
-        # source is what matters for static assertions. Use open() on the template file.
         import os
-        template_path = os.path.join(os.path.dirname(__file__), '..', 'templates', 'batch.html')
+        template_path = os.path.join(
+            os.path.dirname(__file__), '..', 'templates', '_batch_analysis_scripts.html'
+        )
         with open(template_path, 'r', encoding='utf-8') as fh:
             source = fh.read()
 
         assert 'confidence-badge' in source, (
-            "Expected 'confidence-badge' CSS class reference in templates/batch.html"
+            "Expected 'confidence-badge' CSS class reference in _batch_analysis_scripts.html"
         )
         assert 'document.createElement' in source, (
-            "Expected document.createElement (safe DOM construction) in templates/batch.html"
+            "Expected document.createElement (safe DOM construction) in _batch_analysis_scripts.html"
         )
         assert '.title' in source, (
-            "Expected .title DOM property assignment for tooltip in templates/batch.html; "
+            "Expected .title DOM property assignment for tooltip in _batch_analysis_scripts.html; "
             "must not use innerHTML for the explainer tooltip"
         )
         assert 'Detector looks for: gene symbol name/format patterns' in source, (
             "Expected verbatim gene-ID explainer string (UI-SPEC Component 4) in "
-            "templates/batch.html; batch and single-analysis paths must use identical help text"
+            "_batch_analysis_scripts.html; batch and single-analysis paths must use identical help text"
         )
 
 
