@@ -1832,7 +1832,10 @@ if (document.getElementById('pathway-view-toggle')) {
 
     // Picker change handler: swap the iframe and update the badge on selection.
     pathwayPicker.addEventListener('change', function() {
+        // selectedIndex is -1 when the <select> has no options; guard the
+        // lookup so this.options[-1] (undefined) is not dereferenced.
         var selectedOption = this.options[this.selectedIndex];
+        if (!selectedOption) { return; }
         if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = ''; }
         setPathway(selectedOption.dataset.wp);
         updateBadge(selectedOption.dataset.confidence);
