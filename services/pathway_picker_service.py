@@ -128,8 +128,14 @@ def build_wp_picker_data(
         }
         entries.append(entry)
 
-    # Sort ascending by enrichment rank (most-enriched KE first)
-    sorted_entries = sorted(entries, key=lambda x: x["enrichment_rank"])
+    # Sort ascending by enrichment rank (most-enriched KE first). KE ID and WP
+    # ID are secondary keys so multiple unranked pathways (all sharing
+    # inf_rank) sort deterministically and alphabetically rather than by
+    # upstream record order (Builder API pagination order, not meaningful).
+    sorted_entries = sorted(
+        entries,
+        key=lambda x: (x["enrichment_rank"], x["ke_id"], x["wp_id"]),
+    )
 
     logger.debug(
         "build_wp_picker_data: %d entries built from %d records (%d KEs in AOP)",
