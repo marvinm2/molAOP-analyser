@@ -1655,6 +1655,12 @@ def batch_condition_results(batch_uuid_str, position):
             ke_type_map=json.dumps(ke_type_map),
             ke_title_map=json.dumps(ke_title_map),
             metadata=metadata,
+            # Phase 999.4: the Pathway view section is scoped to the live
+            # /analyze results page only — shared results and batch-condition
+            # re-renders are explicitly out of scope this phase. Pass None
+            # explicitly so the {% if wp_picker_data %} guard reliably hides
+            # the section here rather than relying on Jinja2 undefined-falsy.
+            wp_picker_data=None,
         )
     finally:
         session_db.close()

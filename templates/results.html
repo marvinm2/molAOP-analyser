@@ -616,6 +616,10 @@
     </div>
 
     <!-- Pathway view section (Phase 999.4 PinPath) -->
+    {# Live-analysis-only: wp_picker_data is supplied solely by the /analyze
+       route. Shared-results (shared_results.html) and batch-condition
+       re-renders deliberately pass wp_picker_data=None so this section is
+       hidden there — that scoping is intentional for Phase 999.4. #}
     {% if wp_picker_data %}
     <div class="card card--wide pathway-view" id="pathway-view-section">
         <div class="pathway-view__header">
