@@ -730,6 +730,109 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   PATHWAY VIEW SECTION (Phase 999.4 PinPath)
+   ========================================================================== */
+
+.pathway-view {
+    margin-bottom: 24px;
+}
+
+.pathway-view__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 0 0 16px 0;
+}
+
+.pathway-view__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #29235C;
+    margin: 0;
+}
+
+.pathway-view__caption {
+    font-size: 12px;
+    font-weight: 400;
+    color: #29235C;
+    margin: 4px 0 0 0;
+}
+
+.pathway-view__controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.pathway-view__picker-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+
+.pathway-view__picker {
+    min-width: 320px;
+    font-size: 14px;
+    padding: 8px 16px;
+    width: auto;
+    margin: 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    color: #29235C;
+}
+
+.pathway-view__iframe-wrapper {
+    position: relative;
+}
+
+.pathway-view__loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    color: #666;
+    pointer-events: none;
+}
+
+.pathway-view__iframe {
+    display: block;
+    width: 100%;
+    height: 600px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-top: 0;
+    background-color: #ffffff;
+}
+
+.pathway-view__popup-link {
+    font-size: 14px;
+    color: #307BBF;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.pathway-view__popup-link:hover {
+    text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+    .pathway-view__iframe {
+        height: 500px;
+    }
+
+    .pathway-view__picker {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+/* ==========================================================================
    METADATA SUMMARY CARD
    ========================================================================== */
 
