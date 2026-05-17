@@ -861,13 +861,19 @@ def analyze():
         if data_source in ('api', 'cache'):
             try:
                 raw_ke_wp_records = fetch_ke_wp_records(Config)
+                # Built inside the try so a malformed-but-successful Builder
+                # response (missing/extra keys, schema drift) degrades to the
+                # CSV fallback instead of raising an uncaught KeyError that
+                # would 500 the whole /analyze route. .get() tolerates a
+                # missing title; records with no pathway_id are skipped.
                 wp_title_map = {
-                    rec["pathway_id"]: rec["pathway_title"]
+                    rec["pathway_id"]: rec.get("pathway_title", rec["pathway_id"])
                     for rec in raw_ke_wp_records
+                    if rec.get("pathway_id")
                 }
-            except Exception as _picker_exc:
+            except Exception as picker_exc:
                 logger.warning(
-                    "fetch_ke_wp_records failed, falling back to CSV: %s", _picker_exc
+                    "fetch_ke_wp_records failed, falling back to CSV: %s", picker_exc
                 )
                 raw_ke_wp_records = load_ke_wp_records_csv('data/KE-WP.csv')
                 wp_title_map = {}
