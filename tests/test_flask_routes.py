@@ -1052,13 +1052,14 @@ class TestHubPanel:
 @pytest.mark.integration
 @pytest.mark.web
 class TestColumnConfidenceUI:
-    """Phase 16 (AUTC-01/AUTC-02): Column confidence badges + reasons list in single-analysis preview.
+    """Phase 16 (AUTC-01/AUTC-02): Column confidence badges + hover tooltip in single-analysis preview.
 
     Tests assert that the /preview response:
     - D-01: Contains a colour-coded confidence badge (confidence-badge confidence-badge--*)
             for each column type when the detector confidently identifies columns.
-    - D-02: Contains the reasons list (<ul class="column-hint__reasons">) and a static
-            generic explainer (<small class="column-type-explainer">) for each column.
+    - D-02: Carries the detector reasons and the static generic explainer inside the
+            badge's hover tooltip (title attribute) — "Why this column:" header for the
+            reasons, "Detector looks for:" for the explainer — rather than inline.
     - D-03: Shows confidence-badge--undetected + "Couldn't auto-detect" when a column
             type cannot be detected.
     - Guided tour anchor: data-tour-target="column-preview" is preserved.
@@ -1120,33 +1121,34 @@ class TestColumnConfidenceUI:
             f"Body excerpt: {response.data[:1000]!r}"
         )
 
-    def test_reasons_list_rendered_for_detected_columns(self, flask_client):
-        """D-02 reasons: The detector reasons list appears when columns are detected.
+    def test_reasons_in_badge_tooltip_for_detected_columns(self, flask_client):
+        """D-02 reasons: The detector reasons appear in the badge hover tooltip.
 
-        POST /preview with a well-formed CSV.  The response must contain a
-        <ul class="column-hint__reasons"> element.
+        POST /preview with a well-formed CSV.  When columns are detected the
+        badge title carries a "Why this column:" reasons block.
         """
         response = self._post_preview(flask_client, self._good_csv)
         assert response.status_code == 200
-        assert b'column-hint__reasons' in response.data, (
-            "Expected <ul class=\"column-hint__reasons\"> in /preview response. "
+        assert b'Why this column:' in response.data, (
+            "Expected the 'Why this column:' reasons block in a badge title attribute "
+            "of the /preview response. "
             f"Body excerpt: {response.data[:1000]!r}"
         )
 
-    def test_static_explainer_rendered(self, flask_client):
-        """D-02 explainer: The static column-type explainer appears for all column types.
+    def test_static_explainer_in_badge_tooltip(self, flask_client):
+        """D-02 explainer: The static column-type explainer appears in the badge tooltip.
 
-        POST /preview with a well-formed CSV.  The response must contain
-        class="column-type-explainer" for the gene-ID explainer.
+        POST /preview with a well-formed CSV.  The verbatim explainer text must
+        appear (inside the badge title attribute) for the gene-ID column.
         """
         response = self._post_preview(flask_client, self._good_csv)
         assert response.status_code == 200
-        assert b'column-type-explainer' in response.data, (
-            "Expected class=\"column-type-explainer\" in /preview response. "
-            f"Body excerpt: {response.data[:1000]!r}"
-        )
         assert b'Detector looks for: gene symbol name/format patterns' in response.data, (
             "Expected verbatim gene-ID explainer text in /preview response. "
+            f"Body excerpt: {response.data[:1000]!r}"
+        )
+        assert b'title="Detector looks for:' in response.data, (
+            "Expected the explainer to be carried in a badge title (hover tooltip) attribute. "
             f"Body excerpt: {response.data[:1000]!r}"
         )
 

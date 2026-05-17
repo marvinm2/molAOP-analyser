@@ -159,9 +159,9 @@
                     {% if column_suggestions and column_suggestions.best_gene_id %}
                         {% set _match = column_suggestions.best_gene_id %}
                         {% set _level = confidence_label(_match.confidence) | lower | replace(' ', '-') %}
-                        <span class="confidence-badge confidence-badge--{{ _level }}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}%</span>
+                        <span class="confidence-badge confidence-badge--{{ _level }}" title="Detector looks for: gene symbol name/format patterns (e.g. GAPDH, ENSG&hellip;), or Entrez integer IDs.{% if _match.reasons %}&#10;&#10;Why this column:{% for reason in _match.reasons[:5] %}&#10;&#8226; {{ reason }}{% endfor %}{% if _match.reasons | length > 5 %}&#10;&#8226; and {{ _match.reasons | length - 5 }} more&#8230;{% endif %}{% endif %}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}% &#9432;</span>
                     {% else %}
-                        <span class="confidence-badge confidence-badge--undetected">Couldn't auto-detect — please select</span>
+                        <span class="confidence-badge confidence-badge--undetected" title="Detector looks for: gene symbol name/format patterns (e.g. GAPDH, ENSG&hellip;), or Entrez integer IDs.">Couldn't auto-detect — please select &#9432;</span>
                     {% endif %}
                 </label>
                 <select id="id_column" name="id_column" required>
@@ -180,34 +180,6 @@
                         </option>
                     {% endfor %}
                 </select>
-                {# Stats + reasons: only when detected #}
-                {% if column_suggestions and column_suggestions.best_gene_id %}
-                    {% set _match = column_suggestions.best_gene_id %}
-                    <div class="column-hint">
-                        <small>
-                            {% if _match.data_analysis and _match.data_analysis.gene_id_analysis %}
-                                {% set analysis = _match.data_analysis.gene_id_analysis %}
-                                Detected: {{ analysis.primary_type }} identifiers ({{ (analysis.confidence * 100) | round(0) }}% valid)
-                            {% endif %}
-                        </small>
-                        {% if _match.reasons %}
-                            <ul class="column-hint__reasons">
-                                {% for reason in _match.reasons[:5] %}
-                                    <li>{{ reason }}</li>
-                                {% endfor %}
-                                {% if _match.reasons | length > 5 %}
-                                    <li>and {{ _match.reasons | length - 5 }} more...</li>
-                                {% endif %}
-                            </ul>
-                        {% endif %}
-                        <small class="column-type-explainer">Detector looks for: gene symbol name/format patterns (e.g. GAPDH, ENSG&hellip;), or Entrez integer IDs.</small>
-                    </div>
-                {% else %}
-                    {# Explainer renders unconditionally even when undetected (D-02 / UI-SPEC Component 4) #}
-                    <div class="column-hint">
-                        <small class="column-type-explainer">Detector looks for: gene symbol name/format patterns (e.g. GAPDH, ENSG&hellip;), or Entrez integer IDs.</small>
-                    </div>
-                {% endif %}
             </div>
 
             {# ----------------------------------------------------------------
@@ -219,9 +191,9 @@
                     {% if column_suggestions and column_suggestions.best_log2fc %}
                         {% set _match = column_suggestions.best_log2fc %}
                         {% set _level = confidence_label(_match.confidence) | lower | replace(' ', '-') %}
-                        <span class="confidence-badge confidence-badge--{{ _level }}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}%</span>
+                        <span class="confidence-badge confidence-badge--{{ _level }}" title="Detector looks for: numeric values, log2-scale range (roughly &minus;10 to +10), near-zero mean, both positive and negative values.{% if _match.reasons %}&#10;&#10;Why this column:{% for reason in _match.reasons[:5] %}&#10;&#8226; {{ reason }}{% endfor %}{% if _match.reasons | length > 5 %}&#10;&#8226; and {{ _match.reasons | length - 5 }} more&#8230;{% endif %}{% endif %}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}% &#9432;</span>
                     {% else %}
-                        <span class="confidence-badge confidence-badge--undetected">Couldn't auto-detect — please select</span>
+                        <span class="confidence-badge confidence-badge--undetected" title="Detector looks for: numeric values, log2-scale range (roughly &minus;10 to +10), near-zero mean, both positive and negative values.">Couldn't auto-detect — please select &#9432;</span>
                     {% endif %}
                 </label>
                 <select id="fc_column" name="fc_column" required>
@@ -240,33 +212,6 @@
                         </option>
                     {% endfor %}
                 </select>
-                {# Stats + reasons: only when detected #}
-                {% if column_suggestions and column_suggestions.best_log2fc %}
-                    {% set _match = column_suggestions.best_log2fc %}
-                    <div class="column-hint">
-                        <small>
-                            {% if _match.data_analysis and _match.data_analysis.numeric_stats %}
-                                {% set stats = _match.data_analysis.numeric_stats %}
-                                Range: {{ stats.min | round(2) }} to {{ stats.max | round(2) }}, Mean: {{ stats.mean | round(2) }}
-                            {% endif %}
-                        </small>
-                        {% if _match.reasons %}
-                            <ul class="column-hint__reasons">
-                                {% for reason in _match.reasons[:5] %}
-                                    <li>{{ reason }}</li>
-                                {% endfor %}
-                                {% if _match.reasons | length > 5 %}
-                                    <li>and {{ _match.reasons | length - 5 }} more...</li>
-                                {% endif %}
-                            </ul>
-                        {% endif %}
-                        <small class="column-type-explainer">Detector looks for: numeric values, log2-scale range (roughly &minus;10 to +10), near-zero mean, both positive and negative values.</small>
-                    </div>
-                {% else %}
-                    <div class="column-hint">
-                        <small class="column-type-explainer">Detector looks for: numeric values, log2-scale range (roughly &minus;10 to +10), near-zero mean, both positive and negative values.</small>
-                    </div>
-                {% endif %}
             </div>
 
             {# ----------------------------------------------------------------
@@ -277,9 +222,9 @@
                     {% if column_suggestions and column_suggestions.best_pvalue %}
                         {% set _match = column_suggestions.best_pvalue %}
                         {% set _level = confidence_label(_match.confidence) | lower | replace(' ', '-') %}
-                        <span class="confidence-badge confidence-badge--{{ _level }}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}%</span>
+                        <span class="confidence-badge confidence-badge--{{ _level }}" title="Detector looks for: numeric values strictly in [0, 1], mix of significant and non-significant values, absence of exact 0 or 1 values.{% if _match.reasons %}&#10;&#10;Why this column:{% for reason in _match.reasons[:5] %}&#10;&#8226; {{ reason }}{% endfor %}{% if _match.reasons | length > 5 %}&#10;&#8226; and {{ _match.reasons | length - 5 }} more&#8230;{% endif %}{% endif %}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}% &#9432;</span>
                     {% else %}
-                        <span class="confidence-badge confidence-badge--undetected">Couldn't auto-detect — please select</span>
+                        <span class="confidence-badge confidence-badge--undetected" title="Detector looks for: numeric values strictly in [0, 1], mix of significant and non-significant values, absence of exact 0 or 1 values.">Couldn't auto-detect — please select &#9432;</span>
                     {% endif %}
                 </label>
                 <select id="pval_column" name="pval_column" required>
@@ -298,33 +243,6 @@
                         </option>
                     {% endfor %}
                 </select>
-                {# Stats + reasons: only when detected #}
-                {% if column_suggestions and column_suggestions.best_pvalue %}
-                    {% set _match = column_suggestions.best_pvalue %}
-                    <div class="column-hint">
-                        <small>
-                            {% if _match.data_analysis and _match.data_analysis.pvalue_stats %}
-                                {% set stats = _match.data_analysis.pvalue_stats %}
-                                {{ stats.significant_count }}/{{ stats.total_count }} values < 0.05
-                            {% endif %}
-                        </small>
-                        {% if _match.reasons %}
-                            <ul class="column-hint__reasons">
-                                {% for reason in _match.reasons[:5] %}
-                                    <li>{{ reason }}</li>
-                                {% endfor %}
-                                {% if _match.reasons | length > 5 %}
-                                    <li>and {{ _match.reasons | length - 5 }} more...</li>
-                                {% endif %}
-                            </ul>
-                        {% endif %}
-                        <small class="column-type-explainer">Detector looks for: numeric values strictly in [0, 1], mix of significant and non-significant values, absence of exact 0 or 1 values.</small>
-                    </div>
-                {% else %}
-                    <div class="column-hint">
-                        <small class="column-type-explainer">Detector looks for: numeric values strictly in [0, 1], mix of significant and non-significant values, absence of exact 0 or 1 values.</small>
-                    </div>
-                {% endif %}
             </div>
 
             {# ----------------------------------------------------------------
@@ -336,9 +254,9 @@
                     {% if column_suggestions and column_suggestions.best_pvalue_adj %}
                         {% set _match = column_suggestions.best_pvalue_adj %}
                         {% set _level = confidence_label(_match.confidence) | lower | replace(' ', '-') %}
-                        <span class="confidence-badge confidence-badge--{{ _level }}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}%</span>
+                        <span class="confidence-badge confidence-badge--{{ _level }}" title="Detector looks for: same criteria as p-value; column name containing &lsquo;adj&rsquo;, &lsquo;fdr&rsquo;, &lsquo;padj&rsquo;, or &lsquo;qvalue&rsquo;.{% if _match.reasons %}&#10;&#10;Why this column:{% for reason in _match.reasons[:5] %}&#10;&#8226; {{ reason }}{% endfor %}{% if _match.reasons | length > 5 %}&#10;&#8226; and {{ _match.reasons | length - 5 }} more&#8230;{% endif %}{% endif %}">{{ confidence_label(_match.confidence) }} {{ (_match.confidence * 100) | round(0) | int }}% &#9432;</span>
                     {% else %}
-                        <span class="confidence-badge confidence-badge--undetected">Couldn't auto-detect — please select</span>
+                        <span class="confidence-badge confidence-badge--undetected" title="Detector looks for: same criteria as p-value; column name containing &lsquo;adj&rsquo;, &lsquo;fdr&rsquo;, &lsquo;padj&rsquo;, or &lsquo;qvalue&rsquo;.">Couldn't auto-detect — please select &#9432;</span>
                     {% endif %}
                 </label>
                 {# Pre-select rules:
@@ -365,33 +283,6 @@
                         </option>
                     {% endfor %}
                 </select>
-                {# Reasons + explainer for adj p-value (D-02 / UI-SPEC Component 4) #}
-                {% if column_suggestions and column_suggestions.best_pvalue_adj %}
-                    {% set _match = column_suggestions.best_pvalue_adj %}
-                    <div class="column-hint">
-                        <small>
-                            {% if _match.data_analysis and _match.data_analysis.pvalue_stats %}
-                                {% set stats = _match.data_analysis.pvalue_stats %}
-                                {{ stats.significant_count }}/{{ stats.total_count }} values < 0.05
-                            {% endif %}
-                        </small>
-                        {% if _match.reasons %}
-                            <ul class="column-hint__reasons">
-                                {% for reason in _match.reasons[:5] %}
-                                    <li>{{ reason }}</li>
-                                {% endfor %}
-                                {% if _match.reasons | length > 5 %}
-                                    <li>and {{ _match.reasons | length - 5 }} more...</li>
-                                {% endif %}
-                            </ul>
-                        {% endif %}
-                        <small class="column-type-explainer">Detector looks for: same criteria as p-value; column name containing &lsquo;adj&rsquo;, &lsquo;fdr&rsquo;, &lsquo;padj&rsquo;, or &lsquo;qvalue&rsquo;.</small>
-                    </div>
-                {% else %}
-                    <div class="column-hint">
-                        <small class="column-type-explainer">Detector looks for: same criteria as p-value; column name containing &lsquo;adj&rsquo;, &lsquo;fdr&rsquo;, &lsquo;padj&rsquo;, or &lsquo;qvalue&rsquo;.</small>
-                    </div>
-                {% endif %}
             </div>
         </div>
 

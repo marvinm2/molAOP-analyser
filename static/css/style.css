@@ -668,16 +668,6 @@ select.wide-dropdown {
     border: 1px solid #307BBF;
 }
 
-.column-hint {
-    margin-top: 5px;
-    color: #29235C;
-    font-style: italic;
-    background-color: #93D5F6;
-    padding: 3px 8px;
-    border-radius: 3px;
-    border-left: 3px solid #307BBF;
-}
-
 select option[data-suggested="true"] {
     background-color: #93D5F6;
     font-weight: bold;
@@ -737,32 +727,6 @@ select option[data-suggested="true"] {
 .confidence-badge--undetected {
     background-color: #EB5B25; /* Orange */
     border: 1px solid #9A1C57; /* Deep Magenta outline — signals required action */
-}
-
-/* Reasons list inside .column-hint */
-.column-hint__reasons {
-    list-style: disc;
-    padding-left: 16px;
-    margin: 4px 0;
-    font-style: normal; /* override italic on .column-hint */
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 1.4;
-}
-
-.column-hint__reasons li {
-    margin-bottom: 2px;
-}
-
-/* Static generic explainer line */
-.column-type-explainer {
-    display: block;
-    margin-top: 4px;
-    font-size: 12px;
-    font-weight: 400;
-    font-style: italic;
-    line-height: 1.4;
-    /* color inherits #29235C from .column-hint */
 }
 
 /* ==========================================================================
