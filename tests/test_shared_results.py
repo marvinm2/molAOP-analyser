@@ -244,6 +244,66 @@ class TestShareEndpoints:
         html = resp.data.decode('utf-8')
         assert 'not found' in html.lower()
 
+    def test_api_share_persists_gsea_method(self, flask_client, temp_db):
+        """POST /api/share with metadata.method='gsea' persists SharedResult.method='gsea'.
+
+        Regression test for GSEA-07 / INT-01: the /api/share payload must forward the
+        analysis method so that SharedResult.create() stores 'gsea' rather than the
+        legacy 'ora' default, ensuring recipients of shared GSEA links see GSEA rendering.
+        """
+        payload = self._share_payload()
+        payload['metadata']['method'] = 'gsea'
+
+        resp = flask_client.post(
+            '/api/share',
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.data}"
+        shared_uuid = resp.get_json()['uuid']
+
+        session = temp_db.get_session()
+        try:
+            record = session.query(SharedResult).filter_by(uuid=shared_uuid).first()
+            assert record is not None, "SharedResult was not persisted"
+            assert record.method == 'gsea', (
+                f"Expected method='gsea', got method='{record.method}'. "
+                "The /api/share payload must include the method key so GSEA shares "
+                "are not incorrectly stored as ORA (INT-01)."
+            )
+        finally:
+            session.close()
+
+    def test_api_share_defaults_method_to_ora(self, flask_client, temp_db):
+        """POST /api/share with no method key in metadata defaults to method='ora'.
+
+        Guard for GSEA-07 / INT-01: SharedResult.create() uses metadata.get('method', 'ora')
+        so that legacy callers and ORA analyses without an explicit method key continue
+        to work correctly.
+        """
+        payload = self._share_payload()
+        # Explicitly ensure no method key is present (mirrors pre-INT-01-fix behaviour)
+        payload['metadata'].pop('method', None)
+
+        resp = flask_client.post(
+            '/api/share',
+            data=json.dumps(payload),
+            content_type='application/json',
+        )
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.data}"
+        shared_uuid = resp.get_json()['uuid']
+
+        session = temp_db.get_session()
+        try:
+            record = session.query(SharedResult).filter_by(uuid=shared_uuid).first()
+            assert record is not None, "SharedResult was not persisted"
+            assert record.method == 'ora', (
+                f"Expected method='ora' (default), got method='{record.method}'. "
+                "SharedResult.create() must default to 'ora' when method is absent."
+            )
+        finally:
+            session.close()
+
     def test_shared_results_route_expired(self, flask_client, temp_db):
         """GET /results/<uuid> for an expired record returns 410 with expiry message."""
         # Insert an expired record directly via the DB
