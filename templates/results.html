@@ -1658,7 +1658,8 @@ document.getElementById('copyLinkBtn').addEventListener('click', async function(
                 metadata: {
                     dataset_id: '{{ metadata.get("dataset_id", "") }}',
                     gene_count: {{ background_size }},
-                    significant_genes: {{ metadata.get('significant_genes', 0) }}
+                    significant_genes: {{ metadata.get('significant_genes', 0) }},
+                    method: '{{ method or "ora" }}'
                 }
             })
         });
