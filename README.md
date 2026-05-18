@@ -1,4 +1,4 @@
-# Molecular AOP KE Enrichment App
+# Molecular AOP Analyser
 
 This web application allows users to upload or select gene expression datasets and perform Key Event (KE) enrichment analysis in the context of Molecular Adverse Outcome Pathways (AOPs). The results are visualized in interactive tables and network diagrams with comprehensive reporting capabilities.
 
@@ -12,7 +12,7 @@ This web application allows users to upload or select gene expression datasets a
 - **Auto-detection** of gene ID, log2FC, and p-value columns with confidence indicators
 - Interactive volcano plot visualization with customizable thresholds
 - **Quick threshold options**: 0, 0.5, 1.0, 1.5, 2.0, Top 10%, Top 20% genes
-- KE enrichment analysis using Fisher's exact test with FDR correction
+- KE enrichment analysis using **Fisher's exact test or GSEA**, both with FDR correction
 - Support for multiple gene ID formats and duplicate handling
 
 ### Batch Analysis
@@ -33,6 +33,8 @@ This web application allows users to upload or select gene expression datasets a
   - **Comprehensive legend** with node types and color scales
   - Add/toggle gene nodes, reset view, download options
 - **Enhanced results table** with user-friendly column names
+- **Hub genes panel** listing genes shared across multiple Key Events in the AOP
+- **Pathway view** — embedded WikiPathways diagram for a Key Event's mapped pathway
 - **Network statistics** dashboard showing node/edge counts
 - Proper decimal formatting for p-values (scientific notation < 0.001)
 
@@ -61,8 +63,10 @@ The backend is organized into modular services under `services/`:
 
 | Module | Responsibility |
 |---|---|
-| `enrichment_service.py` | Fisher's exact test, FDR correction, enrichment statistics |
+| `enrichment_service.py` | Fisher's exact test, FDR correction, enrichment statistics; dispatches to GSEA |
+| `gsea_service.py` | GSEA (gseapy prerank) as a threshold-free alternative to Fisher's exact |
 | `network_service.py` | Cytoscape.js network graph generation |
+| `hub_service.py` | Hub-gene computation — genes shared across multiple Key Events |
 | `report_service.py` | PDF and HTML report generation |
 | `data_service.py` | Data loading, normalization, and validation |
 | `column_detector.py` | Auto-detection of gene ID, log2FC, and p-value columns |
@@ -71,7 +75,8 @@ The backend is organized into modular services under `services/`:
 | `comparison_service.py` | Cross-condition comparison and heatmap generation |
 | `aop_discovery_service.py` | AOP search and typeahead suggestions |
 | `sparql_service.py` | SPARQL queries for AOP-Wiki data |
-| `api_service.py` | REST API endpoints for programmatic access |
+| `pathway_picker_service.py` | WikiPathways picker data for the results-page Pathway view |
+| `api_service.py` | REST API client for the upstream molAOP Builder (KE→pathway mappings) |
 
 ### Data Flow
 
@@ -119,7 +124,7 @@ cd molAOP-analyser
 docker-compose up --build
 ```
 
-Open <http://localhost:5000> in your browser.
+Open <http://localhost:5010> in your browser (`docker-compose.yml` publishes the container's port 5000 on host port 5010).
 
 ---
 
@@ -137,8 +142,10 @@ molAOP-analyser/
 ├── utils.py                        # Utility functions
 │
 ├── services/                       # Modular service classes
-│   ├── enrichment_service.py       # Fisher's exact test, FDR correction
+│   ├── enrichment_service.py       # Fisher's exact test, FDR correction, GSEA dispatch
+│   ├── gsea_service.py             # GSEA (gseapy prerank) enrichment
 │   ├── network_service.py          # Cytoscape.js network generation
+│   ├── hub_service.py              # Hub-gene computation
 │   ├── report_service.py           # PDF/HTML report generation
 │   ├── data_service.py             # Data processing and normalization
 │   ├── column_detector.py          # Auto-detect gene ID, FC, p-value columns
@@ -147,7 +154,8 @@ molAOP-analyser/
 │   ├── comparison_service.py       # Cross-condition comparison
 │   ├── aop_discovery_service.py    # AOP search and typeahead
 │   ├── sparql_service.py           # SPARQL queries for AOP-Wiki
-│   └── api_service.py              # REST API endpoints
+│   ├── pathway_picker_service.py   # WikiPathways picker for Pathway view
+│   └── api_service.py              # REST API client for the molAOP Builder
 │
 ├── templates/                      # Jinja2 templates
 │   ├── base.html                   # Base layout (nav, footer, HTMX)
@@ -157,15 +165,19 @@ molAOP-analyser/
 │   ├── _batch_analysis.html        # Batch wizard partial
 │   ├── _batch_analysis_scripts.html
 │   ├── results.html                # Analysis results display
+│   ├── shared_results.html         # Public shareable results page
 │   ├── compare.html                # Batch comparison view
 │   ├── batch_progress.html         # HTMX progress partial
 │   ├── batch_summary.html          # Batch results summary
 │   ├── documentation.html          # In-app documentation
+│   ├── demos.html                  # Curated demo dataset landing page
 │   └── about.html                  # About page
 │
 ├── static/
 │   ├── css/style.css               # Application styles (VHP4Safety palette)
-│   └── img/logo.png                # VHP4Safety logo
+│   ├── css/tour.css                # Guided tour styles
+│   ├── js/tour.js                  # Guided tour logic
+│   └── img/                        # Logos (molaop, vhp4safety) and favicons
 │
 ├── data/                           # Reference data and demo datasets
 │   ├── aop_ke_map.csv              # AOP → KE ID mappings
@@ -177,17 +189,24 @@ molAOP-analyser/
 │   ├── wikipathways_hsa_20240410.xgmml  # WikiPathways network data
 │   ├── GSE90122_SR12813.tsv        # PXR agonist demo dataset 1
 │   ├── GSE90122_TO90137.tsv        # PXR agonist demo dataset 2
-│   └── Cisplatin_Kidney/           # 42 cisplatin toxicity datasets
+│   └── Cisplatin_Kidney/           # 54 cisplatin toxicity datasets
 │       └── CSP_{time}_{dose}.csv   # (4–72 hr, 0.1–50 uM)
 │
 ├── tests/                          # Pytest test suite
 │   ├── conftest.py                 # Fixtures (Flask client, test data)
 │   ├── test_flask_routes.py        # Integration tests for web routes
 │   ├── test_column_detector.py     # Unit tests for column auto-detection
+│   ├── test_enrichment_service.py  # Fisher's exact test and FDR correction
+│   ├── test_gsea_service.py        # GSEA enrichment
+│   ├── test_hub_service.py         # Hub-gene computation
 │   ├── test_database.py            # Database model tests
 │   ├── test_report_service.py      # Report generation tests
 │   ├── test_aop_discovery.py       # AOP search tests
-│   └── test_shared_results.py      # Shared results feature tests
+│   ├── test_shared_results.py      # Shared results feature tests
+│   ├── test_batch_service.py       # Batch orchestration tests
+│   ├── test_data_service.py        # Data loading and normalization
+│   ├── test_network_comparison.py  # Cross-condition comparison matrix
+│   └── test_pathway_picker_service.py  # WikiPathways picker data
 │
 ├── uploads/                        # Temporary user uploads (gitignored)
 ├── molAOP_analyser.db              # SQLite database (auto-created)
@@ -210,7 +229,7 @@ The app includes preloaded differential expression datasets:
 
 ### Cisplatin Kidney Toxicity
 
-42 datasets covering cisplatin exposure in kidney cells across:
+54 datasets covering cisplatin exposure in kidney cells across:
 
 - **Timepoints**: 4, 8, 16, 24, 48, 72 hours
 - **Doses**: 0.1, 0.5, 1, 2.5, 5, 10, 20, 30, 50 uM
@@ -241,10 +260,17 @@ pytest --cov
 |---|---|
 | `test_flask_routes.py` | Integration tests for all web routes and the full analysis workflow |
 | `test_column_detector.py` | Unit tests for auto-detection of gene ID, FC, and p-value columns |
+| `test_enrichment_service.py` | Fisher's exact test, FDR correction, significance thresholds |
+| `test_gsea_service.py` | GSEA enrichment (gseapy prerank) |
+| `test_hub_service.py` | Hub-gene computation and ranking |
 | `test_database.py` | SQLAlchemy model and database manager tests |
 | `test_report_service.py` | PDF and HTML report generation |
 | `test_aop_discovery.py` | AOP typeahead search functionality |
 | `test_shared_results.py` | Shared/public results link feature |
+| `test_batch_service.py` | Batch file parsing and orchestration |
+| `test_data_service.py` | Data loading and normalization |
+| `test_network_comparison.py` | Cross-condition comparison matrix |
+| `test_pathway_picker_service.py` | WikiPathways picker data assembly |
 
 ---
 
@@ -258,7 +284,7 @@ The recommended deployment method uses Docker Compose:
 docker-compose up --build -d
 ```
 
-This starts the application on port 5000 with Gunicorn as the WSGI server.
+This builds and starts the container, which runs the Flask app (`python app.py`). `docker-compose.yml` publishes the container's port 5000 on host port 5010.
 
 ### Data Directory
 

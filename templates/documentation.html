@@ -355,6 +355,31 @@ CYP3A4         3.21             0.00001   0.0001
             (see "Export gene-by-KE (CSV)" on the results page) showing exactly which
             genes from your dataset drove each KE.
         </div>
+
+        <h3>Hub Genes</h3>
+        <p>
+            The <strong>Hub genes</strong> panel lists genes that are shared across multiple
+            Key Events within the selected AOP. A gene is flagged as a <em>hub</em> when it
+            appears in three or more distinct Key Events &mdash; these genes connect several
+            parts of the pathway, so a change in their expression can influence multiple
+            Key Events at once. The panel ranks genes by the number of Key Events they belong
+            to, and the <strong>Show gene nodes</strong> and <strong>Significant genes only</strong>
+            toggles control which genes are drawn on the network.
+        </p>
+
+        <h3>Pathway View</h3>
+        <p>
+            The <strong>Pathway view</strong> embeds the underlying WikiPathways diagram for a
+            Key Event's mapped pathway, so you can inspect the biological pathway behind an
+            enrichment result. Use the pathway picker dropdown to switch between pathways;
+            entries are ordered so the most-enriched Key Events' pathways appear first. The
+            <strong>Open full pathway</strong> link opens the diagram on wikipathways.org.
+        </p>
+        <div class="info-box">
+            <strong>Note:</strong> The Pathway view shows the bare WikiPathways diagram &mdash;
+            your gene expression values are <em>not</em> overlaid on it. For expression-coloured
+            visualisation, use the AOP network above.
+        </div>
     </div>
 
     <!-- Section 4: Batch Analysis Tutorial -->
