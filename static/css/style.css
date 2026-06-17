@@ -585,6 +585,129 @@ table.dataframe tr:nth-child(even) {
 }
 
 /* ==========================================================================
+   ANALYSIS SETTINGS PANELS (#57)
+   Grouped option cards shown before "Run Enrichment Analysis". Two columns on
+   wide viewports (significance settings | enrichment target), stacked on
+   narrow. Behaviour (method/threshold mirroring, resource stickiness) is
+   unchanged — this is presentation only.
+   ========================================================================== */
+
+.analysis-settings {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 20px;
+    align-items: stretch;
+    max-width: 920px;
+    margin: 20px auto 0;
+    text-align: left;
+}
+
+.settings-group {
+    border: 1px solid #e2e2ea;
+    border-radius: 8px;
+    padding: 18px 20px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+}
+
+.settings-group__title {
+    color: #29235C;
+    font-weight: 700;
+    font-size: 16px;
+    margin: 0 0 4px;
+}
+
+.settings-group__hint {
+    font-size: 13px;
+    color: #666;
+    margin: 0 0 16px;
+    line-height: 1.45;
+}
+
+.settings-subgroup {
+    margin-bottom: 18px;
+}
+
+.settings-subgroup:last-child {
+    margin-bottom: 0;
+}
+
+.settings-subgroup__label {
+    display: block;
+    font-weight: 600;
+    color: #29235C;
+    font-size: 14px;
+    margin-bottom: 8px;
+}
+
+.settings-subgroup__hint {
+    font-size: 12px;
+    color: #777;
+    margin: 6px 0 0;
+    line-height: 1.4;
+}
+
+.settings-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.settings-options label {
+    font-size: 14px;
+    color: #333;
+    margin: 0;
+    cursor: pointer;
+}
+
+.settings-group input[type="number"] {
+    width: 110px;
+    padding: 7px 8px;
+    font-size: 14px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    margin: 0;
+}
+
+/* Threshold layout (base rules; previously inherited from .volcano-form) */
+.settings-group .threshold-quick-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.settings-group .threshold-custom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-group .threshold-custom-label {
+    font-size: 14px;
+    color: #555;
+}
+
+/* Run button anchored to the bottom of its card for a tidy two-column edge */
+.settings-actions {
+    margin-top: auto;
+    padding-top: 18px;
+}
+
+.settings-actions .btn--primary {
+    width: 100%;
+}
+
+@media (max-width: 700px) {
+    .analysis-settings {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ==========================================================================
    PREVIEW TABLE
    ========================================================================== */
 
