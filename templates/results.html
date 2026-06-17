@@ -310,6 +310,10 @@
                 <span class="metadata-summary__label">Significant Genes</span>
                 <span class="metadata-summary__value">{{ metadata.get('significant_genes', 0) }}</span>
             </div>
+            <div class="metadata-summary__item">
+                <span class="metadata-summary__label">Gene Set Resources</span>
+                <span class="metadata-summary__value">{{ metadata.get('selected_resources', 'WikiPathways') }}</span>
+            </div>
             {% if metadata.get('analysis_date') %}
             <div class="metadata-summary__item">
                 <span class="metadata-summary__label">Analysed</span>

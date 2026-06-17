@@ -5,6 +5,8 @@ Provides paginated fetching with retry logic, KE ID normalisation,
 and integration with the local reference set loading pipeline.
 """
 import logging
+import re
+
 import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
@@ -13,6 +15,18 @@ from urllib3.util.retry import Retry
 from helpers import load_reference_sets
 
 logger = logging.getLogger(__name__)
+
+# Builder GMT export paths that already resolve pathways/terms to genes.
+# WikiPathways is intentionally omitted here — it keeps its existing
+# CSV-backed pipeline (see fetch_reference_sets_from_api / load_reference_sets).
+GMT_RESOURCE_PATHS = {
+    "GO_BP": "exports/gmt/ke-go",
+    "Reactome": "exports/gmt/ke-reactome",
+}
+
+# Matches the leading "KE<number>" token of a GMT descriptor column, e.g.
+# "KE177_Increase_Mitochondrial_dysfunction_WP5241" -> "177".
+_KE_ID_RE = re.compile(r"^KE\s?(\d+)_")
 
 
 def _make_api_session(retries=3, backoff_factor=1.0):
@@ -225,5 +239,95 @@ def fetch_reference_sets_from_api(config):
     logger.info(
         "Reference sets loaded: %d KE gene sets produced from API data",
         len(reference_sets),
+    )
+    return reference_sets
+
+
+def parse_gmt_reference_sets(gmt_text):
+    """Parse a Builder GMT export into KE-to-gene reference sets.
+
+    The Builder GMT format is one gene set per line, tab-separated::
+
+        KE<id>_<KE_name>_<pathway_id>\\t<pathway_title>\\t<gene>\\t<gene>...
+
+    A single KE typically spans several rows (one per mapped pathway/term);
+    genes are unioned across all rows that share the same KE.  KE IDs are
+    normalised from the ``KE<id>`` token to ``"KE:<id>"`` so they match the
+    convention used elsewhere (see :func:`fetch_reference_sets_from_api` and
+    the AOP ``ke_list`` keys consumed by enrichment).
+
+    Parameters
+    ----------
+    gmt_text : str
+        Raw GMT file contents (``text/plain``).
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping of KE ID (``"KE:177"``) -> set of uppercase gene symbols.
+    """
+    reference_sets = {}
+    for line in gmt_text.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        if len(fields) < 3:
+            continue  # descriptor + title but no genes -> nothing to add
+        match = _KE_ID_RE.match(fields[0])
+        if not match:
+            continue
+        ke_id = f"KE:{match.group(1)}"
+        genes = {g.strip().upper() for g in fields[2:] if g.strip()}
+        if not genes:
+            continue
+        reference_sets.setdefault(ke_id, set()).update(genes)
+    return reference_sets
+
+
+def fetch_gmt_reference_sets(config, resource):
+    """Fetch KE-to-gene reference sets for a resource from the Builder GMT export.
+
+    Used for resources whose genes are resolved Builder-side and exposed via the
+    GMT export endpoints (GO Biological Process and Reactome).  WikiPathways is
+    not handled here — it retains its dedicated CSV-backed pipeline.
+
+    Parameters
+    ----------
+    config : Config
+        Application config providing ``BUILDER_API_URL`` and
+        ``BUILDER_API_TIMEOUT``.
+    resource : str
+        Resource key, one of :data:`GMT_RESOURCE_PATHS` (``"GO_BP"`` or
+        ``"Reactome"``).
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping of KE ID -> set of gene symbols, identical in shape to the
+        WikiPathways reference sets.
+
+    Raises
+    ------
+    ValueError
+        If ``config.BUILDER_API_URL`` is unset, or ``resource`` is unknown.
+    requests.HTTPError
+        On non-2xx responses after all retries are exhausted.
+    """
+    if not config.BUILDER_API_URL:
+        raise ValueError("BUILDER_API_URL not configured; API integration is disabled")
+    if resource not in GMT_RESOURCE_PATHS:
+        raise ValueError(f"Unknown GMT resource: {resource!r}")
+
+    url = f"{config.BUILDER_API_URL.rstrip('/')}/{GMT_RESOURCE_PATHS[resource]}"
+    session = _make_api_session()
+    response = session.get(url, timeout=config.BUILDER_API_TIMEOUT)
+    response.raise_for_status()
+
+    reference_sets = parse_gmt_reference_sets(response.text)
+    logger.info(
+        "Loaded %d KE gene sets for resource %s from GMT export %s",
+        len(reference_sets),
+        resource,
+        url,
     )
     return reference_sets

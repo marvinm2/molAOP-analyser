@@ -93,6 +93,11 @@ class ReportData:
     # compatible. Plan 04 reads this field to branch report header and table columns.
     method: str = 'ora'
 
+    # Issue #55: gene-set resources used for enrichment (display string, e.g.
+    # "WikiPathways, GO_BP"). Defaulted so existing ReportData(...) constructions
+    # remain compatible.
+    selected_resources: str = 'WikiPathways'
+
     # System information
     analysis_timestamp: datetime = None
     software_versions: Optional[Dict[str, str]] = None
@@ -324,6 +329,10 @@ class ReportGenerator:
                 <div class="param-item">
                     <label>Method:</label>
                     <span>{report_data.method_label}</span>
+                </div>
+                <div class="param-item">
+                    <label>Gene Set Resources:</label>
+                    <span>{report_data.selected_resources}</span>
                 </div>
                 <div class="param-item">
                     <label>Selected AOP:</label>
@@ -899,6 +908,7 @@ class ReportGenerator:
         summary_data = [
             ['Metric', 'Value'],
             ['Method', report_data.method_label],
+            ['Gene Set Resources', report_data.selected_resources],
             ['Filename', report_data.filename],
             ['Total Genes', f"{report_data.gene_count:,}"],
             ['Significant Genes', f"{report_data.significant_genes:,}"],

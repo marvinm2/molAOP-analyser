@@ -558,6 +558,10 @@ document.getElementById('btn-analyze').addEventListener('click', function() {
     payload.append('batch_uuid', batchUuid);
     payload.append('aop_selection', aopId);
     payload.append('logfc_threshold', document.getElementById('logfc-threshold').value);
+    payload.append('pval_threshold', document.getElementById('pval-threshold').value);
+    document.querySelectorAll('.batch-resource:checked').forEach(function(cb) {
+        payload.append('resources', cb.value);
+    });
     payload.append('batch_name', document.getElementById('batch-name').value.trim());
     payload.append('owner', document.getElementById('batch-owner').value.trim());
     payload.append('description', document.getElementById('batch-desc').value.trim());

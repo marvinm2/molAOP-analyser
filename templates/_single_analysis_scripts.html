@@ -228,6 +228,34 @@
     applyMethod();
 })();
 
+// IIFE: keep the gene-set resource selection alive across "Update Plot" (#55).
+// The resource checkboxes live in #enrichmentForm, but Update Plot submits
+// #volcanoForm, so mirror the checked resources into hidden inputs on
+// #volcanoForm. /preview echoes them back via selected_resources, so the boxes
+// stay checked after the HTMX swap. Re-runs on every partial swap.
+(function () {
+    const volcanoForm = document.getElementById('volcanoForm');
+    const checkboxes = document.querySelectorAll('input[name="resources"]');
+    if (!volcanoForm || !checkboxes.length) return;
+
+    function syncResources() {
+        volcanoForm.querySelectorAll('input[data-resource-mirror]').forEach(el => el.remove());
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = 'resources';
+                hidden.value = cb.value;
+                hidden.setAttribute('data-resource-mirror', '');
+                volcanoForm.appendChild(hidden);
+            }
+        });
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', syncResources));
+    syncResources();
+})();
+
 // Globals exposed for inline onclick handlers in _single_analysis.html.
 function setThreshold(value) {
     document.getElementById('logfc_threshold').value = value;
