@@ -42,7 +42,10 @@ class ExperimentRecord(Base):
     id_column = Column(String(100))
     fc_column = Column(String(100))
     pval_column = Column(String(100))
-    
+    # Issue #55: comma-separated gene-set resources used (e.g. "WikiPathways, GO_BP").
+    # NULL for pre-#55 rows (coerced to WikiPathways on read).
+    selected_resources = Column(String(255))
+
     # Analysis results summary (JSON)
     enrichment_results = Column(Text)  # JSON string of enrichment results
     gene_count = Column(Integer)
@@ -69,6 +72,7 @@ class ExperimentRecord(Base):
             'id_column': self.id_column,
             'fc_column': self.fc_column,
             'pval_column': self.pval_column,
+            'selected_resources': self.selected_resources or 'WikiPathways',  # coerce NULL (pre-#55 rows)
             'enrichment_results': json.loads(self.enrichment_results) if self.enrichment_results else None,
             'gene_count': self.gene_count,
             'significant_genes': self.significant_genes,
@@ -181,6 +185,8 @@ class BatchRecord(Base):
     # Shared analysis parameters
     logfc_threshold = Column(Float)
     pval_cutoff = Column(Float)
+    # Issue #55: comma-separated gene-set resources used (e.g. "WikiPathways, GO_BP").
+    selected_resources = Column(String(255))
 
     # Shared column mapping (same for all files in the batch)
     id_column = Column(String(100))
@@ -309,6 +315,33 @@ def _ensure_method_column(engine) -> None:
                 logger.info(f"Added 'method' column to '{table}' table (D-04 migration)")
 
 
+def _ensure_selected_resources_column(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for the 'selected_resources' column.
+
+    Adds ``selected_resources TEXT`` to the ``experiments`` and ``batches``
+    tables when absent (issue #55). Safe to run on every startup — the PRAGMA
+    check makes the ALTER a no-op on databases that already have the column.
+
+    Security note: the table names and column literal are module-internal
+    constants — no user-supplied input is interpolated into the SQL statements.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    for table in ('experiments', 'batches'):
+        with engine.connect() as conn:
+            result = conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_cols = {row[1] for row in result}
+            if 'selected_resources' not in existing_cols:
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN selected_resources TEXT")
+                )
+                conn.commit()
+                logger.info(
+                    f"Added 'selected_resources' column to '{table}' table (#55 migration)"
+                )
+
+
 class DatabaseManager:
     """Manager class for database operations."""
     
@@ -349,6 +382,10 @@ class DatabaseManager:
             # databases that lack it (D-04, D-06). No-op on fresh databases where
             # the column is already present from the model definition above.
             _ensure_method_column(self.engine)
+
+            # Idempotent additive migration: add 'selected_resources' column to
+            # pre-existing databases that lack it (#55). No-op on fresh databases.
+            _ensure_selected_resources_column(self.engine)
 
             # Create session factory
             self.SessionLocal = sessionmaker(
@@ -405,6 +442,7 @@ class DatabaseManager:
                 record.id_column = analysis_params.get('id_column')
                 record.fc_column = analysis_params.get('fc_column')
                 record.pval_column = analysis_params.get('pval_column')
+                record.selected_resources = analysis_params.get('selected_resources')
                 record.analysis_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
             
             # Add results summary if provided

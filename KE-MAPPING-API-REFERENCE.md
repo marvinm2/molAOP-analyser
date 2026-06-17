@@ -200,18 +200,38 @@ These are on the main app (not under `/api/v1`), no auth required.
 
 ### GET /exports/gmt/ke-wp
 
-Download KE-WP mappings as a GMT (Gene Matrix Transposed) file.
+Download KE-WP mappings as a GMT (Gene Matrix Transposed) file. The Builder
+resolves each mapped pathway/term to its **member genes**, so the GMT contains
+gene symbols (not pathway IDs) — ready for `fgsea` / `clusterProfiler`.
 
 **Query params:** `?min_confidence=High|Medium|Low` (optional filter)
 
-**Response:** `text/plain` GMT file. Format:
+**Response:** `text/plain` GMT file. One gene set per line, tab-separated:
 ```
-KE_ID\tKE_Title\tWP_ID_1\tWP_ID_2\t...
+<KE_id>_<KE_name>_<pathway_id>\t<pathway_title>\t<gene_1>\t<gene_2>\t...
 ```
+e.g. `KE177_Increase_Mitochondrial_dysfunction_WP5241\tMitochondrial beta-oxidation\tECHS1\tACSL3\t...`.
+A single KE typically spans several lines (one per mapped pathway/term); union
+the gene columns across lines that share the same `KE<id>` token to obtain the
+KE's full gene set.
 
 ### GET /exports/gmt/ke-go
 
-Download KE-GO mappings as GMT. Same params as above.
+Download KE-GO (GO Biological Process) mappings as GMT. Same params and
+gene-level format as `ke-wp` (the descriptor column carries the `GO:nnnnnnn`
+term id in place of the WP id).
+
+### GET /exports/gmt/ke-reactome
+
+Download KE-Reactome mappings as GMT. Same params and gene-level format as
+`ke-wp` (descriptor column carries the `R-HSA-nnnnnn` pathway id).
+
+**Analyser consumption:** the Molecular AOP Analyser builds its KE→gene
+reference sets per resource. WikiPathways keeps its dedicated CSV-backed
+pipeline; **GO BP and Reactome gene sets are sourced from `/exports/gmt/ke-go`
+and `/exports/gmt/ke-reactome`** respectively (issue #55), parsed by
+`services/api_service.py::fetch_gmt_reference_sets`. Users pick which
+resource(s) feed enrichment in the single and batch analysis forms.
 
 ### GET /exports/rdf/ke-wp
 

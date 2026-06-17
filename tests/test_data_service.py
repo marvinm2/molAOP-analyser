@@ -80,6 +80,25 @@ class TestProcessGeneExpression:
         # Only B (1.5) and C (2.0) have |logFC| >= 1.0
         assert stats['significant_genes'] == 2
 
+    def test_pval_threshold_honoured(self):
+        """A custom p-value threshold controls which genes are flagged significant."""
+        df = self._make_df(['A', 'B', 'C'], [2.0, 2.0, 2.0], [0.03, 0.07, 0.2])
+        # Stricter than default 0.05: only A (0.03) qualifies.
+        strict, strict_stats = process_gene_expression(df, logfc_threshold=0.0, pval_threshold=0.05)
+        assert strict_stats['significant_genes'] == 1
+        assert bool(strict[strict['ID'] == 'A']['significant'].iloc[0]) is True
+        assert bool(strict[strict['ID'] == 'B']['significant'].iloc[0]) is False
+        # Looser threshold lets B (0.07) through too.
+        loose, loose_stats = process_gene_expression(df, logfc_threshold=0.0, pval_threshold=0.1)
+        assert loose_stats['significant_genes'] == 2
+
+    def test_pval_threshold_none_uses_default(self):
+        """When pval_threshold is None, the legacy Config.PVAL_CUTOFF (0.05) applies."""
+        df = self._make_df(['A', 'B'], [2.0, 2.0], [0.04, 0.06])
+        result, stats = process_gene_expression(df, logfc_threshold=0.0, pval_threshold=None)
+        assert stats['significant_genes'] == 1
+        assert bool(result[result['ID'] == 'A']['significant'].iloc[0]) is True
+
     def test_duplicate_genes_combined(self):
         """Duplicate gene IDs should be combined via Fisher's method."""
         df = self._make_df(['BRCA1', 'BRCA1', 'TP53'],

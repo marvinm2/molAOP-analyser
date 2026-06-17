@@ -21,7 +21,12 @@ from config import Config, ExperimentMetadata
 from validation import validate_form_data, validate_file_upload, log_validation_error
 from helpers import load_reference_sets
 from cache_manager import cache, cached_data_loader, get_reference_cache
-from services.api_service import fetch_reference_sets_from_api, fetch_ke_wp_records, load_ke_wp_records_csv
+from services.api_service import (
+    fetch_reference_sets_from_api,
+    fetch_ke_wp_records,
+    load_ke_wp_records_csv,
+    fetch_gmt_reference_sets,
+)
 from exceptions import AOPAnalysisError, format_error_response
 from utils import cleanup_file, validate_file_path
 from services.data_service import load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data
@@ -632,6 +637,9 @@ def preview():
         # Phase 14: preserve user's method and pval_threshold across HTMX re-renders
         pval_threshold=pval_threshold,
         method=request.form.get('method', 'ora'),
+        # Issue #55: preserve the gene-set resource selection across HTMX re-renders
+        # (e.g. "Update Plot"). Defaults to WikiPathways before any choice is made.
+        selected_resources=[r for r in request.form.getlist('resources') if r in VALID_RESOURCES] or list(DEFAULT_RESOURCES),
     )
 
     # HTMX swaps in just the partial — no full-page reload, no scroll-to-top.
@@ -682,6 +690,12 @@ def analyze():
             pval_threshold = None
         if pval_threshold is not None and not (0 < pval_threshold <= 1):
             return f"P-value threshold must be between 0 (exclusive) and 1 (inclusive). Got: {pval_threshold}.", 400
+
+        # Issue #55: gene-set resource selection. Unknown values are ignored and
+        # an empty selection falls back to WikiPathways (backward compatible).
+        resources = [r for r in request.form.getlist('resources') if r in VALID_RESOURCES]
+        if not resources:
+            resources = list(DEFAULT_RESOURCES)
 
         method = form_data['method']
         
@@ -734,7 +748,7 @@ def analyze():
         ke_list, edges, ke_type_map, ke_title_map = load_aop_data(aop_id)
         
         # Get cached reference sets and run enrichment analysis
-        current_reference_sets, data_source = load_cached_reference_sets()
+        current_reference_sets, data_source = load_cached_reference_sets(resources)
 
         # Pre-build gene_logfc_map so the enrichment service can derive the
         # observed Direction column ("N↑ / M↓") for each KE alongside the
@@ -922,6 +936,7 @@ def analyze():
         stored_metadata['pval_adj_column'] = pval_adj_col
         stored_metadata['significant_genes'] = len(df_processed[df_processed['significant'] == True])
         stored_metadata['data_source'] = data_source
+        stored_metadata['selected_resources'] = ", ".join(resources)
         stored_metadata['analysis_date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
         # Save experiment metadata and results to database
@@ -935,6 +950,7 @@ def analyze():
                     'id_column': id_col,
                     'fc_column': fc_col,
                     'pval_column': pval_col,
+                    'selected_resources': ", ".join(resources),
                 }
                 
                 results_summary = {
@@ -1121,6 +1137,7 @@ def generate_report():
             network_png=network_png_data,
             software_versions=get_software_versions(),
             method=request.form.get('method') or metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
+            selected_resources=request.form.get('selected_resources') or metadata.get('selected_resources', 'WikiPathways'),  # #55: forward resources to report
         )
         
         # Generate report based on format
@@ -1169,25 +1186,30 @@ def generate_report():
 _reference_cache = get_reference_cache(Config.CACHE_DIR)
 REFERENCE_CACHE_KEY = "reference_sets_v1"
 
+# Selectable gene-set resources (issue #55). WikiPathways keeps its existing
+# CSV-backed pipeline; GO_BP and Reactome are sourced from the Builder GMT
+# exports. Each resource is cached independently so different selections don't
+# collide, then merged (union per KE) for enrichment.
+VALID_RESOURCES = ("WikiPathways", "GO_BP", "Reactome")
+DEFAULT_RESOURCES = ("WikiPathways",)
+_GMT_RESOURCE_CACHE_KEYS = {
+    "GO_BP": "reference_sets_go_v1",
+    "Reactome": "reference_sets_reactome_v1",
+}
 
-def load_cached_reference_sets():
-    """Load AOP reference gene sets with API-first strategy and disk caching.
 
-    Loading order:
-    1. Check diskcache (shared across Gunicorn workers)
-    2. Fetch from Builder API (with retry)
-    3. Fall back to local CSV files
+def _load_wikipathways_reference_sets():
+    """Load WikiPathways KE->gene sets (disk cache -> Builder API -> local CSV).
 
     Returns:
-        tuple: (reference_sets dict, data_source string)
-        data_source is one of: 'api', 'cache', 'csv'
+        tuple: (reference_sets dict, source string) where source is one of
+        'api', 'cache', 'csv'.
     """
-    # Check disk cache first
     cached = _reference_cache.get(REFERENCE_CACHE_KEY)
     if cached is not None:
         reference_sets, original_source = cached
         logger.info(
-            f"Loaded {len(reference_sets)} KE sets from disk cache "
+            f"Loaded {len(reference_sets)} WikiPathways KE sets from disk cache "
             f"(originally from {original_source})"
         )
         return reference_sets, "cache"
@@ -1201,7 +1223,7 @@ def load_cached_reference_sets():
             expire=Config.CACHE_TTL,
         )
         logger.info(
-            f"Loaded {len(reference_sets)} KE sets from Builder API, "
+            f"Loaded {len(reference_sets)} WikiPathways KE sets from Builder API, "
             f"cached for {Config.CACHE_TTL}s"
         )
         return reference_sets, "api"
@@ -1222,10 +1244,99 @@ def load_cached_reference_sets():
         expire=Config.CACHE_TTL,
     )
     logger.info(
-        f"Loaded {len(reference_sets)} KE sets from local CSV files, "
+        f"Loaded {len(reference_sets)} WikiPathways KE sets from local CSV files, "
         f"cached for {Config.CACHE_TTL}s"
     )
     return reference_sets, "csv"
+
+
+def _load_gmt_resource_reference_sets(resource):
+    """Load a GMT-backed resource (GO_BP/Reactome): disk cache -> Builder GMT export.
+
+    Unlike WikiPathways there is no local CSV fallback for these resources, so a
+    Builder outage makes the resource temporarily unavailable; the caller skips
+    it rather than failing the whole analysis.
+
+    Returns:
+        tuple: (reference_sets dict, source string) where source is 'cache' or 'api'.
+    """
+    cache_key = _GMT_RESOURCE_CACHE_KEYS[resource]
+    cached = _reference_cache.get(cache_key)
+    if cached is not None:
+        reference_sets, _ = cached
+        logger.info(
+            f"Loaded {len(reference_sets)} {resource} KE sets from disk cache"
+        )
+        return reference_sets, "cache"
+
+    reference_sets = fetch_gmt_reference_sets(Config, resource)
+    _reference_cache.set(
+        cache_key,
+        (reference_sets, "api"),
+        expire=Config.CACHE_TTL,
+    )
+    logger.info(
+        f"Loaded {len(reference_sets)} {resource} KE sets from Builder GMT export, "
+        f"cached for {Config.CACHE_TTL}s"
+    )
+    return reference_sets, "api"
+
+
+def load_cached_reference_sets(resources=DEFAULT_RESOURCES):
+    """Load and merge KE->gene reference sets for the selected resources.
+
+    Each resource is loaded (and disk-cached) independently, then the per-KE
+    gene sets are unioned across the selection. WikiPathways always resolves
+    (Builder API with a local CSV fallback); GO_BP/Reactome are skipped with a
+    warning if the Builder GMT export is unavailable, so a partial outage
+    degrades gracefully rather than failing the analysis.
+
+    Args:
+        resources: iterable of resource keys from VALID_RESOURCES. Unknown
+            values are ignored; an empty/invalid selection falls back to
+            WikiPathways.
+
+    Returns:
+        tuple: (merged reference_sets dict, data_source string). For backward
+        compatibility data_source reflects the WikiPathways component's source
+        ('api'/'cache'/'csv') when WikiPathways is selected — this drives the
+        WikiPathways pathway picker. When WikiPathways is not selected it is
+        'gmt'. A fully empty result yields 'none'.
+    """
+    selected = [r for r in resources if r in VALID_RESOURCES]
+    if not selected:
+        selected = list(DEFAULT_RESOURCES)
+
+    merged = {}
+    wp_source = None
+    loaded = []
+    for resource in selected:
+        try:
+            if resource == "WikiPathways":
+                sets, source = _load_wikipathways_reference_sets()
+                wp_source = source
+            else:
+                sets, source = _load_gmt_resource_reference_sets(resource)
+        except Exception as exc:
+            logger.warning("Resource %s unavailable (%s); skipping", resource, exc)
+            continue
+        # Build fresh sets so cached resource sets are never mutated.
+        for ke_id, genes in sets.items():
+            merged.setdefault(ke_id, set()).update(genes)
+        loaded.append(f"{resource}:{source}")
+
+    if not loaded:
+        data_source = "none"
+    elif wp_source is not None:
+        data_source = wp_source
+    else:
+        data_source = "gmt"
+
+    logger.info(
+        "Merged %d KE sets across resources [%s] (data_source=%s)",
+        len(merged), ", ".join(loaded) or "-", data_source,
+    )
+    return merged, data_source
 
 
 # Load initial reference sets
@@ -1395,6 +1506,23 @@ def batch_analyze():
     except ValueError:
         logfc_threshold = 0.0
 
+    # Parse p-value threshold (optional; blank falls back to the legacy default).
+    pval_raw = request.form.get('pval_threshold', '').strip()
+    if pval_raw:
+        try:
+            pval_threshold = float(pval_raw)
+        except ValueError:
+            return jsonify({'error': f'P-value threshold must be a number. Got: {pval_raw}.'}), 400
+        if not (0 < pval_threshold <= 1):
+            return jsonify({'error': f'P-value threshold must be between 0 (exclusive) and 1 (inclusive). Got: {pval_threshold}.'}), 400
+    else:
+        pval_threshold = Config.PVAL_CUTOFF
+
+    # Issue #55: gene-set resource selection (unknown values ignored; empty -> WikiPathways).
+    resources = [r for r in request.form.getlist('resources') if r in VALID_RESOURCES]
+    if not resources:
+        resources = list(DEFAULT_RESOURCES)
+
     filenames = request.form.getlist('filenames[]')
     condition_labels = request.form.getlist('condition_labels[]')
     doses = request.form.getlist('doses[]')
@@ -1471,7 +1599,8 @@ def batch_analyze():
             aop_id=aop_id,
             aop_label=aop_label,
             logfc_threshold=logfc_threshold,
-            pval_cutoff=Config.PVAL_CUTOFF,
+            pval_cutoff=pval_threshold,
+            selected_resources=", ".join(resources),
             id_column=id_col,
             fc_column=fc_col,
             pval_column=pval_col,
@@ -1512,7 +1641,7 @@ def batch_analyze():
         session_db.close()
 
     # Launch analysis in a background thread (returns immediately to client)
-    current_reference_sets, _ = load_cached_reference_sets()
+    current_reference_sets, _ = load_cached_reference_sets(resources)
     db_url = db_manager.db_url
     thread = threading.Thread(
         target=run_batch,

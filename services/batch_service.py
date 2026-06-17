@@ -296,7 +296,9 @@ def _run_condition(
     )
 
     # Process gene expression (applies significance flags)
-    df_processed, _ = process_gene_expression(df_raw, batch.logfc_threshold or 0.0)
+    df_processed, _ = process_gene_expression(
+        df_raw, batch.logfc_threshold or 0.0, pval_threshold=batch.pval_cutoff
+    )
 
     # Apply harmonisation: restrict to genes present in all batch files
     df_filtered = df_processed[df_processed['ID'].isin(harmonised_genes)].copy()

@@ -180,6 +180,41 @@
             </div>
         </div>
 
+        <h3>P-value Threshold</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Genes with a raw p-value below this threshold are flagged as significant for
+            Fisher's exact test. Applied equally to all conditions. Default 0.05.
+        </p>
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
+            <label for="pval-threshold" style="font-weight: 600; color: #29235C; font-size: 14px;">
+                p-value threshold:
+            </label>
+            <input type="number" id="pval-threshold" name="pval_threshold"
+                   value="0.05" step="0.001" min="0.001" max="1"
+                   title="Genes with raw p-value below this threshold are flagged as significant for Fisher's exact. Default 0.05."
+                   style="width: 80px; display: inline-block; margin: 0; padding: 6px 8px;">
+        </div>
+
+        <h3>Gene Set Resources</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Curated KE gene-set resources to enrich against. Genes are pooled across the
+            selected resources. Applied equally to all conditions.
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px;">
+            <label style="font-size: 14px; color: #29235C;">
+                <input type="checkbox" class="batch-resource" value="WikiPathways" checked>
+                WikiPathways
+            </label>
+            <label style="font-size: 14px; color: #29235C;">
+                <input type="checkbox" class="batch-resource" value="GO_BP">
+                Gene Ontology (Biological Process)
+            </label>
+            <label style="font-size: 14px; color: #29235C;">
+                <input type="checkbox" class="batch-resource" value="Reactome">
+                Reactome
+            </label>
+        </div>
+
         <div class="wizard-nav">
             <button id="btn-back-tag" class="btn btn--secondary">Back</button>
             <button id="btn-analyze" class="btn btn--primary">Start Batch Analysis</button>

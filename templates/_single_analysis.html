@@ -424,6 +424,31 @@
                 <ul id="aop_suggestions" class="typeahead-dropdown" hidden></ul>
             </div>
         </div>
+
+        <fieldset style="margin: 0 auto 20px; max-width: 600px; border: 1px solid #ddd; padding: 12px;">
+            <legend style="color: #29235C; font-weight: 700; padding: 0 8px;">Gene set resources</legend>
+            <p style="font-size: 13px; color: #666; margin: 0 0 10px;">
+                Choose which curated KE gene-set resources to enrich against. Genes are pooled
+                across the selected resources.
+            </p>
+            {% set sel_resources = selected_resources or ['WikiPathways'] %}
+            <label style="display: block; margin-bottom: 6px;">
+                <input type="checkbox" name="resources" value="WikiPathways"
+                       {% if 'WikiPathways' in sel_resources %}checked{% endif %}>
+                WikiPathways
+            </label>
+            <label style="display: block; margin-bottom: 6px;">
+                <input type="checkbox" name="resources" value="GO_BP"
+                       {% if 'GO_BP' in sel_resources %}checked{% endif %}>
+                Gene Ontology (Biological Process)
+            </label>
+            <label style="display: block;">
+                <input type="checkbox" name="resources" value="Reactome"
+                       {% if 'Reactome' in sel_resources %}checked{% endif %}>
+                Reactome
+            </label>
+        </fieldset>
+
         <button type="submit" title="Run enrichment analysis based on selected threshold and genes.">
             Run Enrichment Analysis
         </button>
