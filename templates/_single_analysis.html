@@ -341,8 +341,8 @@
             Fisher's exact test.
         </p>
 
-        <div class="settings-subgroup">
-            <span class="settings-subgroup__label">Statistical method</span>
+        <div class="settings-subgroup" role="group" aria-labelledby="method-group-label">
+            <span class="settings-subgroup__label" id="method-group-label">Statistical method</span>
             <div class="settings-options">
                 <label>
                     <input type="radio" name="method" value="ora" {% if (method or 'ora') == 'ora' %}checked{% endif %}>
@@ -438,8 +438,8 @@
             </div>
         </div>
 
-        <div class="settings-subgroup">
-            <span class="settings-subgroup__label">Gene set resources</span>
+        <div class="settings-subgroup" role="group" aria-labelledby="resources-group-label">
+            <span class="settings-subgroup__label" id="resources-group-label">Gene set resources</span>
             <p class="settings-subgroup__hint" style="margin: 0 0 8px;">
                 Genes are pooled across the selected resources.
             </p>
