@@ -311,7 +311,8 @@
 
     <div id="volcano" style="width:100%; height:500px;"></div>
 
-    <form action="{{ url_for('preview') }}" method="post" class="volcano-form" id="volcanoForm"
+    <div class="analysis-settings">
+    <form action="{{ url_for('preview') }}" method="post" class="settings-group" id="volcanoForm"
           hx-post="{{ url_for('preview') }}"
           hx-target="#single-analysis-panel"
           hx-swap="outerHTML">
@@ -334,56 +335,63 @@
         <input type="hidden" name="dosing" class="metadata-field">
         <input type="hidden" name="description" class="metadata-field">
 
-        <fieldset style="margin-bottom: 24px; border: 1px solid #ddd; padding: 12px;">
-            <legend style="color: #29235C; font-weight: 700; padding: 0 8px 8px;">Statistical method</legend>
-            <label style="display: block; margin-bottom: 8px;">
-                <input type="radio" name="method" value="ora" {% if (method or 'ora') == 'ora' %}checked{% endif %}>
-                Fisher's exact (over-representation)
-            </label>
-            <label style="display: block;">
-                <input type="radio" name="method" value="gsea" {% if method == 'gsea' %}checked{% endif %}>
-                GSEA (rank-based)
-            </label>
-            <p style="font-size: 13px; color: #666; margin-top: 8px; margin-bottom: 0;">Fisher's exact uses your significance thresholds below. GSEA ignores them and ranks every gene.</p>
-        </fieldset>
+        <h3 class="settings-group__title">Significance settings</h3>
+        <p class="settings-group__hint">
+            These drive the volcano plot above and which genes count as significant for
+            Fisher's exact test.
+        </p>
+
+        <div class="settings-subgroup" role="group" aria-labelledby="method-group-label">
+            <span class="settings-subgroup__label" id="method-group-label">Statistical method</span>
+            <div class="settings-options">
+                <label>
+                    <input type="radio" name="method" value="ora" {% if (method or 'ora') == 'ora' %}checked{% endif %}>
+                    Fisher's exact (over-representation)
+                </label>
+                <label>
+                    <input type="radio" name="method" value="gsea" {% if method == 'gsea' %}checked{% endif %}>
+                    GSEA (rank-based)
+                </label>
+            </div>
+            <p class="settings-subgroup__hint">Fisher's exact uses the thresholds below. GSEA ignores them and ranks every gene.</p>
+        </div>
 
         <div id="threshold-inputs">
-        <label for="logfc_threshold" title="Threshold for log2 fold change to define significance.">
-            Log2FC threshold for enrichment:
-        </label>
-
-        <div class="threshold-controls" data-tour-target="thresholds">
-            <div style="margin-bottom: 10px;">
-                <strong style="color: #29235C; font-size: 14px;">Quick Options:</strong>
+            <div class="settings-subgroup" data-tour-target="thresholds">
+                <label class="settings-subgroup__label" for="logfc_threshold"
+                       title="Threshold for log2 fold change to define significance.">
+                    Log2FC threshold
+                </label>
+                <div class="threshold-quick-options">
+                    <button type="button" class="btn--option" onclick="setThreshold(0)">0 (All genes)</button>
+                    <button type="button" class="btn--option" onclick="setThreshold(0.5)">0.5</button>
+                    <button type="button" class="btn--option" onclick="setThreshold(1.0)">1.0</button>
+                    <button type="button" class="btn--option" onclick="setThreshold(1.5)">1.5</button>
+                    <button type="button" class="btn--option" onclick="setThreshold(2.0)">2.0</button>
+                    <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(10)">Top 10%</button>
+                    <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(20)">Top 20%</button>
+                </div>
+                <div class="threshold-custom">
+                    <span class="threshold-custom-label">Custom:</span>
+                    <input type="number" step="0.01" name="logfc_threshold" id="logfc_threshold"
+                           value="{{ logfc_threshold or '0' }}">
+                    <button type="submit" class="btn--secondary"
+                            title="Click to update the volcano plot using the selected threshold.">
+                        Update Plot
+                    </button>
+                </div>
             </div>
-            <div class="threshold-quick-options">
-                <button type="button" class="btn--option" onclick="setThreshold(0)">0 (All genes)</button>
-                <button type="button" class="btn--option" onclick="setThreshold(0.5)">0.5</button>
-                <button type="button" class="btn--option" onclick="setThreshold(1.0)">1.0</button>
-                <button type="button" class="btn--option" onclick="setThreshold(1.5)">1.5</button>
-                <button type="button" class="btn--option" onclick="setThreshold(2.0)">2.0</button>
-                <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(10)">Top 10%</button>
-                <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(20)">Top 20%</button>
+
+            <div class="settings-subgroup">
+                <label class="settings-subgroup__label" for="pval_threshold">P-value threshold</label>
+                <input type="number" step="0.001" min="0.001" max="1" name="pval_threshold" id="pval_threshold"
+                       value="{{ pval_threshold or '0.05' }}"
+                       title="Genes with raw p-value below this threshold are flagged as significant for Fisher's exact. Default 0.05.">
             </div>
-        </div>
-
-        <div class="threshold-custom">
-            <span class="threshold-custom-label">Custom:</span>
-            <input type="number" step="0.01" name="logfc_threshold" id="logfc_threshold"
-                   value="{{ logfc_threshold or '0' }}">
-            <button type="submit" title="Click to update the volcano plot using the selected threshold.">
-                Update Plot
-            </button>
-        </div>
-
-        <label for="pval_threshold" style="display: block; margin-top: 16px;">P-value threshold:</label>
-        <input type="number" step="0.001" min="0.001" max="1" name="pval_threshold" id="pval_threshold"
-               value="{{ pval_threshold or '0.05' }}"
-               title="Genes with raw p-value below this threshold are flagged as significant for Fisher's exact. Default 0.05.">
         </div>
     </form>
 
-    <form id="enrichmentForm" action="{{ url_for('analyze') }}" method="post" class="volcano-form">
+    <form id="enrichmentForm" action="{{ url_for('analyze') }}" method="post" class="settings-group">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
         <input type="hidden" name="filename" value="{{ filename }}">
         <input type="hidden" name="id_column" value="{{ selected_columns.id }}">
@@ -401,10 +409,15 @@
         <input type="hidden" name="dosing" class="metadata-field">
         <input type="hidden" name="description" class="metadata-field">
 
-        <div style="margin-bottom: 20px; text-align: center;">
-            <label for="aop_search"><strong>Select a molecular AOP for enrichment analysis:</strong></label>
-            <p style="max-width: 600px; margin: 10px auto;">
-                This step links the most affected genes in your dataset to key events in a specific Adverse Outcome Pathway.
+        <h3 class="settings-group__title">Enrichment target</h3>
+        <p class="settings-group__hint">
+            Choose the Adverse Outcome Pathway and gene-set resources to test your significant
+            genes against.
+        </p>
+
+        <div class="settings-subgroup">
+            <label class="settings-subgroup__label" for="aop_search">Molecular AOP</label>
+            <p class="settings-subgroup__hint" style="margin: 0 0 8px;">
                 Start typing an AOP name or ID, or click the box to see AOPs with available KE-gene mappings.
             </p>
             {% if recommended_aops %}
@@ -415,7 +428,7 @@
             </div>
             <input type="hidden" name="aop_filter_mode" id="aop_filter_mode" value="recommended">
             {% endif %}
-            <div class="typeahead-wrapper" style="position: relative; max-width: 600px; margin: 0 auto;"
+            <div class="typeahead-wrapper" style="position: relative;"
                  data-tour-target="aop-picker">
                 <input type="text" id="aop_search" placeholder="Search AOPs by name or ID..."
                        autocomplete="off" class="wide-dropdown"
@@ -425,34 +438,39 @@
             </div>
         </div>
 
-        <fieldset style="margin: 0 auto 20px; max-width: 600px; border: 1px solid #ddd; padding: 12px;">
-            <legend style="color: #29235C; font-weight: 700; padding: 0 8px;">Gene set resources</legend>
-            <p style="font-size: 13px; color: #666; margin: 0 0 10px;">
-                Choose which curated KE gene-set resources to enrich against. Genes are pooled
-                across the selected resources.
+        <div class="settings-subgroup" role="group" aria-labelledby="resources-group-label">
+            <span class="settings-subgroup__label" id="resources-group-label">Gene set resources</span>
+            <p class="settings-subgroup__hint" style="margin: 0 0 8px;">
+                Genes are pooled across the selected resources.
             </p>
             {% set sel_resources = selected_resources or ['WikiPathways'] %}
-            <label style="display: block; margin-bottom: 6px;">
-                <input type="checkbox" name="resources" value="WikiPathways"
-                       {% if 'WikiPathways' in sel_resources %}checked{% endif %}>
-                WikiPathways
-            </label>
-            <label style="display: block; margin-bottom: 6px;">
-                <input type="checkbox" name="resources" value="GO_BP"
-                       {% if 'GO_BP' in sel_resources %}checked{% endif %}>
-                Gene Ontology (Biological Process)
-            </label>
-            <label style="display: block;">
-                <input type="checkbox" name="resources" value="Reactome"
-                       {% if 'Reactome' in sel_resources %}checked{% endif %}>
-                Reactome
-            </label>
-        </fieldset>
+            <div class="settings-options">
+                <label>
+                    <input type="checkbox" name="resources" value="WikiPathways"
+                           {% if 'WikiPathways' in sel_resources %}checked{% endif %}>
+                    WikiPathways
+                </label>
+                <label>
+                    <input type="checkbox" name="resources" value="GO_BP"
+                           {% if 'GO_BP' in sel_resources %}checked{% endif %}>
+                    Gene Ontology (Biological Process)
+                </label>
+                <label>
+                    <input type="checkbox" name="resources" value="Reactome"
+                           {% if 'Reactome' in sel_resources %}checked{% endif %}>
+                    Reactome
+                </label>
+            </div>
+        </div>
 
-        <button type="submit" title="Run enrichment analysis based on selected threshold and genes.">
-            Run Enrichment Analysis
-        </button>
+        <div class="settings-actions">
+            <button type="submit" class="btn--primary"
+                    title="Run enrichment analysis based on selected threshold and genes.">
+                Run Enrichment Analysis
+            </button>
+        </div>
     </form>
+    </div>{# /.analysis-settings #}
 
     <!-- Spinner shown during enrichment -->
     <div id="loadingSpinner" style="display: none; text-align: center; margin-top: 20px;">
