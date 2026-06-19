@@ -1933,6 +1933,25 @@ select option[data-suggested="true"] {
     gap: 16px;
 }
 
+/* Batch comparison call-to-action below the PXR demo grid */
+.demo-batch-cta {
+    margin-top: 16px;
+    padding: 16px 20px;
+    border: 1px solid #e0e0e0;
+    border-left: 4px solid #E6007E;
+    border-radius: 6px;
+    background: #fbfbfd;
+}
+.demo-batch-cta h3 {
+    margin: 0 0 6px;
+    color: #29235C;
+}
+.demo-batch-cta p {
+    margin: 0 0 12px;
+    color: #555;
+    font-size: 14px;
+}
+
 @media (min-width: 1024px) {
     .demos-grid--cisplatin {
         grid-template-columns: repeat(3, 1fr);

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Running Batch &mdash; molAOP Analyser{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h1>Running batch analysis&hellip;</h1>
+  <p class="batch-progress__intro">
+    Harmonising gene backgrounds and running enrichment for each condition. This
+    page updates automatically and will open the results when finished.
+  </p>
+
+  <!-- Polling container — fetches the progress partial, which self-polls until
+       complete and then issues an HX-Redirect to the results page. -->
+  <div id="batch-progress-container"
+       hx-get="/batch/{{ batch.uuid }}/status{% if next_target == 'compare' %}?next=compare{% endif %}"
+       hx-trigger="load, every 1s"
+       hx-target="#batch-progress-container"
+       hx-swap="outerHTML">
+    <div class="batch-progress">
+      <p class="batch-progress__status">Status: <strong>Starting&hellip;</strong></p>
+    </div>
+  </div>
+</div>
+{% endblock %}

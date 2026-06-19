@@ -1,7 +1,7 @@
 <!-- htmx partial — replaces #batch-progress-container on each poll -->
 <div id="batch-progress-container"
      {% if batch.status in ['running', 'pending'] %}
-     hx-get="/batch/{{ batch.uuid }}/status"
+     hx-get="/batch/{{ batch.uuid }}/status{% if next_target == 'compare' %}?next=compare{% endif %}"
      hx-trigger="every 1s"
      hx-target="#batch-progress-container"
      hx-swap="outerHTML"

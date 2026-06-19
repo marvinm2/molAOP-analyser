@@ -28,6 +28,16 @@
             </form>
             {% endfor %}
         </div>
+
+        <!-- Batch comparison demo — runs both PXR datasets together in one click -->
+        <form class="demo-batch-cta" action="{{ url_for('batch_demo') }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}"/>
+            <h3>Compare both PXR datasets</h3>
+            <p>Run both agonists together as a batch against AOP:DEMO with a harmonised
+               gene background, then open the side-by-side comparison (heatmap, table,
+               network, and shared driver genes). Takes a few seconds.</p>
+            <button type="submit" class="btn btn--accent">Compare both PXR datasets (batch)</button>
+        </form>
     </section>
 
     {# Cisplatin demos temporarily hidden — only PXR Agonist datasets surfaced.
