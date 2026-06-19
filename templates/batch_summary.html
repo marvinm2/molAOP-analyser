@@ -50,9 +50,11 @@
     {% endfor %}
   </div>
 
-  <!-- Compare All button — only shown for completed batches (route guards non-complete status) -->
+  <!-- Compare All + integrated report — only shown for completed batches (route guards non-complete status) -->
   <div class="batch-summary-actions" style="margin-top:24px;text-align:center;">
     <a href="/batch/{{ batch.uuid }}/compare" class="btn btn--primary">Compare All Conditions</a>
+    <a href="/batch/{{ batch.uuid }}/report?format=pdf" class="btn btn--outline">Download report (PDF)</a>
+    <a href="/batch/{{ batch.uuid }}/report?format=html" class="btn btn--outline" target="_blank" rel="noopener">Report (HTML)</a>
   </div>
 </div>
 {% endblock %}

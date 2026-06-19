@@ -53,6 +53,54 @@
       color: #29235C;
       margin-bottom: 6px;
     }
+
+    /* Per-condition summary strip (Feature D) */
+    .compare-summary-strip {
+      display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0;
+    }
+    .compare-summary-card {
+      border: 1px solid #e0e0e0; border-top: 3px solid #ccc; border-radius: 4px;
+      padding: 8px 12px; min-width: 150px; background: #fbfbfd;
+    }
+    .compare-summary-card__label { font-weight: 600; color: #29235C; font-size: 13px; margin-bottom: 4px; }
+    .compare-summary-card__stat { font-size: 12px; color: #555; line-height: 1.5; }
+    .compare-summary-card__stat strong { color: #29235C; }
+    .compare-summary-card__meta { font-size: 11px; color: #888; margin-top: 4px; }
+
+    /* Download / export actions bar (Features A, B) */
+    .compare-actions {
+      display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+      padding: 10px 0; border-top: 1px solid #eee; border-bottom: 1px solid #eee; margin-bottom: 12px;
+    }
+    .compare-actions__group { display: flex; align-items: center; gap: 6px; }
+    .compare-actions__group label { font-weight: 600; font-size: 13px; color: #29235C; }
+    .compare-actions select { padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; }
+
+    /* Genes tab (Feature C) */
+    .compare-genes-controls {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0;
+      border-bottom: 1px solid #e0e0e0; margin-bottom: 8px;
+    }
+    .compare-genes-controls label { font-weight: 600; font-size: 14px; }
+    .compare-genes-controls select { padding: 4px 8px; border-radius: 4px; border: 1px solid #ccc; }
+    .compare-genes-controls__downloads { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    .compare-genes-note { font-size: 12px; color: #666; margin: 6px 0 12px; }
+    .compare-genes-badge {
+      display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+      background: #eee; color: #555;
+    }
+    .compare-genes-badge--shared { background: #E6007E; color: #fff; }
+    .genes-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .genes-table th, .genes-table td { border: 1px solid #ddd; padding: 6px 10px; text-align: center; }
+    .genes-table th { background-color: #29235C; color: #fff; white-space: nowrap; }
+    .genes-table th:first-child, .genes-table td:first-child { text-align: left; white-space: nowrap; }
+    .genes-table tr:nth-child(even) { background-color: #f9f9f9; }
+
+    /* Table trend column (Feature D) */
+    .compare-table__trend { font-size: 15px; }
+
+    /* Condition sub-header (sig KE counts) in table (Feature D) */
+    .compare-table__subhead th { background-color: #45526e; color: #d8def0; font-weight: 400; font-size: 11px; }
   </style>
 {% endblock %}
 
@@ -93,11 +141,37 @@
 
   </div><!-- /.compare-controls -->
 
+  <!-- Per-condition summary strip (Feature D) — populated by JS from comparison metadata -->
+  <div class="compare-summary-strip" id="condition-summary-strip">
+    <!-- JS inserts one card per condition here -->
+  </div>
+
+  <!-- Download / export actions (Features A, B) -->
+  <div class="compare-actions">
+    <div class="compare-actions__group">
+      <label for="matrix-export-select">Export matrix:</label>
+      <select id="matrix-export-select">
+        <option value="fdr">FDR</option>
+        <option value="neglog10">-log10(FDR)</option>
+      </select>
+      <a id="matrix-export-csv" class="btn btn--small btn--outline"
+         href="/batch/{{ batch.uuid }}/compare/export?fmt=csv&matrix=fdr">CSV</a>
+      <a id="matrix-export-xlsx" class="btn btn--small btn--outline"
+         href="/batch/{{ batch.uuid }}/compare/export?fmt=xlsx&matrix=fdr">Excel</a>
+    </div>
+    <div class="compare-actions__group">
+      <label>Batch report:</label>
+      <a class="btn btn--small btn--outline" href="/batch/{{ batch.uuid }}/report?format=html" target="_blank" rel="noopener">HTML</a>
+      <a class="btn btn--small btn--outline" href="/batch/{{ batch.uuid }}/report?format=pdf">PDF</a>
+    </div>
+  </div>
+
   <!-- Tab bar -->
   <div class="compare-tabs">
     <button class="compare-tab compare-tab--active" data-target="tab-heatmap">Heatmap</button>
     <button class="compare-tab" data-target="tab-table">Table</button>
     <button class="compare-tab" data-target="tab-network">Network</button>
+    <button class="compare-tab" data-target="tab-genes">Genes</button>
   </div>
 
   <!-- Tab panels -->
@@ -131,6 +205,28 @@
       <div id="cy-compare" style="width:100%;height:600px;border:1px solid #ccc;background:#fafafa;"></div>
     </div>
 
+    <!-- Genes panel (Feature C) — cross-condition driver-gene tracking -->
+    <div id="tab-genes" class="compare-tab-panel" style="display:none">
+      <div class="compare-genes-controls">
+        <label for="genes-ke-select">Key Event:</label>
+        <select id="genes-ke-select">
+          <!-- Populated from comparisonData.ke_labels by JS -->
+        </select>
+        <span class="compare-genes-controls__downloads">
+          <label>Download driver genes:</label>
+          <a class="btn btn--small btn--outline" href="/batch/{{ batch.uuid }}/genes/export?fmt=csv&view=long">CSV (long)</a>
+          <a class="btn btn--small btn--outline" href="/batch/{{ batch.uuid }}/genes/export?fmt=csv&view=summary">CSV (summary)</a>
+          <a class="btn btn--small btn--outline" href="/batch/{{ batch.uuid }}/genes/export?fmt=xlsx">Excel</a>
+        </span>
+      </div>
+      <p class="compare-genes-note">
+        Driver = gene present in the Key Event's gene set <em>and</em> significant in that
+        condition. <span class="compare-genes-badge compare-genes-badge--shared">shared</span>
+        = driver in &ge;2 conditions; <span class="compare-genes-badge">specific</span> = a single condition.
+      </p>
+      <div id="genes-table-wrap"></div>
+    </div>
+
     <!-- KE detail drawer (outside tab panels, fixed position) -->
     <div id="compare-ke-drawer" class="ke-drawer" role="complementary" aria-label="Key Event Details">
       <div class="ke-drawer__header">
@@ -158,6 +254,7 @@
   // Data
   // ---------------------------------------------------------------------------
   const comparisonData = {{ comparison_data_json | safe }};
+  const batchUuid = {{ batch.uuid | tojson }};
 
   // ---------------------------------------------------------------------------
   // Global state
@@ -204,6 +301,122 @@
       legend.appendChild(item);
     });
   }
+
+  // ---------------------------------------------------------------------------
+  // Per-condition summary strip (Feature D)
+  // ---------------------------------------------------------------------------
+  function renderSummaryStrip() {
+    if (!hasData()) return;
+    var strip = document.getElementById('condition-summary-strip');
+    if (!strip) return;
+    var labels = comparisonData.condition_labels;
+    var colors = comparisonData.condition_colors || [];
+    var geneCounts = comparisonData.condition_gene_counts || [];
+    var sigGeneCounts = comparisonData.condition_sig_gene_counts || [];
+    var sigKeCounts = comparisonData.condition_sig_ke_counts || [];
+    var doses = comparisonData.condition_doses || [];
+    var timepoints = comparisonData.condition_timepoints || [];
+    strip.innerHTML = '';
+
+    labels.forEach(function (label, i) {
+      var card = document.createElement('div');
+      card.className = 'compare-summary-card';
+      card.style.borderTopColor = colors[i] || '#ccc';
+
+      var titleEl = document.createElement('div');
+      titleEl.className = 'compare-summary-card__label';
+      titleEl.textContent = label;
+      card.appendChild(titleEl);
+
+      var statEl = document.createElement('div');
+      statEl.className = 'compare-summary-card__stat';
+      var genes = (geneCounts[i] == null) ? '—' : geneCounts[i];
+      var sigGenes = (sigGeneCounts[i] == null) ? '—' : sigGeneCounts[i];
+      var sigKes = (sigKeCounts[i] == null) ? '—' : sigKeCounts[i];
+      statEl.innerHTML =
+        '<strong>' + sigGenes + '</strong> / ' + genes + ' sig genes<br>' +
+        '<strong>' + sigKes + '</strong> sig KEs';
+      card.appendChild(statEl);
+
+      var metaParts = [];
+      if (doses[i]) metaParts.push('Dose: ' + doses[i]);
+      if (timepoints[i]) metaParts.push('Time: ' + timepoints[i]);
+      if (metaParts.length) {
+        var metaEl = document.createElement('div');
+        metaEl.className = 'compare-summary-card__meta';
+        metaEl.textContent = metaParts.join(' · ');
+        card.appendChild(metaEl);
+      }
+      strip.appendChild(card);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Matrix export links (Feature A) — keep href in sync with the format select
+  // ---------------------------------------------------------------------------
+  function wireMatrixExport() {
+    var sel = document.getElementById('matrix-export-select');
+    var csvLink = document.getElementById('matrix-export-csv');
+    var xlsxLink = document.getElementById('matrix-export-xlsx');
+    if (!sel || !csvLink || !xlsxLink) return;
+    var base = csvLink.getAttribute('href').split('?')[0];
+    var xbase = xlsxLink.getAttribute('href').split('?')[0];
+    function refresh() {
+      var m = sel.value;
+      csvLink.setAttribute('href', base + '?fmt=csv&matrix=' + m);
+      xlsxLink.setAttribute('href', xbase + '?fmt=xlsx&matrix=' + m);
+    }
+    sel.addEventListener('change', refresh);
+    refresh();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Trend orderability (Feature D) — only show trend arrows when conditions
+  // form a meaningful numeric sequence (by dose or timepoint, in upload order).
+  // ---------------------------------------------------------------------------
+  function parseLeadingNumbers(arr) {
+    if (!arr || !arr.length) return null;
+    var nums = [];
+    for (var i = 0; i < arr.length; i++) {
+      var m = String(arr[i] == null ? '' : arr[i]).match(/-?\d+(\.\d+)?/);
+      if (!m) return null;
+      nums.push(parseFloat(m[0]));
+    }
+    return nums;
+  }
+
+  function isStrictlyMonotonic(nums) {
+    if (!nums || nums.length < 2) return false;
+    var inc = true, dec = true;
+    for (var i = 1; i < nums.length; i++) {
+      if (!(nums[i] > nums[i - 1])) inc = false;
+      if (!(nums[i] < nums[i - 1])) dec = false;
+    }
+    return inc || dec;
+  }
+
+  function conditionsAreOrderable() {
+    var byDose = parseLeadingNumbers(comparisonData.condition_doses);
+    if (isStrictlyMonotonic(byDose)) return true;
+    var byTime = parseLeadingNumbers(comparisonData.condition_timepoints);
+    if (isStrictlyMonotonic(byTime)) return true;
+    return false;
+  }
+
+  /** Return a trend arrow for a KE row across the ordered conditions, or '' if not orderable. */
+  function trendArrow(rowIdx) {
+    if (!_trendEnabled) return '';
+    var row = comparisonData.neg_log10_matrix[rowIdx] || [];
+    var vals = row.map(function (v) { return v === null || v === undefined ? 0 : v; });
+    if (vals.length < 2) return '';
+    var delta = vals[vals.length - 1] - vals[0];
+    var eps = 0.3;  // ~2x FDR change on the -log10 scale
+    if (delta > eps) return '↗';
+    if (delta < -eps) return '↘';
+    return '↔';
+  }
+
+  var _trendEnabled = false;
 
   // ---------------------------------------------------------------------------
   // Reference condition selector
@@ -296,6 +509,11 @@
       // Lazy-init network on first switch to network tab (avoids dagre on 0x0 container).
       if (targetId === 'tab-network' && !cyInitialised) {
         initComparisonNetwork();
+      }
+
+      // Lazy-init genes tab on first switch.
+      if (targetId === 'tab-genes') {
+        initGenesTab();
       }
     });
   });
@@ -476,13 +694,22 @@
     // Build header row.
     // data-col carries the rendered column index (1-based, matching cells[] position in the row)
     // so that sortTableByColumn can access cells[colIdx] without knowing about hidden columns.
+    var sigKeCounts = comparisonData.condition_sig_ke_counts || [];
     var headerCells = '<th>Key Event</th>';
+    var subHeaderCells = '<th></th>';  // sig-KE count sub-header (Feature D)
     var renderedColIdx = 0; // tracks position in the rendered table (not original condition index)
     comparisonData.condition_labels.forEach(function (label, i) {
       if (!includeCol[i]) return;
       renderedColIdx += 1;
       headerCells += '<th class="compare-table__cond-header" data-col="' + renderedColIdx + '">' + escapeHtml(label) + '</th>';
+      var skc = (sigKeCounts[i] == null) ? '' : (sigKeCounts[i] + ' sig KEs');
+      subHeaderCells += '<th>' + escapeHtml(skc) + '</th>';
     });
+    // Trend column (Feature D) — only when conditions form a numeric sequence.
+    if (_trendEnabled) {
+      headerCells += '<th title="Trend of -log10(FDR) across conditions in order">Trend</th>';
+      subHeaderCells += '<th></th>';
+    }
 
     // Build body rows.
     var bodyRows = '';
@@ -529,11 +756,16 @@
 
         rowCells += '<td data-sort="' + sortVal + '" ' + cellStyle + cellClass + '>' + displayVal + '</td>';
       }
+      // Trend column (Feature D) — computed from absolute -log10(FDR) regardless of mode.
+      if (_trendEnabled) {
+        rowCells += '<td class="compare-table__trend">' + trendArrow(ke) + '</td>';
+      }
       bodyRows += '<tr>' + rowCells + '</tr>';
     }
 
+    var subHeaderRow = '<tr class="compare-table__subhead">' + subHeaderCells + '</tr>';
     var tableHtml = '<table class="compare-table" id="compare-tbl">'
-      + '<thead><tr>' + headerCells + '</tr></thead>'
+      + '<thead><tr>' + headerCells + '</tr>' + subHeaderRow + '</thead>'
       + '<tbody>' + bodyRows + '</tbody>'
       + '</table>';
 
@@ -1144,6 +1376,104 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Genes tab (Feature C) — cross-condition driver-gene tracking
+  // ---------------------------------------------------------------------------
+  var genesInitialised = false;
+
+  /** Map a log2FC value to a blue→white→red background colour (-2..+2 scale). */
+  function log2fcColor(val) {
+    if (val === null || val === undefined) return 'transparent';
+    var v = Math.max(-2, Math.min(2, val));
+    var t = (v + 2) / 4;  // 0..1
+    var r, g, b;
+    if (t < 0.5) {
+      // blue (#307BBF) → white
+      var k = t / 0.5;
+      r = Math.round(0x30 + (255 - 0x30) * k);
+      g = Math.round(0x7B + (255 - 0x7B) * k);
+      b = Math.round(0xBF + (255 - 0xBF) * k);
+    } else {
+      // white → red (#E6007E uses magenta; use a red for FC up)
+      var k2 = (t - 0.5) / 0.5;
+      r = Math.round(255 + (0xE3 - 255) * k2);
+      g = Math.round(255 + (0x1A - 255) * k2);
+      b = Math.round(255 + (0x1C - 255) * k2);
+    }
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  function populateGenesKeSelect() {
+    var sel = document.getElementById('genes-ke-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+    comparisonData.ke_labels.forEach(function (keId, i) {
+      var opt = document.createElement('option');
+      opt.value = keId;
+      opt.textContent = (comparisonData.ke_titles[i] || keId);
+      sel.appendChild(opt);
+    });
+  }
+
+  function renderGenesTable(payload) {
+    var wrap = document.getElementById('genes-table-wrap');
+    var conds = payload.condition_labels || [];
+    var genes = payload.genes || [];
+    if (!genes.length) {
+      wrap.innerHTML = '<p style="color:#888;padding:16px 0;">No driver genes for this Key Event in any condition.</p>';
+      return;
+    }
+    var header = '<th>Gene</th>';
+    conds.forEach(function (c) { header += '<th>' + escapeHtml(c) + '</th>'; });
+    header += '<th>Driver in</th>';
+
+    var rows = '';
+    genes.forEach(function (g) {
+      var badge = g.shared
+        ? '<span class="compare-genes-badge compare-genes-badge--shared">shared</span>'
+        : '<span class="compare-genes-badge">specific</span>';
+      var cells = '<td>' + escapeHtml(g.Gene_Symbol) + '</td>';
+      (g.log2FC_by_condition || []).forEach(function (v) {
+        if (v === null || v === undefined) {
+          cells += '<td>&mdash;</td>';
+        } else {
+          cells += '<td style="background:' + log2fcColor(v) + '">' + v.toFixed(2) + '</td>';
+        }
+      });
+      cells += '<td>' + g.n_conditions_driver + ' ' + badge + '</td>';
+      rows += '<tr>' + cells + '</tr>';
+    });
+
+    wrap.innerHTML = '<table class="genes-table"><thead><tr>' + header + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function loadGenesForKe(keId) {
+    var wrap = document.getElementById('genes-table-wrap');
+    wrap.innerHTML = '<p style="color:#888;padding:16px 0;">Loading…</p>';
+    fetch('/batch/' + encodeURIComponent(batchUuid) + '/genes/data?ke=' + encodeURIComponent(keId))
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(renderGenesTable)
+      .catch(function (err) {
+        wrap.innerHTML = '<p style="color:#c00;padding:16px 0;">Failed to load driver genes: ' + escapeHtml(err.message) + '</p>';
+      });
+  }
+
+  function initGenesTab() {
+    if (genesInitialised) return;
+    genesInitialised = true;
+    if (!hasData()) {
+      document.getElementById('genes-table-wrap').innerHTML =
+        '<p style="color:#888;padding:16px 0;">No comparison data available.</p>';
+      return;
+    }
+    populateGenesKeSelect();
+    var sel = document.getElementById('genes-ke-select');
+    sel.addEventListener('change', function () { loadGenesForKe(this.value); });
+    if (sel.options.length) {
+      loadGenesForKe(sel.value);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // modechange listener — updates heatmap, table, and network
   // ---------------------------------------------------------------------------
   document.addEventListener('modechange', function (e) {
@@ -1177,7 +1507,10 @@
   if (!hasData()) {
     showEmptyState();
   } else {
+    _trendEnabled = conditionsAreOrderable();
     renderLegend();
+    renderSummaryStrip();
+    wireMatrixExport();
     populateRefSelector();
     // Render heatmap and table in absolute mode on page load.
     updateHeatmap('absolute', 0);
