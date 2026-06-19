@@ -1,0 +1,93 @@
+"""Tests for the integrated batch report service (rendering + assembly)."""
+import json
+from datetime import datetime
+from types import SimpleNamespace
+
+import pytest
+
+from services import batch_report_service as brs
+
+
+def _comparison_data():
+    return {
+        'ke_labels': ['KE:1', 'KE:2'],
+        'ke_titles': ['Alpha', 'Beta'],
+        'condition_labels': ['C1', 'C2'],
+        'condition_colors': ['#E6007E', '#307BBF'],
+        'fdr_matrix': [[0.001, 0.0001], [0.5, None]],
+        'neg_log10_matrix': [[3.0, 4.0], [None, None]],
+        'condition_gene_counts': [100, 120],
+        'condition_sig_gene_counts': [20, 40],
+        'condition_sig_ke_counts': [1, 1],
+        'condition_doses': ['1uM', '10uM'],
+        'condition_timepoints': ['4hr', '4hr'],
+    }
+
+
+_NETWORK = {
+    'nodes': [
+        {'data': {'id': 'KE:1', 'label': 'Alpha', 'ke_type': 'MIE'}, 'classes': 'significant'},
+        {'data': {'id': 'KE:2', 'label': 'Beta', 'ke_type': 'AO'}, 'classes': ''},
+    ],
+    'edges': [{'data': {'source': 'KE:1', 'target': 'KE:2', 'id': 'KER:1'}}],
+}
+
+
+def _batch():
+    return SimpleNamespace(
+        uuid='u', batch_name='Test Batch', aop_id='AOP:1', aop_label='Test AOP',
+        logfc_threshold=1.0, pval_cutoff=0.05, selected_resources='WikiPathways',
+        harmonised_gene_count=5000, owner='Marvin', description='demo',
+        completed_at=datetime(2026, 6, 19, 12, 0),
+        id_column='gene', fc_column='logFC', pval_column='pval',
+    )
+
+
+def _conditions():
+    enrichment = [{'KE': 'KE:1', 'Title': 'Alpha', 'p_value': 0.0005, 'FDR': 0.001,
+                   'num_overlap': 8, 'odds_ratio': 3.2, 'total_KE_genes_in_dataset': 40,
+                   'Direction': '7↑'}]
+    c1 = SimpleNamespace(condition_label='C1', filename='c1.tsv', dose='1uM', timepoint='4hr',
+                         gene_count=100, significant_genes=20, status='complete',
+                         enrichment_json=json.dumps(enrichment), network_json=json.dumps(_NETWORK))
+    c2 = SimpleNamespace(condition_label='C2', filename='c2.tsv', dose='10uM', timepoint='4hr',
+                         gene_count=120, significant_genes=40, status='complete',
+                         enrichment_json=json.dumps(enrichment), network_json=json.dumps(_NETWORK))
+    return [c1, c2]
+
+
+class TestImageRendering:
+    def test_heatmap_png(self):
+        png = brs.render_heatmap_png(_comparison_data())
+        assert png is not None
+        assert png[:4] == b'\x89PNG'
+
+    def test_heatmap_empty_returns_none(self):
+        assert brs.render_heatmap_png({}) is None
+
+    def test_network_png(self):
+        png = brs.render_ke_network_png(json.dumps(_NETWORK))
+        assert png is not None
+        assert png[:4] == b'\x89PNG'
+
+    def test_network_png_accepts_dict(self):
+        png = brs.render_ke_network_png(_NETWORK)
+        assert png is not None and png[:4] == b'\x89PNG'
+
+    def test_network_png_empty_returns_none(self):
+        assert brs.render_ke_network_png(None) is None
+        assert brs.render_ke_network_png({'nodes': [], 'edges': []}) is None
+
+
+class TestReportAssembly:
+    def test_html_contains_sections(self):
+        html = brs.generate_batch_html(_batch(), _conditions(), _comparison_data())
+        assert 'Test Batch' in html
+        assert 'C1' in html and 'C2' in html
+        assert 'data:image/png' in html  # embedded heatmap/network images
+        assert 'Cross-Condition Comparison' in html
+
+    def test_pdf_is_valid(self):
+        pdf = brs.generate_batch_pdf(_batch(), _conditions(), _comparison_data())
+        assert pdf[:4] == b'%PDF'
+        assert len(pdf) > 1000

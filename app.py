@@ -10,6 +10,7 @@ import uuid
 import base64
 import time
 import datetime
+from io import BytesIO
 from typing import Optional
 from scipy.stats import fisher_exact, combine_pvalues
 from statsmodels.stats.multitest import multipletests
@@ -41,7 +42,15 @@ from services.batch_service import (
     parse_cisplatin_filename, create_batch_upload_dir, cleanup_batch_upload_dir,
     get_cisplatin_demo_files, validate_batch_columns, harmonise_backgrounds, run_batch,
 )
-from services.comparison_service import build_comparison_matrix, CONDITION_PALETTE
+from services.comparison_service import (
+    build_comparison_matrix,
+    comparison_matrix_to_dataframe,
+    build_gene_tracking,
+    gene_tracking_to_dataframes,
+    csv_guard,
+    CONDITION_PALETTE,
+)
+from services import batch_report_service
 from services.hub_service import compute_hub_genes
 from services.pathway_picker_service import build_wp_picker_data
 
@@ -1869,6 +1878,218 @@ def batch_compare(batch_uuid_str):
             comparison_data_json=comparison_data_json,
             network_json=json.dumps(first_network) if first_network else 'null',
         )
+    finally:
+        session_db.close()
+
+
+def _safe_filename_part(value: str) -> str:
+    """Sanitise a string for use in a download filename.
+
+    Keeps alphanumerics, dot, dash and underscore; collapses everything else
+    to a single underscore. Returns 'batch' for empty input.
+    """
+    if not value:
+        return 'batch'
+    cleaned = re.sub(r'[^A-Za-z0-9._-]+', '_', str(value)).strip('_')
+    return cleaned or 'batch'
+
+
+def _load_complete_batch_conditions(batch_uuid_str, session_db):
+    """Load a batch and its ordered conditions, guarding completeness.
+
+    Returns ``(batch, conditions)`` on success, or ``(response, None)`` where
+    ``response`` is a Flask response/abort to return directly when the batch is
+    missing or not complete (H-4 guard shared by all export/report endpoints).
+    """
+    batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
+    if not batch:
+        return (jsonify({'error': 'Batch not found'}), 404), None
+    if batch.status != 'complete':
+        return (jsonify({'error': 'Batch is not complete'}), 409), None
+    conditions = (
+        session_db.query(ConditionRecord)
+        .filter_by(batch_id=batch.id)
+        .order_by(ConditionRecord.position)
+        .all()
+    )
+    return batch, conditions
+
+
+@app.route('/batch/<batch_uuid_str>/compare/export')
+def batch_compare_export(batch_uuid_str):
+    """Download the cross-condition comparison matrix as CSV or Excel.
+
+    Query params:
+        fmt:    'csv' (default) or 'xlsx'.
+        matrix: 'fdr' (default, raw FDR) or 'neglog10' (-log10(FDR)).
+
+    The download is the wide KE x condition table shown on the comparison page.
+    """
+    _validate_uuid(batch_uuid_str)
+    fmt = request.args.get('fmt', 'csv').lower()
+    which = request.args.get('matrix', 'fdr').lower()
+    if fmt not in ('csv', 'xlsx'):
+        abort(400, description="Invalid format (expected csv or xlsx)")
+    if which not in ('fdr', 'neglog10'):
+        abort(400, description="Invalid matrix (expected fdr or neglog10)")
+
+    session_db = db_manager.get_session()
+    try:
+        batch, conditions = _load_complete_batch_conditions(batch_uuid_str, session_db)
+        if conditions is None:
+            return batch  # error response tuple
+
+        matrix_dict = build_comparison_matrix(conditions)
+        df = comparison_matrix_to_dataframe(matrix_dict, which=which)
+
+        stem = f"molAOP_{_safe_filename_part(batch.aop_id)}_{_safe_filename_part(batch.batch_name)}_comparison_{which}"
+
+        if fmt == 'xlsx':
+            buf = BytesIO()
+            with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Comparison')
+            buf.seek(0)
+            return send_file(
+                buf,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f"{stem}.xlsx",
+            )
+
+        csv_text = df.to_csv(index=False)
+        response = make_response(csv_text)
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename="{stem}.csv"'
+        return response
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/genes/export')
+def batch_genes_export(batch_uuid_str):
+    """Download cross-condition gene-tracking data as CSV or Excel.
+
+    Query params:
+        fmt:  'csv' (default) or 'xlsx' (xlsx writes both views as two sheets).
+        view: 'long' (default, tidy KE x gene x condition) or 'summary'
+              (one row per KE x gene with a shared flag and per-condition log2FC).
+    """
+    _validate_uuid(batch_uuid_str)
+    fmt = request.args.get('fmt', 'csv').lower()
+    view = request.args.get('view', 'long').lower()
+    if fmt not in ('csv', 'xlsx'):
+        abort(400, description="Invalid format (expected csv or xlsx)")
+    if view not in ('long', 'summary'):
+        abort(400, description="Invalid view (expected long or summary)")
+
+    session_db = db_manager.get_session()
+    try:
+        batch, conditions = _load_complete_batch_conditions(batch_uuid_str, session_db)
+        if conditions is None:
+            return batch  # error response tuple
+
+        tracking = build_gene_tracking(conditions)
+        frames = gene_tracking_to_dataframes(tracking)
+
+        stem = f"molAOP_{_safe_filename_part(batch.aop_id)}_{_safe_filename_part(batch.batch_name)}_driver_genes"
+
+        if fmt == 'xlsx':
+            buf = BytesIO()
+            with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                frames['long'].to_excel(writer, index=False, sheet_name='Driver genes (long)')
+                frames['summary'].to_excel(writer, index=False, sheet_name='Summary (shared)')
+            buf.seek(0)
+            return send_file(
+                buf,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f"{stem}.xlsx",
+            )
+
+        csv_text = frames[view].to_csv(index=False)
+        response = make_response(csv_text)
+        response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        response.headers['Content-Disposition'] = f'attachment; filename="{stem}_{view}.csv"'
+        return response
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/genes/data')
+def batch_genes_data(batch_uuid_str):
+    """Return driver-gene tracking for one KE as JSON (for the Genes tab).
+
+    Query params:
+        ke: the KE ID to filter to (required). Returns only that KE's driver
+            genes across conditions, keeping the page payload bounded.
+    """
+    _validate_uuid(batch_uuid_str)
+    ke_filter = request.args.get('ke', '').strip()
+    if not ke_filter:
+        return jsonify({'error': 'Missing ke parameter'}), 400
+
+    session_db = db_manager.get_session()
+    try:
+        batch, conditions = _load_complete_batch_conditions(batch_uuid_str, session_db)
+        if conditions is None:
+            return batch  # error response tuple
+
+        tracking = build_gene_tracking(conditions)
+        genes = [r for r in tracking['gene_ke_summary'] if r['KE_ID'] == ke_filter]
+        return jsonify({
+            'ke': ke_filter,
+            'condition_labels': tracking['condition_labels'],
+            'genes': genes,
+        })
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/report')
+def batch_report(batch_uuid_str):
+    """Generate an integrated batch report (PDF or HTML) for a completed batch.
+
+    Query params:
+        format: 'pdf' (default) or 'html'.
+
+    The report combines batch metadata, the cross-condition comparison heatmap,
+    the comparison matrix table, and one section per condition (enrichment table
+    + KE network image).
+    """
+    _validate_uuid(batch_uuid_str)
+    fmt = request.args.get('format', 'pdf').lower()
+    if fmt not in ('pdf', 'html'):
+        abort(400, description="Invalid format (expected pdf or html)")
+
+    session_db = db_manager.get_session()
+    try:
+        batch, conditions = _load_complete_batch_conditions(batch_uuid_str, session_db)
+        if conditions is None:
+            return batch  # error response tuple
+
+        # Only include conditions that actually produced results.
+        complete_conditions = [c for c in conditions if c.status == 'complete' and c.enrichment_json]
+        comparison_data = build_comparison_matrix(complete_conditions)
+
+        stem = f"molAOP_{_safe_filename_part(batch.batch_name)}_batch_report"
+
+        if fmt == 'html':
+            # Served inline so the report opens in a browser tab (links use target=_blank).
+            html = batch_report_service.generate_batch_html(batch, complete_conditions, comparison_data)
+            response = make_response(html)
+            response.headers['Content-Type'] = 'text/html; charset=utf-8'
+            return response
+
+        pdf_bytes = batch_report_service.generate_batch_pdf(batch, complete_conditions, comparison_data)
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f"{stem}.pdf",
+        )
+    except Exception as exc:
+        logger.error(f'batch_report: failed for {batch_uuid_str}: {exc}', exc_info=True)
+        return jsonify({'error': 'Failed to generate batch report'}), 500
     finally:
         session_db.close()
 

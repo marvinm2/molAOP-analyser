@@ -89,6 +89,18 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
 
     df = pd.DataFrame(rows, columns=['condition', 'KE', 'Title', 'FDR'])
 
+    # H-1: a well-formed enrichment table has unique KEs per condition. If a
+    # condition's blob contains duplicate (condition, KE) pairs, pivot_table's
+    # aggfunc='first' silently keeps only the first FDR and drops the rest.
+    # Warn so the data corruption is visible rather than silent.
+    if df.duplicated(['condition', 'KE']).any():
+        dup_count = int(df.duplicated(['condition', 'KE']).sum())
+        logger.warning(
+            'build_comparison_matrix: %d duplicate (condition, KE) row(s) found — '
+            'keeping first FDR per pair; check upstream enrichment_json integrity.',
+            dup_count,
+        )
+
     # Pivot to KE × condition, keeping the first FDR value where there are
     # duplicate (condition, KE) pairs (should not happen in practice).
     pivot = df.pivot_table(index='KE', columns='condition', values='FDR', aggfunc='first')
@@ -132,6 +144,18 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
     # Assign colours from palette in upload-position order.
     condition_colors = CONDITION_PALETTE[:len(conditions)]
 
+    # Per-condition metadata (aligned to condition_labels / upload-position order).
+    # Read straight off the ConditionRecord objects — no extra queries.
+    condition_gene_counts = [getattr(c, 'gene_count', None) for c in conditions]
+    condition_sig_gene_counts = [getattr(c, 'significant_genes', None) for c in conditions]
+    condition_doses = [getattr(c, 'dose', '') or '' for c in conditions]
+    condition_timepoints = [getattr(c, 'timepoint', '') or '' for c in conditions]
+
+    # Significant-KE count per condition: number of KEs with FDR < 0.05.
+    # Derive from the pivot (columns already reindexed to condition_labels order).
+    sig_ke_series = (pivot < 0.05).sum(axis=0).reindex(condition_labels).fillna(0)
+    condition_sig_ke_counts = [int(v) for v in sig_ke_series]
+
     return {
         'ke_labels': ke_labels,
         'ke_titles': ke_titles,
@@ -139,4 +163,255 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
         'fdr_matrix': fdr_matrix,
         'neg_log10_matrix': neg_log10_matrix,
         'condition_colors': condition_colors,
+        'condition_gene_counts': condition_gene_counts,
+        'condition_sig_gene_counts': condition_sig_gene_counts,
+        'condition_sig_ke_counts': condition_sig_ke_counts,
+        'condition_doses': condition_doses,
+        'condition_timepoints': condition_timepoints,
     }
+
+
+# ---------------------------------------------------------------------------
+# CSV / Excel export helpers (Feature A + Feature C)
+# ---------------------------------------------------------------------------
+
+# Leading characters that spreadsheet apps may interpret as a formula. Cells
+# starting with any of these are prefixed with a single quote to neutralise
+# CSV-injection (matches the client-side _csvEscape convention in results.html).
+_CSV_INJECTION_CHARS = ('=', '+', '-', '@')
+
+
+def csv_guard(value: Any) -> Any:
+    """Neutralise CSV-injection for a single cell value.
+
+    Strings beginning with a formula-trigger character are prefixed with a
+    single quote. Non-string values are returned unchanged.
+
+    Args:
+        value: The cell value to sanitise.
+
+    Returns:
+        The sanitised value (string) or the original value unchanged.
+    """
+    if isinstance(value, str) and value and value[0] in _CSV_INJECTION_CHARS:
+        return "'" + value
+    return value
+
+
+def comparison_matrix_to_dataframe(
+    matrix_dict: dict, which: str = 'fdr'
+) -> pd.DataFrame:
+    """Shape a comparison matrix into a wide, download-ready DataFrame.
+
+    Produces one row per Key Event and one column per condition (upload-position
+    order), matching the on-screen comparison table. Two value matrices are
+    selectable via ``which``:
+
+      - ``'fdr'``      raw FDR floats (blank where the KE is absent in a condition)
+      - ``'neglog10'`` -log10(FDR) (blank where non-significant or absent,
+                       matching the heatmap's null semantics)
+
+    Key Event titles are passed through :func:`csv_guard` so a title beginning
+    with a formula character cannot be interpreted as a formula on open.
+
+    Args:
+        matrix_dict: The dict returned by :func:`build_comparison_matrix`.
+        which: ``'fdr'`` or ``'neglog10'``.
+
+    Returns:
+        A pandas DataFrame with columns ``Key Event ID``, ``Key Event Title``,
+        then one column per condition label. Empty if ``matrix_dict`` is empty.
+    """
+    if not matrix_dict or not matrix_dict.get('ke_labels'):
+        return pd.DataFrame()
+
+    if which not in ('fdr', 'neglog10'):
+        raise ValueError(f"Unknown matrix selector: {which!r} (expected 'fdr' or 'neglog10')")
+
+    matrix = matrix_dict['fdr_matrix'] if which == 'fdr' else matrix_dict['neg_log10_matrix']
+    ke_labels = matrix_dict['ke_labels']
+    ke_titles = matrix_dict['ke_titles']
+    condition_labels = matrix_dict['condition_labels']
+
+    data = {
+        'Key Event ID': [csv_guard(k) for k in ke_labels],
+        'Key Event Title': [csv_guard(t) for t in ke_titles],
+    }
+    for col_idx, cond_label in enumerate(condition_labels):
+        # None cells become NaN -> render as empty string in CSV / empty in Excel.
+        data[cond_label] = [row[col_idx] for row in matrix]
+
+    return pd.DataFrame(data)
+
+
+def build_gene_tracking(conditions: list) -> dict[str, Any]:
+    """Track which genes drive each KE across batch conditions.
+
+    A gene is a *driver* of a KE in a condition when it is present in that KE's
+    reference set **and** significant in that condition (i.e. it appears in the
+    enrichment overlap). The per-gene significance/log2FC is read from each
+    condition's ``ke_gene_json`` (the richest source — carries log2FC and
+    significance per gene per condition).
+
+    To bound memory (H-3), only genes that are a driver in at least one
+    condition are retained — the full KE membership is never materialised.
+
+    Args:
+        conditions: List of ConditionRecord objects ordered by position. Each
+                    must expose ``condition_label``, ``ke_gene_json`` and
+                    (optionally) ``enrichment_json`` for KE titles.
+
+    Returns:
+        Dict with keys:
+            condition_labels — condition labels in upload-position order
+            records          — tidy list, one dict per (KE, gene, condition)
+                               driver event: KE_ID, KE_Title, Gene_Symbol,
+                               Condition, log2FC, significant
+            gene_ke_summary  — derived list, one dict per (KE, gene) that is a
+                               driver somewhere: KE_ID, KE_Title, Gene_Symbol,
+                               n_conditions_driver, conditions_driver (list),
+                               shared (bool, driver in >=2 conditions),
+                               log2FC_by_condition (list aligned to condition order)
+    """
+    condition_labels = [c.condition_label for c in conditions]
+    n_conditions = len(conditions)
+
+    # KE title lookup, first-seen across conditions' enrichment tables.
+    ke_title_map: dict[str, str] = {}
+    for cond in conditions:
+        if not getattr(cond, 'enrichment_json', None):
+            continue
+        try:
+            for entry in json.loads(cond.enrichment_json):
+                ke = entry.get('KE')
+                if ke and ke not in ke_title_map:
+                    ke_title_map[ke] = entry.get('Title', '')
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    records: list[dict] = []
+    # summary keyed by (KE, gene) -> aggregation dict
+    summary: dict[tuple, dict] = {}
+
+    for col_idx, cond in enumerate(conditions):
+        if not getattr(cond, 'ke_gene_json', None):
+            continue
+        try:
+            ke_gene_map = json.loads(cond.ke_gene_json)
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.warning(
+                'build_gene_tracking: failed to parse ke_gene_json for condition %s: %s',
+                cond.condition_label, exc,
+            )
+            continue
+
+        for ke, gene_entries in ke_gene_map.items():
+            for entry in gene_entries:
+                # Driver = significant in this condition (bounds the output).
+                if not entry.get('significant'):
+                    continue
+                gene = entry.get('id')
+                if not gene:
+                    continue
+                log2fc = entry.get('log2FC')
+                title = ke_title_map.get(ke, ke)
+
+                records.append({
+                    'KE_ID': ke,
+                    'KE_Title': title,
+                    'Gene_Symbol': gene,
+                    'Condition': cond.condition_label,
+                    'log2FC': log2fc,
+                    'significant': True,
+                })
+
+                key = (ke, gene)
+                agg = summary.get(key)
+                if agg is None:
+                    agg = {
+                        'KE_ID': ke,
+                        'KE_Title': title,
+                        'Gene_Symbol': gene,
+                        'conditions_driver': [],
+                        'log2FC_by_condition': [None] * n_conditions,
+                    }
+                    summary[key] = agg
+                agg['conditions_driver'].append(cond.condition_label)
+                agg['log2FC_by_condition'][col_idx] = log2fc
+
+    gene_ke_summary = []
+    for agg in summary.values():
+        n_driver = len(agg['conditions_driver'])
+        gene_ke_summary.append({
+            'KE_ID': agg['KE_ID'],
+            'KE_Title': agg['KE_Title'],
+            'Gene_Symbol': agg['Gene_Symbol'],
+            'n_conditions_driver': n_driver,
+            'conditions_driver': agg['conditions_driver'],
+            'shared': n_driver >= 2,
+            'log2FC_by_condition': agg['log2FC_by_condition'],
+        })
+
+    # Stable, useful ordering: KE, then shared-first, then gene.
+    gene_ke_summary.sort(
+        key=lambda r: (r['KE_ID'], -r['n_conditions_driver'], r['Gene_Symbol'])
+    )
+
+    return {
+        'condition_labels': condition_labels,
+        'records': records,
+        'gene_ke_summary': gene_ke_summary,
+    }
+
+
+def gene_tracking_to_dataframes(tracking: dict) -> dict[str, pd.DataFrame]:
+    """Shape gene-tracking output into download-ready DataFrames.
+
+    Args:
+        tracking: The dict returned by :func:`build_gene_tracking`.
+
+    Returns:
+        Dict with two DataFrames:
+            'long'    — one row per (KE, gene, condition) driver event.
+            'summary' — one row per (KE, gene) with a shared flag and one
+                        log2FC column per condition (wide).
+        Both have CSV-injection guards applied to free-text columns.
+    """
+    condition_labels = tracking.get('condition_labels', [])
+
+    # Long / tidy table.
+    long_rows = []
+    for r in tracking.get('records', []):
+        long_rows.append({
+            'KE_ID': csv_guard(r['KE_ID']),
+            'KE_Title': csv_guard(r['KE_Title']),
+            'Gene_Symbol': csv_guard(r['Gene_Symbol']),
+            'Condition': csv_guard(r['Condition']),
+            'log2FC': r['log2FC'],
+            'significant': r['significant'],
+        })
+    long_df = pd.DataFrame(
+        long_rows,
+        columns=['KE_ID', 'KE_Title', 'Gene_Symbol', 'Condition', 'log2FC', 'significant'],
+    )
+
+    # Summary / wide table: one log2FC column per condition.
+    summary_rows = []
+    for r in tracking.get('gene_ke_summary', []):
+        row = {
+            'KE_ID': csv_guard(r['KE_ID']),
+            'KE_Title': csv_guard(r['KE_Title']),
+            'Gene_Symbol': csv_guard(r['Gene_Symbol']),
+            'n_conditions_driver': r['n_conditions_driver'],
+            'shared': r['shared'],
+        }
+        for idx, cond_label in enumerate(condition_labels):
+            row[f'log2FC: {cond_label}'] = r['log2FC_by_condition'][idx]
+        summary_rows.append(row)
+
+    summary_cols = ['KE_ID', 'KE_Title', 'Gene_Symbol', 'n_conditions_driver', 'shared'] + [
+        f'log2FC: {c}' for c in condition_labels
+    ]
+    summary_df = pd.DataFrame(summary_rows, columns=summary_cols)
+
+    return {'long': long_df, 'summary': summary_df}
