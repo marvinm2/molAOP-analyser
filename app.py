@@ -1482,6 +1482,107 @@ def batch_upload():
     return jsonify({'batch_uuid': batch_uuid, 'files': file_previews}), 200
 
 
+def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
+                              timepoints, id_col, fc_col, pval_col, aop_id,
+                              logfc_threshold, pval_threshold, resources,
+                              harmonised_genes, batch_name, owner, description):
+    """Create the BatchRecord + ConditionRecords and launch run_batch in a thread.
+
+    Shared by the interactive batch wizard (/batch/analyze) and the one-click
+    demo (/batch/demo). Assumes files are already on disk in the batch dir and
+    backgrounds have already been harmonised.
+
+    Args:
+        batch_uuid: UUID of the (already-created) batch upload directory.
+        filenames/condition_labels/doses/timepoints: per-condition lists (same length).
+        id_col/fc_col/pval_col: shared column mapping.
+        aop_id: selected AOP ID (label resolved from Config.CASE_STUDY_AOPS).
+        logfc_threshold/pval_threshold: significance thresholds.
+        resources: gene-set resources (e.g. ['WikiPathways']).
+        harmonised_genes: intersection gene set from harmonise_backgrounds.
+        batch_name/owner/description: batch metadata.
+
+    Returns:
+        The new BatchRecord primary key.
+
+    Raises:
+        Exception: on DB failure (caller translates to an error response).
+    """
+    # Determine AOP label from config or fall back to the raw ID.
+    aop_label = aop_id
+    for entry in Config.CASE_STUDY_AOPS.values():
+        if entry.get('id') == aop_id:
+            aop_label = entry.get('label', aop_id)
+            break
+
+    expires_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=Config.BATCH_RETENTION_DAYS)
+
+    session_db = db_manager.get_session()
+    try:
+        # Lazy cleanup of expired batches
+        cleanup_expired_batches(session_db)
+
+        batch = BatchRecord(
+            uuid=batch_uuid,
+            status='pending',
+            aop_id=aop_id,
+            aop_label=aop_label,
+            logfc_threshold=logfc_threshold,
+            pval_cutoff=pval_threshold,
+            selected_resources=", ".join(resources),
+            id_column=id_col,
+            fc_column=fc_col,
+            pval_column=pval_col,
+            harmonised_background=json.dumps(sorted(harmonised_genes)),
+            harmonised_gene_count=len(harmonised_genes),
+            batch_name=batch_name,
+            owner=owner,
+            description=description,
+            expires_at=expires_at,
+        )
+        session_db.add(batch)
+        session_db.flush()  # Assigns batch.id before creating conditions
+
+        for position, (fname, label, dose, tp) in enumerate(
+            zip(filenames, condition_labels, doses, timepoints)
+        ):
+            safe_name = secure_filename(fname)
+            cond = ConditionRecord(
+                batch_id=batch.id,
+                position=position,
+                filename=safe_name,
+                condition_label=label or safe_name,
+                dose=dose,
+                timepoint=tp,
+                status='pending',
+            )
+            session_db.add(cond)
+
+        session_db.commit()
+        batch_id = batch.id
+        logger.info(f'_persist_and_launch_batch: BatchRecord {batch_id} created ({len(filenames)} conditions)')
+    except Exception:
+        session_db.rollback()
+        raise
+    finally:
+        session_db.close()
+
+    # Launch analysis in a background thread (returns immediately to caller).
+    current_reference_sets, _ = load_cached_reference_sets(resources)
+    db_url = db_manager.db_url
+    thread = threading.Thread(
+        target=run_batch,
+        args=(batch_id, db_url, current_reference_sets),
+        daemon=False,
+    )
+    _batch_threads.append(thread)
+    thread.start()
+    # Prune finished threads to avoid unbounded growth
+    _batch_threads[:] = [t for t in _batch_threads if t.is_alive()]
+    logger.info(f'_persist_and_launch_batch: background thread started for batch {batch_id}')
+    return batch_id
+
+
 @app.route('/batch/analyze', methods=['POST'])
 
 def batch_analyze():
@@ -1585,83 +1686,32 @@ def batch_analyze():
         )
         logger.warning(f'batch_analyze: {warning_msg}')
 
-    # Determine AOP label from config or use raw ID
-    aop_label = aop_id
-    for entry in Config.CASE_STUDY_AOPS.values():
-        if entry.get('id') == aop_id:
-            aop_label = entry.get('label', aop_id)
-            break
-
-    expires_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(days=Config.BATCH_RETENTION_DAYS)
     batch_name = request.form.get('batch_name', '').strip() or f'Batch {batch_uuid[:8]}'
     owner = request.form.get('owner', '').strip()
     description = request.form.get('description', '').strip()
 
-    session_db = db_manager.get_session()
     try:
-        # Lazy cleanup of expired batches
-        cleanup_expired_batches(session_db)
-
-        batch = BatchRecord(
-            uuid=batch_uuid,
-            status='pending',
+        _persist_and_launch_batch(
+            batch_uuid=batch_uuid,
+            filenames=filenames,
+            condition_labels=condition_labels,
+            doses=doses,
+            timepoints=timepoints,
+            id_col=id_col,
+            fc_col=fc_col,
+            pval_col=pval_col,
             aop_id=aop_id,
-            aop_label=aop_label,
             logfc_threshold=logfc_threshold,
-            pval_cutoff=pval_threshold,
-            selected_resources=", ".join(resources),
-            id_column=id_col,
-            fc_column=fc_col,
-            pval_column=pval_col,
-            harmonised_background=json.dumps(sorted(harmonised_genes)),
-            harmonised_gene_count=harmonised_count,
+            pval_threshold=pval_threshold,
+            resources=resources,
+            harmonised_genes=harmonised_genes,
             batch_name=batch_name,
             owner=owner,
             description=description,
-            expires_at=expires_at,
         )
-        session_db.add(batch)
-        session_db.flush()  # Assigns batch.id before creating conditions
-
-        for position, (fname, label, dose, tp) in enumerate(
-            zip(filenames, condition_labels, doses, timepoints)
-        ):
-            safe_name = secure_filename(fname)
-            cond = ConditionRecord(
-                batch_id=batch.id,
-                position=position,
-                filename=safe_name,
-                condition_label=label or safe_name,
-                dose=dose,
-                timepoint=tp,
-                status='pending',
-            )
-            session_db.add(cond)
-
-        session_db.commit()
-        batch_id = batch.id
-        logger.info(f'batch_analyze: BatchRecord {batch_id} created ({len(filenames)} conditions)')
-
     except Exception as exc:
-        session_db.rollback()
-        logger.error(f'batch_analyze: DB error: {exc}')
+        logger.error(f'batch_analyze: failed to start batch: {exc}')
         return jsonify({'error': 'Database error while starting batch analysis'}), 500
-    finally:
-        session_db.close()
-
-    # Launch analysis in a background thread (returns immediately to client)
-    current_reference_sets, _ = load_cached_reference_sets(resources)
-    db_url = db_manager.db_url
-    thread = threading.Thread(
-        target=run_batch,
-        args=(batch_id, db_url, current_reference_sets),
-        daemon=False,
-    )
-    _batch_threads.append(thread)
-    thread.start()
-    # Prune finished threads to avoid unbounded growth
-    _batch_threads[:] = [t for t in _batch_threads if t.is_alive()]
-    logger.info(f'batch_analyze: background thread started for batch {batch_id}')
 
     response_data = {
         'batch_uuid': batch_uuid,
@@ -1684,12 +1734,16 @@ def batch_status(batch_uuid_str):
         if not batch:
             abort(404)
 
-        partial = render_template('batch_progress.html', batch=batch)
+        # Optional landing override: ?next=compare lands on the comparison page
+        # (used by the one-click demo); any other value falls back to summary.
+        next_target = 'compare' if request.args.get('next', '') == 'compare' else ''
+        partial = render_template('batch_progress.html', batch=batch, next_target=next_target)
 
         if batch.status == 'complete':
-            # Signal htmx to perform a full-page navigation to the summary
+            # Signal htmx to perform a full-page navigation when finished.
+            dest = 'compare' if next_target == 'compare' else 'summary'
             resp = make_response(partial)
-            resp.headers['HX-Redirect'] = f'/batch/{batch_uuid_str}/summary'
+            resp.headers['HX-Redirect'] = f'/batch/{batch_uuid_str}/{dest}'
             return resp
 
         # For running/pending/failed/cancelled — just return the partial
@@ -1698,6 +1752,87 @@ def batch_status(batch_uuid_str):
         return partial
     finally:
         session_db.close()
+
+
+@app.route('/batch/<batch_uuid_str>/progress')
+def batch_progress_page(batch_uuid_str):
+    """Full-page progress view for a batch (used by the one-click demo).
+
+    Polls /batch/<uuid>/status and auto-navigates to the results when complete.
+    With ?next=compare it lands on the comparison page instead of the summary.
+    """
+    _validate_uuid(batch_uuid_str)
+    session_db = db_manager.get_session()
+    try:
+        batch = session_db.query(BatchRecord).filter_by(uuid=batch_uuid_str).first()
+        if not batch:
+            abort(404)
+        next_target = 'compare' if request.args.get('next', '') == 'compare' else ''
+        return render_template('batch_progress_page.html', batch=batch, next_target=next_target)
+    finally:
+        session_db.close()
+
+
+@app.route('/batch/demo', methods=['POST'])
+def batch_demo():
+    """One-click demo: run a harmonised batch of the two PXR datasets.
+
+    Copies the shipped GSE90122 PXR-agonist files into a fresh batch, runs them
+    against AOP:DEMO with auto-detected columns, and redirects to a progress page
+    that lands on the cross-condition comparison when finished.
+    """
+    DEMO_FILES = ['GSE90122_TO90137.tsv', 'GSE90122_SR12813.tsv']
+    DEMO_LABELS = ['PXR agonist 1 (TO90137)', 'PXR agonist 2 (SR12813)']
+    try:
+        from pathlib import Path
+        import shutil
+        data_dir = Path('data').resolve()
+        batch_uuid, batch_dir = create_batch_upload_dir(Config.UPLOAD_FOLDER)
+
+        filenames = []
+        for demo_file in DEMO_FILES:
+            requested = (data_dir / demo_file).resolve()
+            # Path-safety: must resolve inside data/ and exist.
+            if not str(requested).startswith(str(data_dir)) or not requested.is_file():
+                logger.error(f'batch_demo: demo file unavailable: {demo_file}')
+                return redirect('/demos')
+            safe_name = secure_filename(requested.name)
+            shutil.copy2(str(requested), os.path.join(batch_dir, safe_name))
+            filenames.append(safe_name)
+
+        id_col, fc_col, pval_col = 'GENE_SYMBOL', 'logFC', 'adj.P.Val'
+        file_infos = [
+            {'filepath': os.path.join(batch_dir, f), 'id_col': id_col, 'fc_col': fc_col, 'pval_col': pval_col}
+            for f in filenames
+        ]
+        valid, err_msg = validate_batch_columns(file_infos)
+        if not valid:
+            logger.error(f'batch_demo: column validation failed: {err_msg}')
+            return redirect('/demos')
+        harmonised_genes, _ = harmonise_backgrounds(file_infos)
+
+        _persist_and_launch_batch(
+            batch_uuid=batch_uuid,
+            filenames=filenames,
+            condition_labels=DEMO_LABELS,
+            doses=['', ''],
+            timepoints=['', ''],
+            id_col=id_col,
+            fc_col=fc_col,
+            pval_col=pval_col,
+            aop_id='AOP:DEMO',
+            logfc_threshold=0.0,
+            pval_threshold=Config.PVAL_CUTOFF,
+            resources=list(DEFAULT_RESOURCES),
+            harmonised_genes=harmonised_genes,
+            batch_name='PXR agonist comparison (demo)',
+            owner='',
+            description='One-click demo comparing two PXR agonist datasets (GSE90122) against AOP:DEMO.',
+        )
+        return redirect(f'/batch/{batch_uuid}/progress?next=compare')
+    except Exception as exc:
+        logger.error(f'batch_demo: failed to start demo batch: {exc}', exc_info=True)
+        return redirect('/demos')
 
 
 @app.route('/batch/<batch_uuid_str>/summary')
