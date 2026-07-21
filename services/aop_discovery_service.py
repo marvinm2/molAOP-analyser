@@ -1,12 +1,14 @@
 """
 AOP Discovery Service.
 
-Provides a three-tier fallback mechanism for fetching the list of all AOPs
+Provides a four-tier fallback mechanism for fetching the list of all AOPs
 with their KE counts and KE-gene mapping coverage:
 
     1. Disk cache (1-week TTL, shared across Gunicorn workers)
     2. Live fetch: SPARQL (all AOPs + KE membership) + Builder API (mapped KE IDs)
-    3. Hardcoded fallback from Config.CASE_STUDY_AOPS
+    3. Builder API alone (GET /api/v1/aops) — whole AOPs with titles and
+       coverage counts, so a SPARQL outage still leaves a usable picker
+    4. Hardcoded fallback from Config.CASE_STUDY_AOPS
 
 Each AOP entry has the shape::
 
@@ -35,6 +37,11 @@ AOP_LIST_CACHE_KEY = "aop_discovery_list_v1"
 
 # 1-week TTL in seconds
 AOP_LIST_CACHE_TTL = 7 * 24 * 3600
+
+# TTL for the degraded Builder-only list (1 hour). Short on purpose: that list
+# holds only AOPs with mappings, so it should not outlive the SPARQL outage
+# that produced it.
+AOP_LIST_BUILDER_CACHE_TTL = 3600
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +258,66 @@ def fetch_mapped_ke_ids_from_builder(config) -> Set[str]:
         return set()
 
 
+def fetch_aops_from_builder(config) -> List[Dict]:
+    """Fetch the Builder's own AOP list from ``GET /api/v1/aops``.
+
+    Unlike :func:`fetch_mapped_ke_ids_from_builder`, which returns only KE IDs
+    and therefore needs a SPARQL KE->AOP map to be useful, this endpoint hands
+    back whole AOPs with titles and coverage counts.  That makes it usable as a
+    standalone source for the picker when AOP-Wiki SPARQL is unreachable.
+
+    Its AOP membership comes from the Builder's precomputed AOP-Wiki snapshot,
+    so it is only as current as the last refresh on that side — which is why it
+    backs a fallback tier rather than replacing the live SPARQL cross-reference.
+
+    Args:
+        config: Application config object (needs ``BUILDER_API_URL`` and
+                ``BUILDER_API_TIMEOUT``).
+
+    Returns:
+        List of AOP dicts in the standard shape, with ``aop_id`` normalised
+        from the Builder's ``"AOP 625"`` to the analyser's ``"AOP:625"``.
+        Empty list if the Builder is unset, unreachable, or returns nothing.
+    """
+    if not config.BUILDER_API_URL:
+        logger.info("BUILDER_API_URL is empty; skipping Builder AOP fetch")
+        return []
+
+    try:
+        from services.api_service import _make_api_session
+
+        session = _make_api_session()
+        base = config.BUILDER_API_URL.rstrip("/")
+        url = f"{base}/api/v1/aops"
+        params = {"mapped_only": "true", "per_page": 200}
+
+        aops: List[Dict] = []
+        while url is not None:
+            response = session.get(url, params=params, timeout=config.BUILDER_API_TIMEOUT)
+            response.raise_for_status()
+            payload = response.json()
+
+            for row in payload.get("data", []):
+                raw_id = row.get("aop_id", "")
+                if not raw_id:
+                    continue
+                aops.append({
+                    "aop_id": raw_id.replace(" ", ":"),
+                    "title": row.get("aop_title") or raw_id,
+                    "ke_count": int(row.get("ke_count") or 0),
+                    "mapped_ke_count": int(row.get("mapped_ke_count") or 0),
+                })
+
+            url = (payload.get("pagination") or {}).get("next")
+            params = {}  # the next URL already carries its query string
+
+        logger.info("Builder API: fetched %d mapped AOPs from /api/v1/aops", len(aops))
+        return aops
+
+    except Exception as exc:
+        logger.warning("Builder AOP fetch failed: %s", exc)
+        return []
+
 # ---------------------------------------------------------------------------
 # AOP list builder
 # ---------------------------------------------------------------------------
@@ -447,10 +514,30 @@ def get_aop_list(config) -> List[Dict]:
             return aops
     except Exception as exc:
         logger.error(
-            "build_aop_list failed; falling back to hardcoded list: %s", exc
+            "build_aop_list failed; trying the Builder AOP list: %s", exc
         )
 
-    # --- Tier 3: hardcoded fallback ---
+    # --- Tier 3: Builder-only list ---
+    # SPARQL is what fails here (build_aop_list propagates only its errors), and
+    # the Builder can name whole AOPs on its own. Falling straight through to a
+    # handful of configured entries would hide every curated AOP the picker
+    # exists to offer.
+    builder_aops = fetch_aops_from_builder(config)
+    if builder_aops:
+        # Deliberately a shorter TTL than the full list: this one is missing
+        # every AOP without mappings, so the next request should retry SPARQL
+        # rather than serve a partial list for a week.
+        reference_cache.set(
+            AOP_LIST_CACHE_KEY, builder_aops, expire=AOP_LIST_BUILDER_CACHE_TTL
+        )
+        logger.warning(
+            "Using Builder AOP list (%d mapped AOPs, TTL %ds) — SPARQL unavailable",
+            len(builder_aops),
+            AOP_LIST_BUILDER_CACHE_TTL,
+        )
+        return builder_aops
+
+    # --- Tier 4: hardcoded fallback ---
     fallback = _hardcoded_aop_list()
     logger.warning(
         "Using hardcoded AOP fallback (%d entries)", len(fallback)

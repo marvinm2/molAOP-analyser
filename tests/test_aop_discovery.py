@@ -158,7 +158,11 @@ class TestGetAopListFallback:
     """Tests for get_aop_list three-tier fallback logic."""
 
     def test_fallback_to_hardcoded_when_both_fail(self, tmp_path):
-        """When SPARQL and cache both fail, hardcoded list is returned."""
+        """With no cache, no SPARQL and no Builder, the hardcoded list is returned.
+
+        _make_config leaves BUILDER_API_URL empty, so the Builder tier returns
+        nothing without touching the network and the chain reaches tier 4.
+        """
         from services.aop_discovery_service import get_aop_list
 
         config = _make_config(cache_dir=str(tmp_path))
@@ -374,3 +378,170 @@ class TestLoadAopDataDefaultSparql:
 
         mock_sparql.assert_called_once()
         assert result[0] == {"KE:200"}
+
+
+# ---------------------------------------------------------------------------
+# Builder-sourced AOP list (GET /api/v1/aops)
+# ---------------------------------------------------------------------------
+
+class TestFetchAopsFromBuilder:
+    """Tests for fetch_aops_from_builder."""
+
+    @staticmethod
+    def _payload(rows, next_url=None):
+        return {"data": rows, "pagination": {"next": next_url}}
+
+    def test_empty_url_returns_empty_list(self):
+        """No Builder configured must not raise, and must not fabricate AOPs."""
+        from services.aop_discovery_service import fetch_aops_from_builder
+
+        assert fetch_aops_from_builder(_make_config(builder_url="")) == []
+
+    def test_normalises_ids_and_shape(self):
+        """Builder's "AOP 625" becomes the analyser's "AOP:625"."""
+        from services.aop_discovery_service import fetch_aops_from_builder
+
+        rows = [{
+            "aop_id": "AOP 625",
+            "aop_title": "Increased 11B-HSD leading to metabolic syndrome",
+            "ke_count": 18,
+            "mapped_ke_count": 18,
+            "wikipathways_ke_count": 18,
+            "go_ke_count": 2,
+            "reactome_ke_count": 2,
+        }]
+        session = MagicMock()
+        session.get.return_value.json.return_value = self._payload(rows)
+
+        import services.api_service as api_svc
+        with patch.object(api_svc, "_make_api_session", return_value=session):
+            result = fetch_aops_from_builder(_make_config(builder_url="https://b.example.com"))
+
+        assert result == [{
+            "aop_id": "AOP:625",
+            "title": "Increased 11B-HSD leading to metabolic syndrome",
+            "ke_count": 18,
+            "mapped_ke_count": 18,
+        }]
+
+    def test_follows_pagination(self):
+        """All pages are collected, not just the first."""
+        from services.aop_discovery_service import fetch_aops_from_builder
+
+        page1 = self._payload(
+            [{"aop_id": "AOP 1", "aop_title": "One", "ke_count": 3, "mapped_ke_count": 1}],
+            next_url="https://b.example.com/api/v1/aops?page=2",
+        )
+        page2 = self._payload(
+            [{"aop_id": "AOP 2", "aop_title": "Two", "ke_count": 4, "mapped_ke_count": 2}]
+        )
+        session = MagicMock()
+        session.get.return_value.json.side_effect = [page1, page2]
+
+        import services.api_service as api_svc
+        with patch.object(api_svc, "_make_api_session", return_value=session):
+            result = fetch_aops_from_builder(_make_config(builder_url="https://b.example.com"))
+
+        assert [a["aop_id"] for a in result] == ["AOP:1", "AOP:2"]
+
+    def test_builder_failure_returns_empty_list(self):
+        """A Builder outage degrades to empty, never an exception.
+
+        get_aop_list relies on this: the Builder tier must be skippable so the
+        hardcoded tier can still answer.
+        """
+        from services.aop_discovery_service import fetch_aops_from_builder
+
+        session = MagicMock()
+        session.get.side_effect = RuntimeError("connection refused")
+
+        import services.api_service as api_svc
+        with patch.object(api_svc, "_make_api_session", return_value=session):
+            result = fetch_aops_from_builder(_make_config(builder_url="https://b.example.com"))
+
+        assert result == []
+
+    def test_rows_without_aop_id_are_skipped(self):
+        """A malformed row must not produce an entry with an empty ID."""
+        from services.aop_discovery_service import fetch_aops_from_builder
+
+        rows = [
+            {"aop_id": "", "aop_title": "No ID", "ke_count": 1, "mapped_ke_count": 1},
+            {"aop_id": "AOP 7", "aop_title": "Fine", "ke_count": 2, "mapped_ke_count": 1},
+        ]
+        session = MagicMock()
+        session.get.return_value.json.return_value = self._payload(rows)
+
+        import services.api_service as api_svc
+        with patch.object(api_svc, "_make_api_session", return_value=session):
+            result = fetch_aops_from_builder(_make_config(builder_url="https://b.example.com"))
+
+        assert [a["aop_id"] for a in result] == ["AOP:7"]
+
+
+class TestBuilderFallbackTier:
+    """get_aop_list falls through to the Builder when SPARQL is unavailable."""
+
+    def test_builder_list_used_when_sparql_fails(self, tmp_path):
+        """A SPARQL outage yields the Builder's AOPs, not five hardcoded ones."""
+        from services.aop_discovery_service import get_aop_list
+
+        builder_aops = [
+            {"aop_id": "AOP:624", "title": "A", "ke_count": 18, "mapped_ke_count": 18},
+            {"aop_id": "AOP:130", "title": "B", "ke_count": 11, "mapped_ke_count": 11},
+        ]
+        config = _make_config(cache_dir=str(tmp_path))
+
+        with patch("services.aop_discovery_service.build_aop_list",
+                   side_effect=RuntimeError("SPARQL down")), \
+             patch("services.aop_discovery_service.fetch_aops_from_builder",
+                   return_value=builder_aops):
+            result = get_aop_list(config)
+
+        assert result == builder_aops
+
+    def test_builder_list_cached_with_short_ttl(self, tmp_path):
+        """The degraded list is cached, but must not outlive the outage.
+
+        It omits every unmapped AOP, so caching it for the full week would keep
+        a partial list in place long after SPARQL recovered.
+        """
+        import diskcache
+        from services.aop_discovery_service import (
+            AOP_LIST_BUILDER_CACHE_TTL, AOP_LIST_CACHE_KEY, AOP_LIST_CACHE_TTL,
+            get_aop_list,
+        )
+
+        assert AOP_LIST_BUILDER_CACHE_TTL < AOP_LIST_CACHE_TTL
+
+        builder_aops = [{"aop_id": "AOP:1", "title": "A", "ke_count": 3, "mapped_ke_count": 2}]
+        config = _make_config(cache_dir=str(tmp_path))
+
+        with patch("services.aop_discovery_service.build_aop_list",
+                   side_effect=RuntimeError("SPARQL down")), \
+             patch("services.aop_discovery_service.fetch_aops_from_builder",
+                   return_value=builder_aops):
+            get_aop_list(config)
+
+        # Must match get_reference_cache's FanoutCache sharding — a plain
+        # Cache reads only shard 0 and would report a miss.
+        dc = diskcache.FanoutCache(directory=str(tmp_path), shards=8)
+        try:
+            assert dc.get(AOP_LIST_CACHE_KEY) == builder_aops
+        finally:
+            dc.close()
+
+    def test_hardcoded_tier_still_reachable_when_builder_empty(self, tmp_path):
+        """Both SPARQL and Builder down still leaves a usable picker."""
+        from services.aop_discovery_service import get_aop_list
+
+        config = _make_config(cache_dir=str(tmp_path))
+
+        with patch("services.aop_discovery_service.build_aop_list",
+                   side_effect=RuntimeError("SPARQL down")), \
+             patch("services.aop_discovery_service.fetch_aops_from_builder",
+                   return_value=[]):
+            result = get_aop_list(config)
+
+        assert len(result) > 0
+        assert all("aop_id" in a for a in result)

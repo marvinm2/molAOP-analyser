@@ -95,7 +95,7 @@ The backend is organized into modular services under `services/`:
 | `gene_id_validator.py` | Gene symbol validation and normalization |
 | `batch_service.py` | Multi-file batch analysis orchestration |
 | `comparison_service.py` | Cross-condition comparison and heatmap generation |
-| `aop_discovery_service.py` | AOP search and typeahead suggestions |
+| `aop_discovery_service.py` | AOP search and typeahead suggestions (four-tier: cache → SPARQL + Builder → Builder alone → bundled fallback) |
 | `sparql_service.py` | SPARQL queries for AOP-Wiki data |
 | `pathway_picker_service.py` | WikiPathways picker data for the results-page Pathway view |
 | `api_service.py` | REST API client for the upstream molAOP Builder (KE→pathway mappings) |

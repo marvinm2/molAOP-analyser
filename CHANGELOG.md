@@ -10,6 +10,19 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Added
 
+- **The AOP picker can now be populated from the molAOP Builder** (#3). The Builder gained
+  `GET /api/v1/aops` (builder #207), which returns whole AOPs — title, KE count, and mapping
+  coverage split across WikiPathways / GO / Reactome — rather than the bare KE IDs that were
+  all `ke_aop_context` could offer. `services/aop_discovery_service.fetch_aops_from_builder`
+  consumes it as a new third tier, so a SPARQL outage now leaves a picker holding **274
+  curated AOPs with titles** instead of the five entries in `Config.CASE_STUDY_AOPS`. Cached
+  for one hour rather than the usual week, since that list omits every unmapped AOP and
+  should not outlive the outage that produced it.
+
+  The live SPARQL cross-reference stays primary: the Builder's AOP membership comes from a
+  precomputed snapshot, which had gone four months without a refresh and was undercounting
+  (AOP 625: 15 KEs of 18) until builder #207 regenerated it.
+
 - Repository tooling brought in line with the molAOP Builder: CI workflow (test matrix,
   flake8, coverage, startup smoke test), code-quality workflow (ruff/black/isort, bandit,
   pip-audit), Dependabot, CODEOWNERS, issue and pull-request templates, `LICENSE` (GPL-2.0),

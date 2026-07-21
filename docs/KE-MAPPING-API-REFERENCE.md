@@ -194,6 +194,56 @@ Get a single KE-GO mapping by UUID. Same shape as list response `data[]` items.
 
 ---
 
+### GET /api/v1/aops
+
+List the AOPs the Builder knows about, each with its Key Event count and how many
+of those KEs carry approved mappings, split per resource. Added 2026-07-21
+(builder #207) so the analyser's AOP picker can be populated from the Builder
+rather than only from AOP-Wiki SPARQL.
+
+**Query params** (all optional):
+
+| Param | Meaning |
+|---|---|
+| `mapped_only` | `true` returns only AOPs with at least one mapped KE |
+| `q` | case-insensitive substring filter over `aop_id` and `aop_title` |
+| `page` / `per_page` | pagination (default 50, max 200) |
+| `format=csv` | CSV instead of JSON |
+
+**Response** — sorted by `mapped_ke_count` descending:
+
+```json
+{
+  "data": [
+    {
+      "aop_id": "AOP 625",
+      "aop_title": "Increased 11\u03b2-Hydroxysteroid dehydrogenase type 1 ...",
+      "ke_count": 18,
+      "mapped_ke_count": 18,
+      "wikipathways_ke_count": 18,
+      "go_ke_count": 2,
+      "reactome_ke_count": 2
+    }
+  ],
+  "pagination": { "page": 1, "per_page": 50, "total": 274, "total_pages": 6, "next": "...", "prev": null }
+}
+```
+
+> **`aop_id` uses a space, not a colon** — `"AOP 625"`, matching `ke_aop_context`
+> on mapping records and `ke_id` (`"KE 1790"`). The analyser normalises to
+> `"AOP:625"` in `services/aop_discovery_service.fetch_aops_from_builder`.
+
+> **AOP membership is a snapshot, not live SPARQL.** It comes from the Builder's
+> precomputed `data/ke_aop_membership.json`, the same source behind
+> `ke_aop_context`. It went four months without a refresh before 2026-07-21, during
+> which it undercounted KEs (AOP 625 reported 15 of 18) and omitted AOPs entirely
+> (AOP 638). This is why the analyser uses the endpoint as a **fallback tier** and
+> keeps the live SPARQL cross-reference as its primary source of coverage counts.
+> If the numbers here disagree with AOP-Wiki, the snapshot is due a refresh
+> (`scripts/precompute_ke_aop_membership.py`, then copy to the `/app/data` mount).
+
+---
+
 ## Bulk Export Endpoints
 
 These are on the main app (not under `/api/v1`), no auth required.
