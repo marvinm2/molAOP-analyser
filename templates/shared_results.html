@@ -316,6 +316,14 @@
             </div>
         </div>
 
+        {# Issue #65: make the multiple-testing denominator visible — the BH
+           correction is applied across the tested Key Events only. #}
+        {% if ke_summary_text %}
+        <p class="ke-accounting" style="margin: 0 0 12px 0; padding: 10px 12px; background: #f4f6fb; border-left: 4px solid #307BBF; font-size: 14px; color: #29235C;">
+            <strong>Key Events assessed:</strong> {{ ke_summary_text }}.
+        </p>
+        {% endif %}
+
         <div style="overflow-x: auto;">
             <table id="resultsTable" class="display">
                 <thead>
@@ -394,7 +402,8 @@
             <br><br>
             <strong>Color coding:</strong><br>
             - Node color reflects gene-level log<sub>2</sub> fold change.<br>
-            - KE nodes with a <span style="color:red;">red border</span> are statistically significant (p-value &lt; 0.05).<br>
+            - KE nodes with a <span style="color:red;">red border</span> are statistically significant (FDR &lt; {{ fdr_cutoff | default(0.05) }}, Benjamini-Hochberg adjusted).<br>
+            - KE nodes with a <span style="color:#777;">dashed grey border</span> could not be assessed (too few of their genes were measured).<br>
             - Gene nodes with a <span style="color:green;">green border</span> are also significantly affected.
             <br><br>
             Click on any KE node to expand and show its associated genes. Use 'Collapse All' to return to the KE-only view.
@@ -420,6 +429,14 @@
                                 <div class="network-legend__swatch" style="background: #f4b3b3;"></div>
                                 <span>AO (Adverse Outcome)</span>
                             </div>
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #cccccc; width: 14px; height: 14px; opacity: 0.7;"></div>
+                                <span>No measurable gene set (not curated, or none of its genes measured)</span>
+                            </div>
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #e8e8e8; border: 2px dashed #999; opacity: 0.75;"></div>
+                                <span>Not tested (too few measured genes)</span>
+                            </div>
                         </div>
                     </div>
                     <div>
@@ -427,7 +444,7 @@
                         <div style="margin-top: 8px;">
                             <div class="network-legend__item">
                                 <div class="network-legend__swatch" style="background: #ffd9b3; border: 3px solid red;"></div>
-                                <span>Significant KE (p-value &lt; 0.05)</span>
+                                <span>Significant KE (FDR &lt; {{ fdr_cutoff | default(0.05) }})</span>
                             </div>
                             <div class="network-legend__item">
                                 <div style="width: 16px; height: 16px; background: linear-gradient(to right, #2c7bb6, #ffffcc, #d73027); border: 2px solid green; border-radius: 50%; margin-right: 8px; flex-shrink: 0;"></div>
@@ -660,6 +677,38 @@ const cy = cytoscape({
     {
         selector: 'node.significant',
         style: { 'border-width': 3, 'border-color': 'red' }
+    },
+    {
+        // KEs without a measurable gene set — muted so the gap is obvious
+        // without hiding the KE from the AOP topology.
+        selector: 'node.no-genes',
+        style: {
+            'width': 28,
+            'height': 28,
+            'background-color': '#cccccc',
+            'border-color': '#999',
+            'border-width': 1,
+            'color': '#777',
+            'font-size': 10,
+            'opacity': 0.7
+        }
+    },
+    {
+        // Issue #65 — KEs excluded from testing for having too few measured
+        // genes. Distinct from tested-but-unenriched: "could not assess" is a
+        // different claim from "assessed and found nothing".
+        selector: 'node.too-few-genes',
+        style: {
+            'width': 34,
+            'height': 34,
+            'background-color': '#e8e8e8',
+            'border-color': '#999',
+            'border-width': 2,
+            'border-style': 'dashed',
+            'color': '#777',
+            'font-size': 10,
+            'opacity': 0.75
+        }
     },
     {
         selector: 'node.gene.significant',
