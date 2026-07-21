@@ -27,6 +27,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Issue #66: bake the building commit into the image so generated reports can
+# record which build produced their numbers. Passed by the GitHub Actions
+# workflow; defaults to "unknown" for local builds.
+ARG GIT_SHA=unknown
+ENV MOLAOP_IMAGE_SHA=$GIT_SHA
+
 RUN mkdir -p /app/uploads /app/temp && \
     useradd --create-home --shell /bin/bash appuser && \
     chown -R appuser:appuser /app/uploads /app/temp

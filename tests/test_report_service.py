@@ -17,13 +17,26 @@ class TestReportService:
         assert isinstance(versions, dict)
         assert len(versions) > 0
         
-        # Common packages should be included
-        expected_packages = ['Flask', 'Pandas', 'NumPy', 'SciPy']
+        # Common packages should be included. statsmodels and gseapy are the
+        # packages performing the inferential work (BH correction and GSEA) and
+        # are required for the report to be reproducible — see issue #66.
+        expected_packages = [
+            'Flask', 'Pandas', 'NumPy', 'SciPy', 'statsmodels', 'gseapy', 'Python',
+        ]
         for package in expected_packages:
             assert package in versions
             assert isinstance(versions[package], str)
             assert len(versions[package]) > 0
-    
+
+    def test_software_versions_records_image_sha(self, monkeypatch):
+        """The image SHA is reported when baked in, and omitted when absent."""
+        monkeypatch.setenv('MOLAOP_IMAGE_SHA', 'abc1234')
+        assert get_software_versions()['Image'] == 'abc1234'
+
+        monkeypatch.delenv('MOLAOP_IMAGE_SHA', raising=False)
+        assert 'Image' not in get_software_versions()
+
+
     def test_report_data_creation(self, sample_report_data):
         """Test ReportData dataclass creation."""
         report_data = sample_report_data

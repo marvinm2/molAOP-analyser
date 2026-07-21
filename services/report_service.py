@@ -13,6 +13,7 @@ import json
 import base64
 import logging
 import math
+import platform
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass
@@ -1273,12 +1274,38 @@ def get_software_versions() -> Dict[str, str]:
         versions['SciPy'] = scipy.__version__
     except (ImportError, AttributeError):
         pass
-    
+
+    # Issue #66: statsmodels and gseapy do the actual inferential work (BH
+    # correction and GSEA respectively). Without them the block documented the
+    # plotting library but not the statistics, which defeats its purpose.
+    try:
+        import statsmodels
+        versions['statsmodels'] = statsmodels.__version__
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import gseapy
+        versions['gseapy'] = gseapy.__version__
+    except (ImportError, AttributeError):
+        pass
+
     if PLOTLY_AVAILABLE:
         try:
             import plotly
             versions['Plotly'] = plotly.__version__
         except AttributeError:
             pass
-    
+
+    # Issue #66: requirements.txt declares ranges with no lockfile, so the
+    # resolved versions genuinely differ between builds. Record the interpreter
+    # and the image the report was produced by so an archived report identifies
+    # its own build. MOLAOP_IMAGE_SHA is baked in by the Docker build; outside a
+    # container it is absent and the entry is simply omitted.
+    versions['Python'] = platform.python_version()
+
+    image_sha = os.environ.get('MOLAOP_IMAGE_SHA')
+    if image_sha:
+        versions['Image'] = image_sha
+
     return versions
