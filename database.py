@@ -45,6 +45,9 @@ class ExperimentRecord(Base):
     # Issue #55: comma-separated gene-set resources used (e.g. "WikiPathways, GO_BP").
     # NULL for pre-#55 rows (coerced to WikiPathways on read).
     selected_resources = Column(String(255))
+    # Issue #60: minimum KE-mapping confidence used for enrichment
+    # ('all'/'medium'/'high'). NULL for pre-#60 rows (coerced to 'all' on read).
+    min_confidence = Column(String(20))
 
     # Analysis results summary (JSON)
     enrichment_results = Column(Text)  # JSON string of enrichment results
@@ -73,6 +76,7 @@ class ExperimentRecord(Base):
             'fc_column': self.fc_column,
             'pval_column': self.pval_column,
             'selected_resources': self.selected_resources or 'WikiPathways',  # coerce NULL (pre-#55 rows)
+            'min_confidence': self.min_confidence or 'all',  # coerce NULL (pre-#60 rows)
             'enrichment_results': json.loads(self.enrichment_results) if self.enrichment_results else None,
             'gene_count': self.gene_count,
             'significant_genes': self.significant_genes,
@@ -187,6 +191,9 @@ class BatchRecord(Base):
     pval_cutoff = Column(Float)
     # Issue #55: comma-separated gene-set resources used (e.g. "WikiPathways, GO_BP").
     selected_resources = Column(String(255))
+    # Issue #60: minimum KE-mapping confidence applied to every condition
+    # ('all'/'medium'/'high'). NULL for pre-#60 rows (read as 'all').
+    min_confidence = Column(String(20))
 
     # Shared column mapping (same for all files in the batch)
     id_column = Column(String(100))
@@ -342,6 +349,34 @@ def _ensure_selected_resources_column(engine) -> None:
                 )
 
 
+def _ensure_min_confidence_column(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for the 'min_confidence' column.
+
+    Adds ``min_confidence TEXT`` to the ``experiments`` and ``batches`` tables
+    when absent (issue #60). Safe to run on every startup — the PRAGMA check
+    makes the ALTER a no-op on databases that already have the column. Existing
+    rows keep NULL, which is read back as ``'all'`` (the pre-#60 behaviour).
+
+    Security note: the table names and column literal are module-internal
+    constants — no user-supplied input is interpolated into the SQL statements.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    for table in ('experiments', 'batches'):
+        with engine.connect() as conn:
+            result = conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_cols = {row[1] for row in result}
+            if 'min_confidence' not in existing_cols:
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN min_confidence TEXT")
+                )
+                conn.commit()
+                logger.info(
+                    f"Added 'min_confidence' column to '{table}' table (#60 migration)"
+                )
+
+
 class DatabaseManager:
     """Manager class for database operations."""
     
@@ -386,6 +421,10 @@ class DatabaseManager:
             # Idempotent additive migration: add 'selected_resources' column to
             # pre-existing databases that lack it (#55). No-op on fresh databases.
             _ensure_selected_resources_column(self.engine)
+
+            # Idempotent additive migration: add 'min_confidence' column to
+            # pre-existing databases that lack it (#60). No-op on fresh databases.
+            _ensure_min_confidence_column(self.engine)
 
             # Create session factory
             self.SessionLocal = sessionmaker(
@@ -443,6 +482,7 @@ class DatabaseManager:
                 record.fc_column = analysis_params.get('fc_column')
                 record.pval_column = analysis_params.get('pval_column')
                 record.selected_resources = analysis_params.get('selected_resources')
+                record.min_confidence = analysis_params.get('min_confidence')  # #60
                 record.analysis_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
             
             # Add results summary if provided

@@ -252,3 +252,23 @@ class TestReportService:
         html_content = report_generator.generate_html_report(minimal_data)
         assert len(html_content) > 1000  # Should still generate basic structure
         assert '<html' in html_content
+
+
+class TestMinConfidenceInReport:
+    """Issue #60: the chosen mapping-confidence threshold is reported."""
+
+    def test_default_label_is_all_mappings(self, sample_report_data):
+        assert sample_report_data.min_confidence == 'all'
+        assert sample_report_data.min_confidence_label == 'All mappings'
+
+    def test_labels_for_each_threshold(self, sample_report_data):
+        sample_report_data.min_confidence = 'medium'
+        assert sample_report_data.min_confidence_label == 'Medium and High only'
+        sample_report_data.min_confidence = 'high'
+        assert sample_report_data.min_confidence_label == 'High only'
+
+    def test_threshold_rendered_in_the_html_report(self, sample_report_data):
+        sample_report_data.min_confidence = 'high'
+        html_content = report_generator.generate_html_report(sample_report_data)
+        assert 'Minimum Mapping Confidence' in html_content
+        assert 'High only' in html_content

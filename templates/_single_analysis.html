@@ -465,6 +465,24 @@
             </div>
         </div>
 
+        {# Issue #60: restrict enrichment to better-evidenced KE-pathway mappings. #}
+        <div class="settings-subgroup">
+            <label class="settings-subgroup__label" for="min_confidence">Minimum mapping confidence</label>
+            <p class="settings-subgroup__hint" style="margin: 0 0 8px;">
+                KE&rarr;pathway mappings are curated as High, Medium or Low confidence.
+                Raising the threshold drops weaker mappings from each Key Event's gene set;
+                a KE whose mappings are all below the threshold is not tested. Mappings
+                without a recorded confidence are always kept.
+            </p>
+            {% set sel_min_conf = min_confidence or 'all' %}
+            <select name="min_confidence" id="min_confidence"
+                    style="padding: 8px; font-size: 14px; max-width: 320px;">
+                <option value="all" {% if sel_min_conf == 'all' %}selected{% endif %}>All mappings (default)</option>
+                <option value="medium" {% if sel_min_conf == 'medium' %}selected{% endif %}>Medium and High only</option>
+                <option value="high" {% if sel_min_conf == 'high' %}selected{% endif %}>High only</option>
+            </select>
+        </div>
+
         <div class="settings-actions">
             <button type="submit" class="btn--primary"
                     title="Run enrichment analysis based on selected threshold and genes.">

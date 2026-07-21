@@ -14,6 +14,11 @@
     <p><strong>Batch:</strong> {{ batch.batch_name or 'Unnamed batch' }}</p>
     <p><strong>AOP:</strong> {{ batch.aop_label }}</p>
     <p><strong>Log2FC Threshold:</strong> {{ batch.logfc_threshold }}</p>
+    {# Issue #60: report the KE-mapping confidence threshold used for enrichment. #}
+    <p><strong>Minimum Mapping Confidence:</strong>
+      {% set mc = batch.min_confidence or 'all' %}
+      {{ {'all': 'All mappings', 'medium': 'Medium and High only', 'high': 'High only'}.get(mc, mc) }}
+    </p>
     <p><strong>Harmonised Background:</strong> {{ batch.harmonised_gene_count }} genes (intersection of all conditions)</p>
     <p><strong>Completed:</strong> {{ batch.completed_at.strftime('%Y-%m-%d %H:%M') if batch.completed_at else 'N/A' }}</p>
     {% if batch.owner %}<p><strong>Owner:</strong> {{ batch.owner }}</p>{% endif %}

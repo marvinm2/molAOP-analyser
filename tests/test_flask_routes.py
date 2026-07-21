@@ -1530,3 +1530,227 @@ class TestPathwayView:
             "Expected 'pathway-view-section' to be ABSENT when wp_picker_data is None. "
             f"Body excerpt: {response.data[:500]!r}"
         )
+
+
+class TestMinConfidenceControl:
+    """Issue #60: the minimum mapping-confidence control on the single flow."""
+
+    @staticmethod
+    def _form(**overrides):
+        form = {
+            'filename': 'test.csv',
+            'id_column': 'Gene_Symbol',
+            'fc_column': 'log2FoldChange',
+            'pval_column': 'padj',
+            'aop_selection': 'AOP:1',
+            'logfc_threshold': '1.0',
+        }
+        form.update(overrides)
+        return form
+
+    @staticmethod
+    def _post_analyze(client, form):
+        """POST /analyze with the standard mock stack; returns (response, mock loader)."""
+        import pandas as pd
+
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53'],
+            'log2FC': [1.5, -0.8],
+            'pval': [0.001, 0.05],
+            'significant': [True, False],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.05],
+            'num_overlap': [1], 'pct_sig_in_KE': [50.0],
+            'total_KE_genes_in_dataset': [2], 'odds_ratio': [3.5],
+            'overlap': ['BRCA1'], 'KE': ['KE:115'],
+            'sig_in_KE': [1], 'sig_not_KE': [0],
+            'non_sig_in_KE': [1], 'non_sig_not_KE': [0],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 2})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.build_ke_gene_mapping', return_value={}), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('app.validate_file_path', return_value=True), \
+             patch('app.load_cached_reference_sets', return_value=({'KE:115': {'BRCA1'}}, 'cache')) as loader:
+            response = client.post('/analyze', data=form)
+        return response, loader
+
+    def test_threshold_forwarded_to_reference_loader(self, authenticated_client):
+        response, loader = self._post_analyze(
+            authenticated_client, self._form(min_confidence='high')
+        )
+        assert response.status_code == 200
+        assert loader.call_args.kwargs['min_confidence'] == 'high'
+
+    def test_omitted_threshold_defaults_to_all(self, authenticated_client):
+        """Backward compatible: no control submitted -> current behaviour."""
+        response, loader = self._post_analyze(authenticated_client, self._form())
+        assert response.status_code == 200
+        assert loader.call_args.kwargs['min_confidence'] == 'all'
+
+    def test_case_and_whitespace_are_normalised(self, authenticated_client):
+        response, loader = self._post_analyze(
+            authenticated_client, self._form(min_confidence='  Medium ')
+        )
+        assert response.status_code == 200
+        assert loader.call_args.kwargs['min_confidence'] == 'medium'
+
+    @pytest.mark.parametrize("junk", ["low", "sky-high", "1", "'; DROP TABLE experiments --"])
+    def test_junk_threshold_is_rejected(self, authenticated_client, junk):
+        response, loader = self._post_analyze(
+            authenticated_client, self._form(min_confidence=junk)
+        )
+        assert response.status_code == 400
+        assert b'confidence' in response.data.lower()
+        loader.assert_not_called()
+
+    @staticmethod
+    def _render_single_form(**context):
+        """Render the single-analysis partial with the enrichment settings visible."""
+        from flask import render_template
+        from app import app as flask_app
+
+        base = dict(
+            preview=[{'Gene_Symbol': 'BRCA1'}],
+            columns=['Gene_Symbol', 'log2FoldChange', 'padj'],
+            filename='test.csv',
+            volcano_data=[{'ID': 'BRCA1', 'log2FC': 1.5, 'pval': 0.001}],
+            selected_columns={'id': 'Gene_Symbol', 'fc': 'log2FoldChange',
+                              'pval': 'padj', 'pval_adj': None},
+            column_suggestions=None,
+            logfc_threshold=1.0,
+            pval_cutoff=0.05,
+            pval_y=[],
+            columns_confirmed=True,
+            case_study_aops={},
+            cisplatin_demos=[],
+            parse_filename=lambda name: {},
+            recommended_aops=None,
+            metadata={},
+            pval_threshold=0.05,
+            method='ora',
+            selected_resources=['WikiPathways'],
+        )
+        base.update(context)
+        with flask_app.test_request_context('/'):
+            return render_template('_single_analysis.html', **base)
+
+    def test_control_rendered_in_the_enrichment_target_group(self):
+        """The selector appears alongside the gene-set resource checkboxes."""
+        html = self._render_single_form(min_confidence='all')
+        assert 'name="min_confidence"' in html
+        assert 'Minimum mapping confidence' in html
+        # Sits in the same settings group as the resource checkboxes (#55 pattern).
+        assert html.index('name="resources"') < html.index('name="min_confidence"')
+
+    def test_selected_threshold_survives_the_htmx_rerender(self):
+        html = self._render_single_form(min_confidence='high')
+        assert '<option value="high" selected>' in html
+        assert '<option value="all" selected>' not in html
+
+    def test_default_selection_is_all(self):
+        html = self._render_single_form()
+        assert '<option value="all" selected>' in html
+
+    def test_preview_echoes_the_threshold_back(self, flask_client):
+        """/preview re-renders with the submitted threshold so it survives Update Plot."""
+        import pandas as pd
+
+        preview_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53'],
+            'log2FoldChange': [1.5, -0.8],
+            'padj': [0.001, 0.05],
+        })
+        with patch('app.validate_file_path', return_value=True), \
+             patch('pandas.read_csv', return_value=preview_df), \
+             patch('os.path.exists', return_value=True):
+            response = flask_client.post('/preview', data={
+                'filename': 'test.csv',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+                'columns_confirmed': 'true',
+                'min_confidence': 'high',
+            }, headers={'HX-Request': 'true'})
+        assert response.status_code == 200
+        assert b'<option value="high" selected>' in response.data
+
+    def test_preview_ignores_a_junk_threshold(self, flask_client):
+        """A tampered value re-renders as the default rather than 500ing."""
+        import pandas as pd
+
+        preview_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53'],
+            'log2FoldChange': [1.5, -0.8],
+            'padj': [0.001, 0.05],
+        })
+        with patch('app.validate_file_path', return_value=True), \
+             patch('pandas.read_csv', return_value=preview_df), \
+             patch('os.path.exists', return_value=True):
+            response = flask_client.post('/preview', data={
+                'filename': 'test.csv',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+                'columns_confirmed': 'true',
+                'min_confidence': 'bogus',
+            }, headers={'HX-Request': 'true'})
+        assert response.status_code == 200
+        assert b'<option value="all" selected>' in response.data
+
+
+class TestBatchMinConfidence:
+    """Issue #60: batch parity for the minimum mapping-confidence control."""
+
+    @staticmethod
+    def _form(**overrides):
+        form = {
+            'batch_uuid': 'test-batch-uuid',
+            'aop_selection': 'AOP:1',
+            'id_col': 'GENE_SYMBOL',
+            'fc_col': 'logFC',
+            'pval_col': 'adj.P.Val',
+            'logfc_threshold': '0.0',
+            'filenames[]': 'a.csv',
+            'condition_labels[]': 'A',
+        }
+        form.update(overrides)
+        return form
+
+    @staticmethod
+    def _post_batch(client, form):
+        with patch('os.path.isdir', return_value=True), \
+             patch('os.path.isfile', return_value=True), \
+             patch('app.validate_batch_columns', return_value=(True, '')), \
+             patch('app.harmonise_backgrounds', return_value=({'BRCA1'}, {})), \
+             patch('app._persist_and_launch_batch', return_value=1) as launcher:
+            response = client.post('/batch/analyze', data=form)
+        return response, launcher
+
+    def test_threshold_forwarded_to_the_batch_launcher(self, flask_client):
+        response, launcher = self._post_batch(flask_client, self._form(min_confidence='medium'))
+        assert response.status_code == 200
+        assert launcher.call_args.kwargs['min_confidence'] == 'medium'
+
+    def test_omitted_threshold_defaults_to_all(self, flask_client):
+        response, launcher = self._post_batch(flask_client, self._form())
+        assert response.status_code == 200
+        assert launcher.call_args.kwargs['min_confidence'] == 'all'
+
+    def test_junk_threshold_is_rejected(self, flask_client):
+        response, launcher = self._post_batch(flask_client, self._form(min_confidence='bogus'))
+        assert response.status_code == 400
+        assert b'confidence' in response.data.lower()
+        launcher.assert_not_called()
+
+    def test_control_rendered_in_the_batch_wizard(self, flask_client):
+        response = flask_client.get('/')
+        assert response.status_code == 200
+        assert b'batch-min-confidence' in response.data

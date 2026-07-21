@@ -260,6 +260,29 @@
     syncResources();
 })();
 
+// IIFE: keep the minimum mapping-confidence selection alive across "Update
+// Plot" (#60). Same mirroring trick as the resource checkboxes above — the
+// select lives in #enrichmentForm, so its value is copied into a hidden input
+// on #volcanoForm; /preview echoes it back via min_confidence.
+(function () {
+    const volcanoForm = document.getElementById('volcanoForm');
+    const select = document.getElementById('min_confidence');
+    if (!volcanoForm || !select) return;
+
+    function syncMinConfidence() {
+        volcanoForm.querySelectorAll('input[data-min-confidence-mirror]').forEach(el => el.remove());
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'min_confidence';
+        hidden.value = select.value;
+        hidden.setAttribute('data-min-confidence-mirror', '');
+        volcanoForm.appendChild(hidden);
+    }
+
+    select.addEventListener('change', syncMinConfidence);
+    syncMinConfidence();
+})();
+
 // Globals exposed for inline onclick handlers in _single_analysis.html.
 function setThreshold(value) {
     document.getElementById('logfc_threshold').value = value;

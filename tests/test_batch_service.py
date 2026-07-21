@@ -1,6 +1,8 @@
 """Tests for the batch analysis service."""
 import os
 import tempfile
+from unittest.mock import patch
+
 import pytest
 import pandas as pd
 from services.batch_service import (
@@ -136,3 +138,72 @@ class TestHarmoniseBackgrounds:
         ]
         harmonised, _ = harmonise_backgrounds(infos)
         assert harmonised == set()
+
+
+class TestBatchMinConfidencePersistence:
+    """Issue #60: _persist_and_launch_batch stores and applies the threshold."""
+
+    @pytest.fixture
+    def batch_app(self, temp_database, monkeypatch):
+        """app module wired to a temp DB with the background run stubbed out."""
+        import app as app_module
+
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        monkeypatch.setattr(app_module, 'run_batch', lambda *a, **k: None)
+        return app_module
+
+    @staticmethod
+    def _launch(app_module, **overrides):
+        kwargs = dict(
+            batch_uuid='conf-parity-uuid',
+            filenames=['a.csv'],
+            condition_labels=['A'],
+            doses=[''],
+            timepoints=[''],
+            id_col='Gene',
+            fc_col='logFC',
+            pval_col='pval',
+            aop_id='AOP:1',
+            logfc_threshold=0.0,
+            pval_threshold=0.05,
+            resources=['WikiPathways'],
+            harmonised_genes={'BRCA1'},
+            batch_name='conf batch',
+            owner='',
+            description='',
+        )
+        kwargs.update(overrides)
+        return app_module._persist_and_launch_batch(**kwargs)
+
+    def test_threshold_stored_on_the_batch_record(self, batch_app, temp_database):
+        from database import BatchRecord
+
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock')):
+            self._launch(batch_app, min_confidence='high')
+
+        session = temp_database.get_session()
+        try:
+            batch = session.query(BatchRecord).filter_by(uuid='conf-parity-uuid').one()
+            assert batch.min_confidence == 'high'
+        finally:
+            session.close()
+
+    def test_threshold_applied_when_loading_the_reference_sets(self, batch_app):
+        """Batch parity: the same shared loader call the single flow makes."""
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock')) as loader:
+            self._launch(batch_app, min_confidence='medium')
+        assert loader.call_args.kwargs['min_confidence'] == 'medium'
+
+    def test_default_threshold_is_all(self, batch_app, temp_database):
+        from database import BatchRecord
+
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock')) as loader:
+            self._launch(batch_app)
+        assert loader.call_args.kwargs['min_confidence'] == 'all'
+
+        session = temp_database.get_session()
+        try:
+            batch = session.query(BatchRecord).filter_by(uuid='conf-parity-uuid').one()
+            assert batch.min_confidence == 'all'
+        finally:
+            session.close()

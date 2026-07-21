@@ -215,6 +215,21 @@
             </label>
         </div>
 
+        <h3>Minimum Mapping Confidence</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            KE&rarr;pathway mappings are curated as High, Medium or Low confidence. Raising
+            the threshold drops weaker mappings from each Key Event's gene set; a KE whose
+            mappings are all below the threshold is not tested. Mappings without a recorded
+            confidence are always kept. Applied equally to all conditions.
+        </p>
+        <div style="margin-bottom: 24px;">
+            <select id="batch-min-confidence" style="padding: 8px; font-size: 14px; max-width: 320px;">
+                <option value="all" selected>All mappings (default)</option>
+                <option value="medium">Medium and High only</option>
+                <option value="high">High only</option>
+            </select>
+        </div>
+
         <div class="wizard-nav">
             <button id="btn-back-tag" class="btn btn--secondary">Back</button>
             <button id="btn-analyze" class="btn btn--primary">Start Batch Analysis</button>
