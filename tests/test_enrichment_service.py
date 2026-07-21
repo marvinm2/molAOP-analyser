@@ -2,7 +2,10 @@
 import math
 import pytest
 import pandas as pd
-from services.enrichment_service import run_enrichment_analysis, build_ke_gene_mapping
+from config import Config
+from services.enrichment_service import (
+    run_enrichment_analysis, build_ke_gene_mapping, get_ke_summary, format_ke_summary,
+)
 
 
 def _make_gene_df(genes, significant_flags):
@@ -328,3 +331,96 @@ def test_build_ke_gene_mapping_threshold_shrinkage():
     # strict_sig has G1,G7 = 2 True genes; G1 in {KE:1}, G7 in {KE:3} = 1+1 = 2 entries.
     assert loose_count == 8
     assert strict_count == 2
+
+
+class TestKeAccountingSummary:
+    """Issue #65: tested/excluded KE accounting attached to the results."""
+
+    def test_summary_counts_tested_and_excluded(self):
+        """Every KE of the AOP is accounted for as tested or excluded."""
+        genes = [f"GENE{i}" for i in range(50)]
+        df = _make_gene_df(genes, [i < 10 for i in range(50)])
+
+        reference_sets = {
+            'KE:OK': {f"GENE{i}" for i in range(10)},        # 10 measured — tested
+            'KE:SMALL': {'GENE0', 'GENE1', 'GENE2'},          # 3 measured — too few
+            'KE:MISS': {'XX1', 'XX2', 'XX3', 'XX4', 'XX5'},   # none measured
+        }
+        # KE:NOSET is in the AOP but has no reference gene set at all.
+        ke_list = {'KE:OK', 'KE:SMALL', 'KE:MISS', 'KE:NOSET'}
+
+        result = run_enrichment_analysis(
+            df, reference_sets, ke_list,
+            {k: k for k in ke_list},
+        )
+        summary = get_ke_summary(result)
+
+        assert summary is not None
+        assert summary['total_kes'] == 4
+        assert summary['tested'] == 1
+        assert summary['tested'] == len(result)  # BH denominator == rows returned
+        assert summary['excluded_too_few_genes'] == 1
+        assert summary['excluded_no_mapping'] == 2  # KE:MISS + KE:NOSET
+        assert summary['excluded_error'] == 0
+        assert summary['min_ke_genes'] == 5
+        assert summary['excluded_reasons']['KE:SMALL'] == 'too_few_genes'
+        assert summary['excluded_reasons']['KE:MISS'] == 'no_mapping'
+        assert summary['excluded_reasons']['KE:NOSET'] == 'no_mapping'
+        assert 'KE:OK' not in summary['excluded_reasons']
+        # Accounting must be exhaustive: nothing vanishes silently.
+        assert (
+            summary['tested'] + summary['excluded_too_few_genes']
+            + summary['excluded_no_mapping'] + summary['excluded_error']
+            == summary['total_kes']
+        )
+
+    def test_min_ke_genes_is_configurable(self):
+        """The minimum measured-gene threshold is a parameter, not a literal."""
+        genes = [f"GENE{i}" for i in range(50)]
+        df = _make_gene_df(genes, [i < 10 for i in range(50)])
+        reference_sets = {'KE:1': {'GENE0', 'GENE1', 'GENE2'}}  # 3 measured
+
+        # Default (5) excludes it — no results at all.
+        with pytest.raises(ValueError, match="No enrichment results"):
+            run_enrichment_analysis(df, reference_sets, {'KE:1'}, {'KE:1': 'Small'})
+
+        # Lowering the minimum lets it through.
+        result = run_enrichment_analysis(
+            df, reference_sets, {'KE:1'}, {'KE:1': 'Small'}, min_ke_genes=3
+        )
+        assert len(result) == 1
+        summary = get_ke_summary(result)
+        assert summary['min_ke_genes'] == 3
+        assert summary['excluded_too_few_genes'] == 0
+
+    def test_default_min_ke_genes_comes_from_config(self):
+        """The hardcoded 5 is now the documented Config.MIN_KE_GENES constant."""
+        assert Config.MIN_KE_GENES == 5
+        genes = [f"GENE{i}" for i in range(50)]
+        df = _make_gene_df(genes, [i < 10 for i in range(50)])
+        reference_sets = {'KE:1': {f"GENE{i}" for i in range(10)}}
+        result = run_enrichment_analysis(df, reference_sets, {'KE:1'}, {'KE:1': 'Normal'})
+        assert get_ke_summary(result)['min_ke_genes'] == Config.MIN_KE_GENES
+
+    def test_get_ke_summary_returns_none_without_accounting(self):
+        """A DataFrame that never went through enrichment carries no summary."""
+        assert get_ke_summary(pd.DataFrame({'KE': ['KE:1']})) is None
+
+    def test_format_ke_summary_wording(self):
+        """The shared one-liner is worded identically everywhere it appears."""
+        text = format_ke_summary({
+            'total_kes': 24, 'tested': 18, 'excluded_no_mapping': 2,
+            'excluded_too_few_genes': 4, 'excluded_error': 0, 'min_ke_genes': 5,
+        })
+        assert text == (
+            '18 of 24 Key Events tested; 4 excluded (fewer than 5 measured genes), '
+            '2 excluded (no gene set mapped)'
+        )
+
+    def test_format_ke_summary_omits_empty_clauses(self):
+        """No exclusions -> no trailing clause; no summary -> empty string."""
+        assert format_ke_summary({
+            'total_kes': 10, 'tested': 10, 'excluded_no_mapping': 0,
+            'excluded_too_few_genes': 0, 'excluded_error': 0, 'min_ke_genes': 5,
+        }) == '10 of 10 Key Events tested'
+        assert format_ke_summary(None) == ''

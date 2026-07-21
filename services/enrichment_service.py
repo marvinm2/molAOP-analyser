@@ -8,7 +8,73 @@ from typing import Dict, Set, List, Any, Tuple, Optional
 from scipy.stats import fisher_exact
 from statsmodels.stats.multitest import multipletests
 
+from config import Config
+
 logger = logging.getLogger(__name__)
+
+# Issue #65 — key under which the tested/excluded KE accounting is attached to
+# the result DataFrame's ``.attrs``. Using ``.attrs`` keeps the return type a
+# plain DataFrame, so every existing call site (app.py:/analyze,
+# services/batch_service.py, the GSEA backend) is unaffected; callers that want
+# the accounting read it back with ``get_ke_summary()``.
+KE_SUMMARY_ATTR = 'ke_summary'
+
+
+def get_ke_summary(results: pd.DataFrame) -> Optional[Dict[str, Any]]:
+    """Return the tested/excluded KE accounting attached to an enrichment result.
+
+    Args:
+        results: DataFrame returned by ``run_enrichment_analysis`` /
+            ``run_gsea_analysis`` / ``run_enrichment``.
+
+    Returns:
+        The summary dict (see ``run_enrichment_analysis``) or None when the
+        DataFrame carries no accounting (e.g. results restored from JSON, where
+        pandas ``.attrs`` do not survive the round-trip).
+    """
+    try:
+        return results.attrs.get(KE_SUMMARY_ATTR)
+    except AttributeError:
+        return None
+
+
+def format_ke_summary(summary: Optional[Dict[str, Any]]) -> str:
+    """Render a KE accounting summary as a one-line human-readable sentence.
+
+    Example: ``"18 of 24 Key Events tested; 4 excluded (fewer than 5 measured
+    genes), 2 excluded (no gene set mapped)"``. Shared by the results page, the
+    single report and the batch report so all three word it identically.
+
+    Args:
+        summary: Dict from ``get_ke_summary`` (or an equivalently-shaped dict
+            rebuilt from a network payload). None/empty yields an empty string.
+
+    Returns:
+        The formatted sentence, or '' when there is nothing to report.
+    """
+    if not summary:
+        return ''
+    parts = [
+        f"{summary.get('tested', 0)} of {summary.get('total_kes', 0)} "
+        f"Key Events tested"
+    ]
+    clauses = []
+    too_few = summary.get('excluded_too_few_genes', 0)
+    if too_few:
+        clauses.append(
+            f"{too_few} excluded (fewer than "
+            f"{summary.get('min_ke_genes', Config.MIN_KE_GENES)} measured genes)"
+        )
+    no_mapping = summary.get('excluded_no_mapping', 0)
+    if no_mapping:
+        clauses.append(f"{no_mapping} excluded (no gene set mapped)")
+    errored = summary.get('excluded_error', 0)
+    if errored:
+        clauses.append(f"{errored} excluded (statistics could not be computed)")
+    if clauses:
+        parts.append('; ' + ', '.join(clauses))
+    return ''.join(parts)
+
 
 def run_enrichment_analysis(
     df: pd.DataFrame,
@@ -16,6 +82,7 @@ def run_enrichment_analysis(
     ke_list: Set[str],
     ke_title_map: Dict[str, str],
     gene_logfc_map: Optional[Dict[str, float]] = None,
+    min_ke_genes: int = Config.MIN_KE_GENES,
 ) -> pd.DataFrame:
     """
     Run Fisher's exact test enrichment analysis for Key Events.
@@ -35,8 +102,26 @@ def run_enrichment_analysis(
             column is omitted (default behaviour unchanged for callers that
             don't opt in).
 
+        min_ke_genes: Minimum number of a KE's genes that must be measured in
+            ``df`` for the KE to be tested (issue #65). Defaults to
+            ``Config.MIN_KE_GENES``. KEs below it are excluded from the Fisher
+            tests and from the BH denominator, and are recorded in the KE
+            accounting summary instead of being dropped silently.
+
     Returns:
-        pd.DataFrame: Enrichment results sorted by FDR
+        pd.DataFrame: Enrichment results sorted by FDR. The tested/excluded KE
+        accounting is attached to ``.attrs[KE_SUMMARY_ATTR]`` (issue #65) and
+        is read back with ``get_ke_summary()``::
+
+            {
+                'total_kes': 24,              # KEs in the AOP
+                'tested': 18,                 # rows in the returned DataFrame
+                'excluded_no_mapping': 2,     # no gene set, or no measured overlap
+                'excluded_too_few_genes': 4,  # overlap below min_ke_genes
+                'excluded_error': 0,          # contingency / Fisher failure
+                'min_ke_genes': 5,
+                'excluded_reasons': {'KE:123': 'too_few_genes', ...},
+            }
     """
     logger.info("Starting enrichment analysis")
     
@@ -69,6 +154,13 @@ def run_enrichment_analysis(
     r_direction = []  # populated only when gene_logfc_map is supplied
     emit_direction = gene_logfc_map is not None
 
+    # Issue #65 — record why each KE never reached a Fisher test, so the
+    # multiple-testing denominator is visible and "could not assess" is
+    # distinguishable from "assessed and not enriched" downstream.
+    excluded_reasons: Dict[str, str] = {
+        ke: 'no_mapping' for ke in ke_list if ke not in filtered_reference_sets
+    }
+
     for ke, ref_genes in filtered_reference_sets.items():
         try:
             # Find overlap between KE genes and user genes (ref_genes already normalized)
@@ -76,11 +168,16 @@ def run_enrichment_analysis(
 
             if not ke_genes:
                 logger.debug(f"No overlap found for KE {ke}")
+                excluded_reasons[ke] = 'no_mapping'
                 continue
 
             # Skip KEs with too few genes for reliable statistics
-            if len(ke_genes) < 5:
-                logger.debug(f"Skipping KE {ke}: only {len(ke_genes)} genes (minimum 5 required)")
+            if len(ke_genes) < min_ke_genes:
+                logger.debug(
+                    f"Skipping KE {ke}: only {len(ke_genes)} genes "
+                    f"(minimum {min_ke_genes} required)"
+                )
+                excluded_reasons[ke] = 'too_few_genes'
                 continue
 
             sig_in_ke = {g for g in ke_genes if user_gene_status.get(g, False)}
@@ -95,6 +192,7 @@ def run_enrichment_analysis(
             # Validate contingency table cells are non-negative
             if b < 0 or d < 0:
                 logger.error(f"KE {ke}: invalid contingency table (a={a}, b={b}, c={c}, d={d}) — skipping")
+                excluded_reasons[ke] = 'error'
                 continue
 
             # Run Fisher's exact test (one-tailed, greater)
@@ -140,6 +238,7 @@ def run_enrichment_analysis(
 
         except Exception as e:
             logger.error(f"Error processing KE {ke}: {e}")
+            excluded_reasons[ke] = 'error'
             continue
 
     if not r_ke:
@@ -172,9 +271,47 @@ def run_enrichment_analysis(
     df_results = pd.DataFrame(columns)
     df_results = df_results.sort_values("FDR")
 
-    logger.info(f"Enrichment analysis completed: {len(df_results)} results generated")
+    # Issue #65 — attach the KE accounting after the sort, since pandas only
+    # propagates .attrs through operations that call __finalize__.
+    df_results.attrs[KE_SUMMARY_ATTR] = _build_ke_summary(
+        ke_list, len(r_ke), excluded_reasons, min_ke_genes
+    )
+
+    logger.info(
+        f"Enrichment analysis completed: {len(df_results)} results generated "
+        f"({format_ke_summary(df_results.attrs[KE_SUMMARY_ATTR])})"
+    )
 
     return df_results
+
+
+def _build_ke_summary(
+    ke_list: Set[str],
+    tested: int,
+    excluded_reasons: Dict[str, str],
+    min_ke_genes: int,
+) -> Dict[str, Any]:
+    """Assemble the tested/excluded KE accounting dict (issue #65).
+
+    Args:
+        ke_list: All KE IDs of the selected AOP (the accounting denominator).
+        tested: Number of KEs that reached a statistical test — i.e. the number
+            of rows in the result table, and the size of the BH denominator.
+        excluded_reasons: KE_ID → 'no_mapping' | 'too_few_genes' | 'error'.
+        min_ke_genes: Minimum measured-gene threshold that was applied.
+
+    Returns:
+        Summary dict as documented on ``run_enrichment_analysis``.
+    """
+    return {
+        'total_kes': len(set(ke_list)),
+        'tested': tested,
+        'excluded_no_mapping': sum(1 for r in excluded_reasons.values() if r == 'no_mapping'),
+        'excluded_too_few_genes': sum(1 for r in excluded_reasons.values() if r == 'too_few_genes'),
+        'excluded_error': sum(1 for r in excluded_reasons.values() if r == 'error'),
+        'min_ke_genes': min_ke_genes,
+        'excluded_reasons': excluded_reasons,
+    }
 
 def build_ke_gene_mapping(
     reference_sets: Dict[str, Set[str]],
