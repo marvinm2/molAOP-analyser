@@ -34,7 +34,7 @@ from services.api_service import (
     fetch_gmt_reference_sets,
 )
 from exceptions import AOPAnalysisError, GeneIdMismatchError, format_error_response
-from utils import cleanup_file, validate_file_path
+from utils import cleanup_file, cleanup_old_uploads, validate_file_path
 from services.data_service import (
     load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data,
     compute_logfc_percentiles,
@@ -508,6 +508,16 @@ def preview():
     )
     recommended_aops = [a.strip() for a in recommended_aops_raw.split(',') if a.strip()]
 
+    # Issue #72: reclaim old uploads by age. This is the only thing bounding the
+    # uploads directory now that /analyze keeps its input, so it must actually
+    # run — before this it was a function nothing called. Swept on upload, the
+    # same lazy-cleanup pattern as cleanup_expired_batches / shared results,
+    # rather than a scheduler this single-process app would have to own.
+    try:
+        cleanup_old_uploads(max_age_hours=Config.UPLOAD_RETENTION_HOURS)
+    except Exception as exc:  # never fail an upload over housekeeping
+        logger.warning("Upload sweep failed (non-fatal): %s", exc)
+
     # Prefer uploaded file if available
     file = request.files.get('gene_file')
     demo_filename = request.form.get('demo_file')
@@ -782,7 +792,14 @@ def analyze():
         # Validate file path
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(filename))
         if not validate_file_path(filepath):
-            return "Invalid or missing file", 400
+            # Issue #72: "Invalid or missing file" read as though the user's data
+            # were malformed. The usual cause is an upload that has aged out.
+            return (
+                f"The uploaded dataset '{filename}' is no longer available on the "
+                f"server — uploads are kept for "
+                f"{Config.UPLOAD_RETENTION_HOURS} hours. Please upload it again.",
+                400,
+            )
         
         # Load and process data using services
         df_raw = load_and_validate_data(filepath, id_col, fc_col, pval_col)
@@ -1009,8 +1026,12 @@ def analyze():
         # Guess gene ID type for display
         id_type = guess_id_type(df_processed['ID'])
         
-        # Clean up uploaded file
-        cleanup_file(filepath)
+        # Issue #72: the upload is deliberately NOT deleted here. /analyze takes a
+        # bare filename and the results page offers a method selector and threshold
+        # controls, so re-running the same dataset with different settings is a
+        # workflow the UI invites. Deleting on first use made the second run fail
+        # with "Invalid or missing file" — the file was fine; the tool had removed
+        # it. Uploads are reclaimed by age instead, swept on each new upload.
         
         logger.info("Analysis completed successfully")
         

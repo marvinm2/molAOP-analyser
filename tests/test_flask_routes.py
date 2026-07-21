@@ -1899,3 +1899,136 @@ class TestResourceProvenanceOnResultsPage:
         assert b'Gene set provenance' in body
         assert b'Builder API, live' in body
         assert b'class="resource-warning"' not in body
+
+
+class TestUploadSurvivesAnalysis:
+    """Issue #72: a dataset must be re-analysable with different settings."""
+
+    @staticmethod
+    def _real_upload(tmp_path, monkeypatch):
+        """Point the app at a scratch uploads dir holding one real file."""
+        import app as app_module
+
+        uploads = tmp_path / 'uploads'
+        uploads.mkdir()
+        (uploads / 'DEGs.txt').write_text(
+            "GENE_SYMBOL\tlogFC\tadj.P.Val\nBRCA1\t1.5\t0.001\nTP53\t-0.8\t0.4\n"
+        )
+        monkeypatch.setitem(app_module.app.config, 'UPLOAD_FOLDER', str(uploads))
+        monkeypatch.setattr(app_module.Config, 'UPLOAD_FOLDER', str(uploads))
+        return uploads
+
+    @staticmethod
+    def _analyze(client, method):
+        import pandas as pd
+
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53'],
+            'log2FC': [1.5, -0.8],
+            'pval': [0.001, 0.4],
+            'significant': [True, False],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.02],
+            'Representation': ['enriched'], 'num_overlap': [1],
+            'pct_sig_in_KE': [50.0], 'total_KE_genes_in_dataset': [2],
+            'odds_ratio': [3.5], 'overlap': ['BRCA1'], 'KE': ['KE:115'],
+            'sig_in_KE': [1], 'sig_not_KE': [0],
+            'non_sig_in_KE': [1], 'non_sig_not_KE': [0],
+            'p_value_depleted': [0.99], 'FDR_depleted': [0.99],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 2})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.load_cached_reference_sets',
+                   return_value=({'KE:115': {'BRCA1'}}, 'api', [])), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.build_ke_gene_mapping', return_value={}), \
+             patch('app.guess_id_type', return_value='HGNC'):
+            return client.post('/analyze', data={
+                'filename': 'DEGs.txt',
+                'id_column': 'GENE_SYMBOL',
+                'fc_column': 'logFC',
+                'pval_column': 'adj.P.Val',
+                'aop_selection': 'AOP:1',
+                'logfc_threshold': '1.0',
+                'method': method,
+            })
+
+    def test_same_upload_can_be_analysed_twice(self, authenticated_client, tmp_path, monkeypatch):
+        """The reported bug: run once with ORA, then again with GSEA."""
+        uploads = self._real_upload(tmp_path, monkeypatch)
+
+        first = self._analyze(authenticated_client, 'ora')
+        assert first.status_code == 200
+        # The upload survives the first run — this is the actual regression.
+        assert (uploads / 'DEGs.txt').exists()
+
+        second = self._analyze(authenticated_client, 'gsea')
+        assert second.status_code == 200
+        assert b'no longer available' not in second.data
+
+    def test_missing_upload_explains_itself(self, authenticated_client, tmp_path, monkeypatch):
+        """When the file really is gone, say why instead of blaming the data."""
+        self._real_upload(tmp_path, monkeypatch)
+        response = self._analyze(authenticated_client, 'ora')
+        assert response.status_code == 200
+
+        (tmp_path / 'uploads' / 'DEGs.txt').unlink()
+        gone = self._analyze(authenticated_client, 'ora')
+        assert gone.status_code == 400
+        assert b'no longer available' in gone.data
+        assert b'upload it again' in gone.data
+
+
+class TestOldUploadsAreSwept:
+    """Issue #72: the age-based sweep must actually run — it never did before."""
+
+    def test_upload_triggers_the_sweep(self, flask_client, tmp_path, monkeypatch):
+        import app as app_module
+
+        uploads = tmp_path / 'uploads'
+        uploads.mkdir()
+        monkeypatch.setitem(app_module.app.config, 'UPLOAD_FOLDER', str(uploads))
+        monkeypatch.setattr(app_module.Config, 'UPLOAD_FOLDER', str(uploads))
+
+        with patch('app.cleanup_old_uploads', return_value=0) as sweep:
+            flask_client.post('/preview', data={})
+        sweep.assert_called_once()
+        assert sweep.call_args.kwargs['max_age_hours'] == app_module.Config.UPLOAD_RETENTION_HOURS
+
+    def test_sweep_removes_only_aged_files(self, tmp_path, monkeypatch):
+        """Fresh uploads stay re-analysable; aged ones are reclaimed."""
+        import os
+        import time
+        import utils
+        from utils import cleanup_old_uploads
+
+        uploads = tmp_path / 'uploads'
+        uploads.mkdir()
+        # Patch the Config that utils actually holds, not config.Config:
+        # tests/test_config_secret.py reloads the config module, so after it has
+        # run the two are different class objects and patching the wrong one
+        # silently leaves the sweep pointed at the real uploads directory.
+        monkeypatch.setattr(utils.Config, 'UPLOAD_FOLDER', str(uploads))
+
+        fresh = uploads / 'fresh.txt'
+        fresh.write_text('x')
+        aged = uploads / 'aged.txt'
+        aged.write_text('x')
+        old = time.time() - (48 * 3600)
+        os.utime(aged, (old, old))
+
+        # Batch uploads live in per-UUID subdirectories and are cleaned by the
+        # batch flow; the sweep must not touch them mid-run.
+        batch_dir = uploads / 'a-batch-uuid'
+        batch_dir.mkdir()
+        (batch_dir / 'cond1.csv').write_text('x')
+
+        assert cleanup_old_uploads(max_age_hours=24) == 1
+        assert fresh.exists()
+        assert not aged.exists()
+        assert (batch_dir / 'cond1.csv').exists()

@@ -14,6 +14,12 @@ class Config:
     ALLOWED_EXTENSIONS = {'csv', 'tsv', 'txt'}
     UPLOAD_FOLDER = 'uploads'
     TEMP_FOLDER = 'temp'  # Temporary files for network PNGs
+    # Issue #72: how long an upload stays re-analysable. /analyze no longer
+    # deletes its input, so a dataset can be re-run with a different method,
+    # AOP or threshold; this age-based sweep (run on each new upload) is what
+    # bounds the directory instead. The uploads directory is container-local,
+    # not on the shared volume, so nothing here can fill the Gluster mount.
+    UPLOAD_RETENTION_HOURS = int(os.environ.get('UPLOAD_RETENTION_HOURS', '24'))
     
     # Data processing settings
     MAX_GENES_DISPLAY = 10000
