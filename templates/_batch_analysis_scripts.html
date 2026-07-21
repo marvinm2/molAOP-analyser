@@ -562,6 +562,9 @@ document.getElementById('btn-analyze').addEventListener('click', function() {
     document.querySelectorAll('.batch-resource:checked').forEach(function(cb) {
         payload.append('resources', cb.value);
     });
+    // Issue #60: minimum KE-mapping confidence, applied to every condition.
+    const minConfidenceEl = document.getElementById('batch-min-confidence');
+    payload.append('min_confidence', minConfidenceEl ? minConfidenceEl.value : 'all');
     payload.append('batch_name', document.getElementById('batch-name').value.trim());
     payload.append('owner', document.getElementById('batch-owner').value.trim());
     payload.append('description', document.getElementById('batch-desc').value.trim());

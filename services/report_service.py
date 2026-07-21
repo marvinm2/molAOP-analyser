@@ -57,6 +57,7 @@ except ImportError:
     SVG_SUPPORT = False
 
 from config import Config, ExperimentMetadata
+from helpers import MIN_CONFIDENCE_LABELS  # Issue #60: confidence threshold labels
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,11 @@ class ReportData:
     # remain compatible.
     selected_resources: str = 'WikiPathways'
 
+    # Issue #60: minimum KE-mapping confidence used for enrichment
+    # ('all'/'medium'/'high'). Defaulted so existing ReportData(...)
+    # constructions remain compatible.
+    min_confidence: str = 'all'
+
     # System information
     analysis_timestamp: datetime = None
     software_versions: Optional[Dict[str, str]] = None
@@ -106,6 +112,11 @@ class ReportData:
         """Set analysis timestamp if not provided."""
         if self.analysis_timestamp is None:
             self.analysis_timestamp = datetime.now()
+
+    @property
+    def min_confidence_label(self) -> str:
+        """Human-readable label for the minimum KE-mapping confidence (#60)."""
+        return MIN_CONFIDENCE_LABELS.get(self.min_confidence or 'all', str(self.min_confidence))
 
     @property
     def method_label(self) -> str:
@@ -333,6 +344,10 @@ class ReportGenerator:
                 <div class="param-item">
                     <label>Gene Set Resources:</label>
                     <span>{report_data.selected_resources}</span>
+                </div>
+                <div class="param-item">
+                    <label>Minimum Mapping Confidence:</label>
+                    <span>{report_data.min_confidence_label}</span>
                 </div>
                 <div class="param-item">
                     <label>Selected AOP:</label>
@@ -993,6 +1008,7 @@ class ReportGenerator:
             ['Metric', 'Value'],
             ['Method', report_data.method_label],
             ['Gene Set Resources', report_data.selected_resources],
+            ['Minimum Mapping Confidence', report_data.min_confidence_label],  # Issue #60
             ['Filename', report_data.filename],
             ['Total Genes', f"{report_data.gene_count:,}"],
             ['Significant Genes', f"{report_data.significant_genes:,}"],

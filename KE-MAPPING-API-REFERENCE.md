@@ -351,6 +351,17 @@ curl "https://host/api/v1/mappings?confidence_level=High&per_page=200"
 
 To paginate through all results, follow `pagination.next` until it is `null`.
 
+> **Analyser note (issue #60):** the `confidence_level` query parameter is
+> exact-match, so it cannot express "Medium and above". The analyser therefore
+> fetches every mapping once (it needs the full list for the pathway picker
+> anyway) and applies the minimum-confidence threshold client-side in
+> `helpers.filter_records_by_confidence()`. Comparison is case-insensitive —
+> the live API returns lowercase values (`"high"`) while this document shows
+> them title-cased. Records whose `confidence_level` is absent, `null`, blank,
+> or outside `{high, medium, low}` are **kept** (the filter no-ops), so the
+> local `data/KE-WP.csv` fallback and the confidence-free GMT exports keep
+> working unchanged.
+
 ### Fetch mappings for a specific KE
 
 ```bash
