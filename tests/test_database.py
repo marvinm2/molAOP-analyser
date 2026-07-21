@@ -212,3 +212,69 @@ class TestDatabaseOperations:
         experiment_id = db_manager.save_experiment_metadata(metadata=invalid_metadata)
         # Should not crash but may return None or create record with empty fields
         assert experiment_id is None or isinstance(experiment_id, int)
+
+
+class TestMinConfidencePersistence:
+    """Issue #60: the mapping-confidence threshold is stored for reproducibility."""
+
+    def test_threshold_persisted_and_read_back(self, temp_database, sample_metadata):
+        db_manager = temp_database
+        metadata_dict = sample_metadata.to_dict()
+        metadata_dict['filename'] = 'conf_test.csv'
+
+        experiment_id = db_manager.save_experiment_metadata(
+            metadata=metadata_dict,
+            analysis_params={'aop_id': 'AOP:1', 'min_confidence': 'high'},
+        )
+        assert db_manager.get_experiment(experiment_id)['min_confidence'] == 'high'
+
+    def test_missing_threshold_reads_back_as_all(self, temp_database, sample_metadata):
+        """Pre-#60 rows (NULL column) are coerced to the historical behaviour."""
+        db_manager = temp_database
+        metadata_dict = sample_metadata.to_dict()
+        metadata_dict['filename'] = 'legacy.csv'
+
+        experiment_id = db_manager.save_experiment_metadata(
+            metadata=metadata_dict,
+            analysis_params={'aop_id': 'AOP:1'},
+        )
+        assert db_manager.get_experiment(experiment_id)['min_confidence'] == 'all'
+
+    def test_migration_adds_the_column_to_legacy_tables(self, tmp_path):
+        """The PRAGMA-then-ALTER migration is additive and idempotent."""
+        from sqlalchemy import create_engine, text
+        from database import _ensure_min_confidence_column
+
+        db_path = tmp_path / 'legacy.db'
+        engine = create_engine(f'sqlite:///{db_path}')
+        with engine.connect() as conn:
+            conn.execute(text('CREATE TABLE experiments (id INTEGER PRIMARY KEY)'))
+            conn.execute(text('CREATE TABLE batches (id INTEGER PRIMARY KEY)'))
+            conn.commit()
+
+        _ensure_min_confidence_column(engine)
+        _ensure_min_confidence_column(engine)  # second run must be a no-op
+
+        for table in ('experiments', 'batches'):
+            with engine.connect() as conn:
+                cols = [row[1] for row in conn.execute(text(f'PRAGMA table_info({table})'))]
+            assert cols.count('min_confidence') == 1
+
+    def test_batch_record_stores_the_threshold(self, temp_database):
+        from datetime import datetime, timedelta, timezone
+        from database import BatchRecord
+
+        session = temp_database.get_session()
+        try:
+            batch = BatchRecord(
+                uuid='conf-batch-uuid',
+                aop_id='AOP:1',
+                min_confidence='medium',
+                expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
+            )
+            session.add(batch)
+            session.commit()
+            stored = session.query(BatchRecord).filter_by(uuid='conf-batch-uuid').one()
+            assert stored.min_confidence == 'medium'
+        finally:
+            session.close()
