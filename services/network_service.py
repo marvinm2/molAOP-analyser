@@ -1,10 +1,13 @@
 """
 Network visualization service for AOP pathways.
 """
+import json
 import math
 import pandas as pd
 import logging
-from typing import Dict, Set, List, Any
+from typing import Dict, Set, List, Any, Optional
+
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,8 @@ def build_cytoscape_network(
     ke_type_map: Dict[str, str],
     reference_sets: Dict[str, Set[str]] = None,
     method: str = 'ora',
+    fdr_cutoff: float = Config.SIGNIFICANCE_FDR_CUTOFF,
+    excluded_kes: Optional[Dict[str, str]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Build Cytoscape.js network data structure.
@@ -64,6 +69,16 @@ def build_cytoscape_network(
             alongside ``data.logfc=0`` (neutral surrogate preserving the
             field for legacy .cyjs readers per D-10). Under ORA the payload
             is bytewise identical to pre-Phase-14 exports (D-10 back-compat).
+        fdr_cutoff: BH-adjusted p-value below which a KE is called significant
+            (issue #63). Defaults to ``Config.SIGNIFICANCE_FDR_CUTOFF`` — the
+            same cutoff the enrichment table, the comparison matrix and the
+            results-page FDR slider use. The raw Fisher p-value is echoed onto
+            the node payload for transparency but never drives the call.
+        excluded_kes: Optional KE_ID → exclusion reason map (issue #65), as
+            produced by ``enrichment_service.get_ke_summary()['excluded_reasons']``.
+            KEs excluded for ``'too_few_genes'`` get a `too-few-genes` class and
+            KEs excluded for ``'no_mapping'`` get the existing `no-genes` class,
+            so "could not assess" never renders like "assessed but not enriched".
 
     Returns:
         Dictionary with 'nodes' and 'edges' keys for Cytoscape.js
@@ -79,13 +94,16 @@ def build_cytoscape_network(
         if not enrichment_row.empty:
             enrichment_row = enrichment_row.iloc[0]
             odds_ratio = enrichment_row.get('odds_ratio', 0)
-            is_significant = enrichment_row.get('p_value', 1.0) < 0.05
             # EXPO-06 / issue #50 — embed per-KE significance into the node
             # data payload so the existing client-side Download Network
             # (.cyjs) export carries it automatically. Note the DataFrame
             # column is lowercase 'p_value' (see enrichment_service.py:125).
             p_value = _to_native(enrichment_row.get('p_value'))
             fdr = _to_native(enrichment_row.get('FDR'))
+            # Issue #63 — one notion of significance across the app: the
+            # BH-adjusted FDR, not the raw p-value. _to_native() already
+            # mapped NaN/inf to None, so a missing FDR is never significant.
+            is_significant = fdr is not None and fdr < fdr_cutoff
             # D-10/D-12: extract and belt-and-suspenders clamp NES under GSEA.
             # The gsea_service already clamped to ±3 but the network builder
             # must not trust upstream (two independent clamps per D-12 spec).
@@ -103,12 +121,20 @@ def build_cytoscape_network(
         label = ke_title_map.get(ke, ke)
         ke_type = ke_type_map.get(ke, "intermediate")
         has_gene_set = bool(reference_sets and reference_sets.get(ke))
+        # Issue #65 — why this KE never reached a statistical test (if it didn't).
+        excluded_reason = (excluded_kes or {}).get(ke)
 
         # Set CSS classes for styling
         classes = []
         if is_significant:
             classes.append("significant")
-        if reference_sets is not None and not has_gene_set:
+        if excluded_reason == 'too_few_genes':
+            # Assessed-impossible, not assessed-and-null: fewer than the
+            # minimum number of the KE's genes were measured (issue #65).
+            classes.append("too-few-genes")
+        if (reference_sets is not None and not has_gene_set) or excluded_reason == 'no_mapping':
+            # No curated gene set at all, or a gene set with no measured
+            # overlap — either way the KE could not be assessed.
             classes.append("no-genes")
 
         # D-10: build node payload with method-aware fields.
@@ -122,9 +148,13 @@ def build_cytoscape_network(
             "label": label,
             "ke_type": ke_type,
             "has_gene_set": has_gene_set,
-            "p_value": p_value,   # EXPO-06: per-KE significance in .cyjs export
+            "p_value": p_value,   # EXPO-06: raw Fisher p, reported not gating (#63)
             "fdr": fdr,           # EXPO-06: per-KE significance in .cyjs export
             "method": method,     # D-10: frontend gradient selector
+            # Issue #65: None when the KE was tested, otherwise the reason it
+            # was not. Lets consumers of a stored network (batch report, .cyjs)
+            # recover the tested/excluded accounting without a second payload.
+            "excluded_reason": excluded_reason,
         }
         if method == 'gsea':
             node_payload["nes"] = nes
@@ -165,3 +195,44 @@ def build_cytoscape_network(
     logger.info(f"Network built: {len(cy_nodes)} nodes, {len(cy_edges)} edges")
     
     return network
+
+
+def ke_accounting_from_network(network_json: Any) -> Optional[Dict[str, Any]]:
+    """Rebuild the tested/excluded KE accounting from a stored network (issue #65).
+
+    Neither ConditionRecord (batch) nor SharedResult (public links) has a field
+    for the enrichment summary dict, so the counts are recovered from the
+    per-node ``excluded_reason`` written by ``build_cytoscape_network``. Returns
+    None for networks predating that field, in which case the caller simply
+    omits the accounting line.
+
+    Args:
+        network_json: Parsed Cytoscape network dict, or a JSON string.
+
+    Returns:
+        Summary dict shaped like ``enrichment_service.get_ke_summary()`` (minus
+        the per-KE ``excluded_reasons`` map), or None when unavailable.
+    """
+    try:
+        if isinstance(network_json, str):
+            network_json = json.loads(network_json)
+        if not network_json:
+            return None
+        ke_nodes = [
+            n.get('data', {}) for n in network_json.get('nodes', [])
+            if (n.get('data') or {}).get('ke_type') is not None
+        ]
+        if not ke_nodes or not any('excluded_reason' in d for d in ke_nodes):
+            return None
+        reasons = [d.get('excluded_reason') for d in ke_nodes]
+        return {
+            'total_kes': len(ke_nodes),
+            'tested': sum(1 for r in reasons if not r),
+            'excluded_no_mapping': sum(1 for r in reasons if r == 'no_mapping'),
+            'excluded_too_few_genes': sum(1 for r in reasons if r == 'too_few_genes'),
+            'excluded_error': sum(1 for r in reasons if r == 'error'),
+            'min_ke_genes': Config.MIN_KE_GENES,
+        }
+    except (json.JSONDecodeError, TypeError, AttributeError) as exc:
+        logger.warning(f"ke_accounting_from_network failed: {exc}")
+        return None
