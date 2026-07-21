@@ -258,6 +258,12 @@ class ConditionRecord(Base):
     gene_count = Column(Integer)
     significant_genes = Column(Integer)
 
+    # Issue #69: fraction of this condition's identifiers that matched the
+    # reference gene universe. NULL on rows written before the check existed.
+    # A low value means the gene ID column was probably not gene symbols and
+    # the condition's results, though well-formed, are empty of real overlap.
+    id_match_fraction = Column(Float, nullable=True)
+
     # Serialised analysis outputs (JSON Text columns)
     enrichment_json = Column(Text)      # Full enrichment table as JSON
     network_json = Column(Text)         # Cytoscape network JSON
@@ -378,6 +384,32 @@ def _ensure_min_confidence_column(engine) -> None:
                 )
 
 
+def _ensure_id_match_fraction_column(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for 'id_match_fraction' (#69).
+
+    Adds ``id_match_fraction REAL`` to ``batch_conditions`` when absent. Safe on
+    every startup; existing rows keep NULL, which the UI reads as "not checked"
+    rather than as a failed check.
+
+    Security note: table and column names are module-internal constants — no
+    user input is interpolated into the SQL.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    with engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info(batch_conditions)"))
+        existing_cols = {row[1] for row in result}
+        if 'id_match_fraction' not in existing_cols:
+            conn.execute(
+                text("ALTER TABLE batch_conditions ADD COLUMN id_match_fraction REAL")
+            )
+            conn.commit()
+            logger.info(
+                "Added 'id_match_fraction' column to 'batch_conditions' table (#69 migration)"
+            )
+
+
 class DatabaseManager:
     """Manager class for database operations."""
     
@@ -428,6 +460,10 @@ class DatabaseManager:
             # Idempotent additive migration: add 'min_confidence' column to
             # pre-existing databases that lack it (#60). No-op on fresh databases.
             _ensure_min_confidence_column(self.engine)
+
+            # Idempotent additive migration: add 'id_match_fraction' to
+            # batch_conditions (#69). No-op on fresh databases.
+            _ensure_id_match_fraction_column(self.engine)
 
             # Create session factory
             self.SessionLocal = sessionmaker(

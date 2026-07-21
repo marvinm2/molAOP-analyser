@@ -46,6 +46,18 @@
         {% if cond.timepoint %}<p><strong>Timepoint:</strong> {{ cond.timepoint }}</p>{% endif %}
         {% if cond.status == 'complete' %}
         <p><strong>Genes:</strong> {{ cond.gene_count }} ({{ cond.significant_genes }} significant)</p>
+        {# Issue #69: a condition whose identifiers did not match the gene sets
+           completes normally and looks fine — say so here, or it is invisible
+           across a nine-condition batch. NULL means the run predates the check. #}
+        {% if cond.id_match_fraction is not none and cond.id_match_fraction < 0.05 %}
+        <p class="error-text" style="background:#fdf0ea;border-left:4px solid #EB5B25;padding:8px 10px;">
+          <strong>Identifiers did not match.</strong>
+          Only {{ "%.1f"|format(cond.id_match_fraction * 100) }}% of this condition's genes
+          matched the reference gene sets, so its results are empty of real overlap.
+          Enrichment needs HGNC gene symbols — re-run with a symbol column, not
+          Ensembl or Entrez IDs.
+        </p>
+        {% endif %}
         <a href="/batch/{{ batch.uuid }}/condition/{{ cond.position }}" class="btn btn--primary btn--small">View Results</a>
         {% elif cond.status == 'failed' %}
         <p class="error-text">{{ cond.error_message }}</p>

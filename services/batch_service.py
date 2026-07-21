@@ -278,6 +278,7 @@ def _run_condition(
     from services.data_service import load_and_validate_data, process_gene_expression
     from services.enrichment_service import (
         run_enrichment_analysis, build_ke_gene_mapping, get_ke_summary,
+        assess_background_overlap,
     )
     from services.network_service import build_cytoscape_network
 
@@ -327,6 +328,21 @@ def _run_condition(
     # Build KE gene membership maps for the drawer / results page
     gene_logfc_map = df_filtered.set_index('ID')['log2FC'].to_dict()
     gene_significance_map = df_filtered.set_index('ID')['significant'].to_dict()
+
+    # Issue #69: check the identifiers actually match the gene sets. A batch of
+    # DESeq2 exports auto-mapped to the Ensembl 'GeneID' column completes
+    # normally and reports nothing real; record the overlap so the summary can
+    # flag it instead of it passing unnoticed across nine conditions.
+    overlap = assess_background_overlap(set(gene_logfc_map.keys()), reference_sets)
+    cond.id_match_fraction = overlap['fraction']
+    if overlap['is_suspect']:
+        logger.warning(
+            '_run_condition: condition %s (%s) matched only %d of %d identifiers '
+            '(%.2f%%) against the reference gene universe — the gene ID column is '
+            'probably not gene symbols',
+            cond.id, cond.condition_label, overlap['matched'], overlap['total'],
+            overlap['fraction'] * 100,
+        )
     ke_gene_map = build_ke_gene_mapping(
         reference_sets, ke_list, gene_logfc_map, gene_significance_map
     )

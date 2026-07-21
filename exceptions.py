@@ -82,6 +82,25 @@ class ConfigurationError(AOPAnalysisError):
             details={"config_key": config_key}
         )
 
+class GeneIdMismatchError(AOPAnalysisError):
+    """The chosen gene ID column does not match the reference gene sets.
+
+    Issue #69. Unlike the other errors here, the message is written for the
+    user and is surfaced verbatim: it carries the actual match counts and the
+    offending column name, which is what makes it actionable. Routing it
+    through the generic USER_ERROR_MESSAGES map would discard exactly the
+    detail that tells someone what to fix.
+    """
+
+    def __init__(self, message: str, matched: int = None, total: int = None,
+                 column: str = None):
+        super().__init__(
+            message,
+            error_code="ID_MISMATCH_ERROR",
+            details={"matched": matched, "total": total, "column": column},
+        )
+
+
 # User-friendly error messages
 USER_ERROR_MESSAGES = {
     "VALIDATION_ERROR": "Please check your input data and try again.",
@@ -90,6 +109,7 @@ USER_ERROR_MESSAGES = {
     "AOP_DATA_ERROR": "The selected AOP pathway data is not available. Please try a different pathway.",
     "NETWORK_ERROR": "The network visualization could not be generated. The analysis results are still available in the table.",
     "CONFIG_ERROR": "A system configuration issue occurred. Please contact support.",
+    "ID_MISMATCH_ERROR": "The selected gene ID column does not match the reference gene sets. Enrichment matches HGNC gene symbols — choose a gene symbol column rather than Ensembl or Entrez IDs.",
     "GENERAL_ERROR": "An unexpected error occurred. Please try again or contact support if the problem persists."
 }
 

@@ -76,6 +76,62 @@ def format_ke_summary(summary: Optional[Dict[str, Any]]) -> str:
     return ''.join(parts)
 
 
+# Below this fraction of the uploaded genes matching the reference universe,
+# the chosen identifier column is almost certainly the wrong one (issue #69) --
+# e.g. an Ensembl column tested against symbol-keyed gene sets. Real symbol
+# datasets overlap far above this even when the AOP is a poor fit.
+MIN_BACKGROUND_OVERLAP_FRACTION = 0.05
+
+
+def assess_background_overlap(
+    user_genes: Set[str],
+    reference_sets: Dict[str, Set[str]],
+) -> Dict[str, Any]:
+    """Check that the uploaded identifiers actually match the gene sets.
+
+    Issue #69: enrichment matches uppercase HGNC symbols. Point it at a column
+    of Ensembl accessions and every test still runs -- the background looks
+    plausible, the KE table is fully populated, and the overlap is zero. That
+    produces a well-formed, entirely meaningless result, which is the failure
+    mode most likely to reach a published figure unnoticed.
+
+    Args:
+        user_genes: Normalised (uppercase) identifiers from the upload.
+        reference_sets: KE -> gene set mapping, before AOP filtering, so the
+            check reflects the whole reference universe rather than one AOP.
+
+    Returns:
+        Dict with ``matched``, ``total``, ``fraction``, ``universe_size`` and
+        ``is_suspect``. ``is_suspect`` is True when the overlap is below
+        :data:`MIN_BACKGROUND_OVERLAP_FRACTION`, meaning the caller should warn
+        rather than present the result as normal.
+    """
+    universe = set()
+    for genes in reference_sets.values():
+        universe.update(g.strip().upper() for g in genes)
+
+    normalised = {str(g).strip().upper() for g in user_genes}
+    matched = normalised & universe
+    total = len(normalised)
+    fraction = (len(matched) / total) if total else 0.0
+
+    result = {
+        'matched': len(matched),
+        'total': total,
+        'fraction': fraction,
+        'universe_size': len(universe),
+        'is_suspect': bool(total and universe and fraction < MIN_BACKGROUND_OVERLAP_FRACTION),
+    }
+
+    if result['is_suspect']:
+        logger.warning(
+            "Only %d of %d uploaded identifiers (%.2f%%) match the %d-gene reference "
+            "universe -- the selected gene ID column is probably not gene symbols",
+            len(matched), total, fraction * 100, len(universe),
+        )
+    return result
+
+
 def run_enrichment_analysis(
     df: pd.DataFrame,
     reference_sets: Dict[str, Set[str]],

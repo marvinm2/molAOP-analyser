@@ -103,6 +103,9 @@
                 <div class="settings-field">
                     <label for="col-pval">p-value column</label>
                     <input type="text" id="col-pval" name="pval_col" placeholder="e.g. P.Value" required>
+                    {# Issue #69: say whether the auto-filled column is the raw or
+                       adjusted one, and offer the other, rather than picking silently. #}
+                    <p id="col-pval-note" class="column-hint" hidden></p>
                 </div>
             </div>
         </div>

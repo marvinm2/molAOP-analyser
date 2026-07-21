@@ -399,6 +399,21 @@
             </p>
         </div>
 
+        {# Issue #69: the identifier column did not match the gene sets. Say so
+           loudly — the table and network below are well-formed but meaningless,
+           which is the failure most likely to reach a figure unnoticed. #}
+        {% if background_overlap and background_overlap.is_suspect %}
+        <p class="id-mismatch-warning" style="margin: 0 0 12px 0; padding: 12px 14px; background: #fdf0ea; border-left: 4px solid #EB5B25; font-size: 14px; color: #29235C;">
+            <strong>These results are probably not meaningful.</strong>
+            Only {{ background_overlap.matched }} of your {{ "{:,}".format(background_overlap.total) }}
+            gene identifiers ({{ "%.1f"|format(background_overlap.fraction * 100) }}%) match the
+            {{ "{:,}".format(background_overlap.universe_size) }}-gene reference set.
+            Enrichment matches <strong>HGNC gene symbols</strong>, so this usually means the
+            selected gene ID column holds something else — Ensembl accessions
+            (<code>ENSG…</code>) or Entrez IDs. Re-run with a gene symbol column.
+        </p>
+        {% endif %}
+
         {# Issue #65: make the multiple-testing denominator visible — the BH
            correction is applied across the tested Key Events only. #}
         {% if ke_summary_text %}

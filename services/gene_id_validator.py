@@ -34,14 +34,29 @@ class GeneIDAnalysis:
 class GeneIDValidator:
     """Enhanced gene ID validator supporting multiple ID types."""
     
-    # Gene ID patterns for different identifier types
+    # Gene ID patterns for different identifier types.
+    #
+    # ORDER MATTERS — classification takes the first match (issue #69). The
+    # HGNC pattern is a permissive catch-all for "uppercase alphanumeric", which
+    # also matches an Ensembl accession like ENSG00000000003; listing HGNC first
+    # made every Ensembl column report as HGNC at 100% confidence. Specific
+    # patterns must therefore come first, with HGNC last as the fallback.
     GENE_ID_PATTERNS = {
-        'HGNC': re.compile(r'^[A-Z][A-Z0-9-]*[A-Z0-9]$|^[A-Z]$'),  # HGNC symbols
         'Ensembl': re.compile(r'^ENSG\d{11}(\.\d+)?$'),  # Ensembl with optional version
-        'NCBI': re.compile(r'^\d+$'),  # NCBI Gene IDs (Entrez)
-        'Probe': re.compile(r'^[A-Za-z0-9_-]+(_at|_s_at|_x_at)$'),  # Microarray probes
         'RefSeq': re.compile(r'^(NM_|XM_|NR_|XR_)\d+(\.\d+)?$'),  # RefSeq IDs
+        # Case-insensitive: validate_gene_ids() uppercases before matching, so a
+        # lowercase-only '_at' suffix never matched and every probe column fell
+        # through to Unknown.
+        'Probe': re.compile(r'^[A-Za-z0-9_-]+(_at|_s_at|_x_at)$', re.IGNORECASE),
+        'NCBI': re.compile(r'^\d+$'),  # NCBI Gene IDs (Entrez)
+        'HGNC': re.compile(r'^[A-Z][A-Z0-9-]*[A-Z0-9]$|^[A-Z]$'),  # HGNC symbols (fallback)
     }
+
+    # Identifier types the enrichment pipeline can actually match. Gene sets are
+    # keyed by uppercase HGNC symbol and there is no ID translation step yet
+    # (issue #22), so anything else intersects the reference universe at
+    # essentially zero — see `ENRICHMENT_MATCHABLE_TYPES` consumers.
+    ENRICHMENT_MATCHABLE_TYPES = {'HGNC'}
     
     # Confidence thresholds
     HIGH_CONFIDENCE_THRESHOLD = 0.85

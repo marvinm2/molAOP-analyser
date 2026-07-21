@@ -228,11 +228,23 @@ class ColumnDetector:
             if content_confidence > 0.5:
                 reasons.append(f"Contains {gene_analysis.primary_type} identifiers ({content_confidence:.1%} valid)")
                 confidence_scores.append(content_confidence * 0.6)  # 60% weight for content
-            
-            # Bonus for supported ID types
-            if gene_id_validator.is_supported_type(gene_analysis.primary_type):
-                reasons.append("ID type supported for analysis")
-                confidence_scores.append(0.1)  # 10% bonus
+
+            # Issue #69: rank by what enrichment can actually match, not by
+            # whether the type is recognised. A DESeq2 export carries both
+            # 'GeneID' (Ensembl) and 'GeneSymbol' (HGNC); both used to score
+            # identically, so column order picked the Ensembl one and the run
+            # silently intersected the gene sets at zero. Only symbol columns
+            # get the bonus; other recognised types are penalised so a symbol
+            # column beside them always wins.
+            if gene_analysis.primary_type in gene_id_validator.ENRICHMENT_MATCHABLE_TYPES:
+                reasons.append("Gene symbols — directly matchable against KE gene sets")
+                confidence_scores.append(0.1)
+            elif gene_id_validator.is_supported_type(gene_analysis.primary_type):
+                reasons.append(
+                    f"{gene_analysis.primary_type} identifiers cannot be matched against "
+                    f"KE gene sets without translation — prefer a gene symbol column"
+                )
+                confidence_scores.append(-0.25)
             
             data_analysis = {
                 'gene_id_analysis': gene_analysis,

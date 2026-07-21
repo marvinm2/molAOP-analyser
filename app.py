@@ -33,7 +33,7 @@ from services.api_service import (
     load_ke_wp_records_csv,
     fetch_gmt_reference_sets,
 )
-from exceptions import AOPAnalysisError, format_error_response
+from exceptions import AOPAnalysisError, GeneIdMismatchError, format_error_response
 from utils import cleanup_file, validate_file_path
 from services.data_service import (
     load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data,
@@ -41,7 +41,7 @@ from services.data_service import (
 )
 from services.enrichment_service import (
     run_enrichment_analysis, build_ke_gene_mapping, run_enrichment,
-    get_ke_summary, format_ke_summary,
+    get_ke_summary, format_ke_summary, assess_background_overlap,
 )
 from services.network_service import build_cytoscape_network, ke_accounting_from_network
 from services.column_detector import column_detector
@@ -818,13 +818,38 @@ def analyze():
         gene_logfc_map = df_processed.set_index("ID")["log2FC"].to_dict()
         gene_significance_map = df_processed.set_index("ID")["significant"].to_dict()
 
+        # Issue #69: confirm the chosen identifier column actually matches the
+        # gene sets before reporting anything. An Ensembl column produces a
+        # fully-formed, entirely empty result otherwise.
+        background_overlap = assess_background_overlap(
+            set(gene_logfc_map.keys()), current_reference_sets
+        )
+
         # Phase 14: dispatch to Fisher (ORA) or GSEA based on form-supplied method.
         # gene_logfc_map drives the Direction column for ORA only (D-14: suppressed under GSEA).
-        enrichment_results = run_enrichment(
-            method,
-            df_processed, current_reference_sets, ke_list, ke_title_map,
-            gene_logfc_map=gene_logfc_map if method == 'ora' else None,
-        )
+        try:
+            enrichment_results = run_enrichment(
+                method,
+                df_processed, current_reference_sets, ke_list, ke_title_map,
+                gene_logfc_map=gene_logfc_map if method == 'ora' else None,
+            )
+        except ValueError:
+            # Issue #69: with the wrong ID column nothing overlaps, every KE is
+            # excluded and enrichment raises. Say what is actually wrong instead
+            # of the generic "check your input data" fallback below.
+            if background_overlap['is_suspect']:
+                raise GeneIdMismatchError(
+                    f"None of the Key Events could be tested: only "
+                    f"{background_overlap['matched']} of {background_overlap['total']} "
+                    f"identifiers in '{id_col}' matched the reference gene sets. "
+                    f"Enrichment matches HGNC gene symbols — if that column holds "
+                    f"Ensembl accessions (ENSG…) or Entrez IDs, choose a gene "
+                    f"symbol column instead.",
+                    matched=background_overlap['matched'],
+                    total=background_overlap['total'],
+                    column=id_col,
+                )
+            raise
 
         # Issue #65: tested/excluded KE accounting produced by the enrichment
         # backend. Feeds the results page, the network node styling and the
@@ -1090,7 +1115,14 @@ def analyze():
             ke_summary_text=format_ke_summary(ke_summary),  # Issue #65
             fdr_cutoff=Config.SIGNIFICANCE_FDR_CUTOFF,  # Issue #63: one significance cutoff
             fdr_choices=Config.SIGNIFICANCE_FDR_CHOICES,  # Issue #63: discrete cutoff options
+            background_overlap=background_overlap,  # Issue #69: ID-column sanity check
         )
+
+    except GeneIdMismatchError as e:
+        # Issue #69: surfaced verbatim — the counts and column name are the
+        # actionable part, and the generic map would strip them.
+        logger.error(f"Gene ID mismatch: {e}")
+        return e.message, 400
 
     except AOPAnalysisError as e:
         logger.error(f"AOP analysis error: {e}")
@@ -1490,6 +1522,54 @@ def batch_page():
     return redirect(url_for('index') + '?tab=batch')
 
 
+def _batch_column_suggestions(suggestions_obj):
+    """Build the batch wizard's column-suggestion payload.
+
+    AUTC-01 / D-05: carries per-column confidence + label alongside each pick.
+
+    Issue #69: the batch wizard has a single p-value field, so the suggestion
+    must choose. It prefers the **adjusted** column when the file has one --
+    for a DESeq2 export that is `padj`, which is what the significance cutoff
+    is normally applied to; suggesting raw `pvalue` silently inflated the
+    significant-gene count. `pval_is_adjusted` lets the UI say which was
+    chosen rather than leaving the user to notice.
+    """
+    def _pick(match):
+        if not match:
+            return None, None, None
+        return (
+            match.column_name,
+            match.confidence,
+            column_detector.get_confidence_description(match.confidence),
+        )
+
+    id_col, id_conf, id_label = _pick(suggestions_obj.best_gene_id)
+    fc_col, fc_conf, fc_label = _pick(suggestions_obj.best_log2fc)
+
+    adjusted = suggestions_obj.best_pvalue_adj
+    chosen_pval = adjusted or suggestions_obj.best_pvalue
+    pval_col, pval_conf, pval_label = _pick(chosen_pval)
+
+    return {
+        'id_col': id_col,
+        'id_confidence': id_conf,
+        'id_label': id_label,
+        'fc_col': fc_col,
+        'fc_confidence': fc_conf,
+        'fc_label': fc_label,
+        'pval_col': pval_col,
+        'pval_confidence': pval_conf,
+        'pval_label': pval_label,
+        'pval_is_adjusted': bool(adjusted),
+        # Surfaced so the UI can offer the other one without re-running detection.
+        'pval_raw_col': (
+            suggestions_obj.best_pvalue.column_name
+            if suggestions_obj.best_pvalue else None
+        ),
+        'pval_adj_col': adjusted.column_name if adjusted else None,
+    }
+
+
 @app.route('/batch/upload', methods=['POST'])
 
 def batch_upload():
@@ -1533,19 +1613,8 @@ def batch_upload():
                 row_count = sum(1 for _ in _f) - 1
             columns = df_head.columns.tolist()
             try:
-                suggestions_obj = column_detector.detect_columns(df_head)
-                # AUTC-01 / D-05: extend payload with per-column confidence + label fields
-                suggestions = {
-                    'id_col': suggestions_obj.best_gene_id.column_name if suggestions_obj.best_gene_id else None,
-                    'id_confidence': suggestions_obj.best_gene_id.confidence if suggestions_obj.best_gene_id else None,
-                    'id_label': column_detector.get_confidence_description(suggestions_obj.best_gene_id.confidence) if suggestions_obj.best_gene_id else None,
-                    'fc_col': suggestions_obj.best_log2fc.column_name if suggestions_obj.best_log2fc else None,
-                    'fc_confidence': suggestions_obj.best_log2fc.confidence if suggestions_obj.best_log2fc else None,
-                    'fc_label': column_detector.get_confidence_description(suggestions_obj.best_log2fc.confidence) if suggestions_obj.best_log2fc else None,
-                    'pval_col': suggestions_obj.best_pvalue.column_name if suggestions_obj.best_pvalue else None,
-                    'pval_confidence': suggestions_obj.best_pvalue.confidence if suggestions_obj.best_pvalue else None,
-                    'pval_label': column_detector.get_confidence_description(suggestions_obj.best_pvalue.confidence) if suggestions_obj.best_pvalue else None,
-                }
+                suggestions = _batch_column_suggestions(
+                    column_detector.detect_columns(df_head))
             except Exception:
                 suggestions = {}
         except Exception as exc:
@@ -1576,19 +1645,8 @@ def batch_upload():
                 row_count = sum(1 for _ in _f) - 1
             columns = df_head.columns.tolist()
             try:
-                suggestions_obj = column_detector.detect_columns(df_head)
-                # AUTC-01 / D-05: extend payload with per-column confidence + label fields
-                suggestions = {
-                    'id_col': suggestions_obj.best_gene_id.column_name if suggestions_obj.best_gene_id else None,
-                    'id_confidence': suggestions_obj.best_gene_id.confidence if suggestions_obj.best_gene_id else None,
-                    'id_label': column_detector.get_confidence_description(suggestions_obj.best_gene_id.confidence) if suggestions_obj.best_gene_id else None,
-                    'fc_col': suggestions_obj.best_log2fc.column_name if suggestions_obj.best_log2fc else None,
-                    'fc_confidence': suggestions_obj.best_log2fc.confidence if suggestions_obj.best_log2fc else None,
-                    'fc_label': column_detector.get_confidence_description(suggestions_obj.best_log2fc.confidence) if suggestions_obj.best_log2fc else None,
-                    'pval_col': suggestions_obj.best_pvalue.column_name if suggestions_obj.best_pvalue else None,
-                    'pval_confidence': suggestions_obj.best_pvalue.confidence if suggestions_obj.best_pvalue else None,
-                    'pval_label': column_detector.get_confidence_description(suggestions_obj.best_pvalue.confidence) if suggestions_obj.best_pvalue else None,
-                }
+                suggestions = _batch_column_suggestions(
+                    column_detector.detect_columns(df_head))
             except Exception:
                 suggestions = {}
         except Exception as exc:

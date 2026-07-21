@@ -356,12 +356,42 @@ document.getElementById('btn-next-tag').addEventListener('click', function() {
             }
         });
 
+        // Issue #69: the batch wizard has one p-value field, so the suggestion has
+        // to choose between e.g. DESeq2's `pvalue` and `padj`. Say which was picked
+        // and offer the other in one click, instead of choosing silently.
+        function annotatePvalChoice(s) {
+            const note = document.getElementById('col-pval-note');
+            if (!note) return;
+            const field = document.getElementById('col-pval');
+            const other = s.pval_is_adjusted ? s.pval_raw_col : s.pval_adj_col;
+            if (!s.pval_col) { note.hidden = true; return; }
+
+            const kind = s.pval_is_adjusted ? 'adjusted' : 'raw (unadjusted)';
+            note.textContent = 'Using the ' + kind + ' p-value column \u201c' + s.pval_col + '\u201d. ';
+            if (other) {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.textContent = 'Use \u201c' + other + '\u201d instead';
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    field.value = other;
+                    annotatePvalChoice(Object.assign({}, s, {
+                        pval_col: other,
+                        pval_is_adjusted: !s.pval_is_adjusted,
+                    }));
+                });
+                note.appendChild(link);
+            }
+            note.hidden = false;
+        }
+
         // Auto-populate column fields from first file's suggestions
         const firstSuggestions = data.files[0] && data.files[0].suggestions;
         if (firstSuggestions) {
             if (firstSuggestions.id_col) document.getElementById('col-id').value = firstSuggestions.id_col;
             if (firstSuggestions.fc_col) document.getElementById('col-fc').value = firstSuggestions.fc_col;
             if (firstSuggestions.pval_col) document.getElementById('col-pval').value = firstSuggestions.pval_col;
+            annotatePvalChoice(firstSuggestions);
         }
 
         // Re-render file cards with row counts
