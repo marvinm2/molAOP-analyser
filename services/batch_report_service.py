@@ -184,13 +184,59 @@ def _png_to_data_uri(png_bytes: bytes) -> str:
     return f'data:image/png;base64,{b64}'
 
 
+def _resolution_text(batch) -> str:
+    """Describe how the batch's gene-set resources resolved (issue #68).
+
+    Imported lazily from ``app`` to avoid a circular import at module load.
+
+    Args:
+        batch: BatchRecord whose ``resource_resolution`` JSON is read.
+
+    Returns:
+        str: one-line provenance summary, or '' for batches written before the
+        resolution was recorded.
+    """
+    try:
+        from app import describe_resource_resolution, _parse_resource_resolution
+        return describe_resource_resolution(
+            _parse_resource_resolution(getattr(batch, 'resource_resolution', None))
+        )
+    except Exception as exc:  # pragma: no cover — provenance must never break a report
+        logger.warning("Could not describe resource resolution: %s", exc)
+        return ''
+
+
+def _batch_resource_warnings(batch) -> List[str]:
+    """Warnings about resources skipped or served from bundled files (#67, #68).
+
+    Args:
+        batch: BatchRecord whose ``resource_resolution`` JSON is read.
+
+    Returns:
+        list[str]: sentences to print alongside the batch metadata; empty when
+        the run resolved exactly as requested (or predates the recording).
+    """
+    try:
+        from app import resource_resolution_warnings, _parse_resource_resolution
+        return resource_resolution_warnings(
+            _parse_resource_resolution(getattr(batch, 'resource_resolution', None)),
+            getattr(batch, 'min_confidence', None) or 'all',
+        )
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Could not build resource warnings: %s", exc)
+        return []
+
+
 def _batch_meta_rows(batch, conditions, comparison_data) -> List[tuple]:
     """Build (label, value) rows describing the batch for the report header."""
     completed = batch.completed_at.strftime('%Y-%m-%d %H:%M') if batch.completed_at else 'N/A'
     return [
         ('AOP', f'{batch.aop_label or ""} ({batch.aop_id or "N/A"})'),
         ('Conditions', str(len(conditions))),
-        ('Gene Set Resources', batch.selected_resources or 'WikiPathways'),
+        ('Gene Set Resources (requested)', batch.selected_resources or 'WikiPathways'),
+        # Issue #68: what the resources actually resolved to. The requested list
+        # cannot show a resource that was skipped or served from bundled files.
+        ('Gene Set Provenance (used)', _resolution_text(batch) or 'not recorded'),
         # Issue #60: the mapping-confidence threshold the gene sets were built at.
         ('Min. Mapping Confidence',
          MIN_CONFIDENCE_LABELS.get(getattr(batch, 'min_confidence', None) or 'all', 'All mappings')),
@@ -225,6 +271,12 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
     meta_rows = ''.join(
         f'<div class="metadata-item"><label>{label}:</label><span>{value}</span></div>'
         for label, value in _batch_meta_rows(batch, conditions, comparison_data)
+    )
+
+    # Issues #67 / #68 — where the run differed from the request.
+    warning_html = ''.join(
+        f'<p class="resource-warning"><strong>Note:</strong> {w}</p>'
+        for w in _batch_resource_warnings(batch)
     )
 
     # Comparison heatmap.
@@ -313,6 +365,7 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
             <h2>Batch Information</h2>
             <div class="metadata-grid">{meta_rows}</div>
             {f'<div class="metadata-item full-width"><label>Description:</label><p>{batch.description}</p></div>' if batch.description else ''}
+            {warning_html}
         </section>
         <section class="comparison-section">
             <h2>Cross-Condition Comparison</h2>
@@ -417,6 +470,13 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [rl_colors.white, HexColor('#f4f6fb')]),
     ]))
     story.append(meta_table)
+
+    # Issues #67 / #68 — a resource skipped or served from the bundled files
+    # changes what every condition in this batch means. Say so in the report.
+    for warning in _batch_resource_warnings(batch):
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(f"<b>Note:</b> {warning}", normal_style))
+
     story.append(Spacer(1, 20))
 
     # Comparison heatmap.

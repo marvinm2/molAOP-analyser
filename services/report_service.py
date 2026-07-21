@@ -106,6 +106,13 @@ class ReportData:
     # constructions remain compatible.
     min_confidence: str = 'all'
 
+    # Issue #68: how each requested resource actually resolved — the source it
+    # came from, and whether it was skipped. Defaulted to empty so existing
+    # ReportData(...) constructions remain compatible; when empty the report
+    # falls back to reporting the requested selection only.
+    resource_resolution_text: str = ''
+    resource_warnings: Optional[List[str]] = None
+
     # Issue #65: tested/excluded Key Event accounting from the enrichment run
     # (see enrichment_service.run_enrichment_analysis). Defaulted to None so
     # existing ReportData(...) constructions remain compatible; when None the
@@ -359,6 +366,13 @@ class ReportGenerator:
                 </div>
         """ if ke_accounting else ''
 
+        # Issues #67 / #68 — the differences between what was requested and what
+        # the run actually used, stated where the settings are stated.
+        resource_warning_items = ''.join(
+            f'<p class="resource-warning"><strong>Note:</strong> {w}</p>'
+            for w in (report_data.resource_warnings or [])
+        )
+
         return f"""
         <section class="analysis-params">
             <h2>Analysis Settings</h2>
@@ -368,9 +382,13 @@ class ReportGenerator:
                     <span>{report_data.method_label}</span>
                 </div>
                 <div class="param-item">
-                    <label>Gene Set Resources:</label>
+                    <label>Gene Set Resources (requested):</label>
                     <span>{report_data.selected_resources}</span>
                 </div>
+                {f'''<div class="param-item">
+                    <label>Gene Set Provenance (used):</label>
+                    <span>{report_data.resource_resolution_text}</span>
+                </div>''' if report_data.resource_resolution_text else ''}
                 <div class="param-item">
                     <label>Minimum Mapping Confidence:</label>
                     <span>{report_data.min_confidence_label}</span>
@@ -394,6 +412,7 @@ class ReportGenerator:
                 </div>
                 {ke_accounting_item}
             </div>
+            {resource_warning_items}
         </section>
         """
     
@@ -859,6 +878,15 @@ class ReportGenerator:
             color: #666;
             font-style: italic;
         }
+
+        /* Issues #67 / #68 — where the run differed from the request. */
+        .resource-warning {
+            margin-top: 12px;
+            padding: 10px 12px;
+            background-color: #fdf6ea;
+            border-left: 4px solid #EB5B25;
+            font-size: 14px;
+        }
         
         .versions ul {
             list-style-type: none;
@@ -1062,7 +1090,9 @@ class ReportGenerator:
         summary_data = [
             ['Metric', 'Value'],
             ['Method', report_data.method_label],
-            ['Gene Set Resources', report_data.selected_resources],
+            ['Gene Set Resources (requested)', report_data.selected_resources],
+            # Issue #68: what actually resolved, per resource.
+            ['Gene Set Provenance (used)', report_data.resource_resolution_text or 'not recorded'],
             ['Minimum Mapping Confidence', report_data.min_confidence_label],  # Issue #60
             ['Filename', report_data.filename],
             ['Total Genes', f"{report_data.gene_count:,}"],
@@ -1088,6 +1118,14 @@ class ReportGenerator:
         ]))
         
         story.append(summary_table)
+
+        # Issues #67 / #68 — anything that made the run differ from the request
+        # is stated in the report, not just on screen. A reader comparing two
+        # runs needs to know a resource was skipped or served from bundled files.
+        for warning in (report_data.resource_warnings or []):
+            story.append(Spacer(1, 6))
+            story.append(Paragraph(f"<b>Note:</b> {warning}", normal_style))
+
         story.append(Spacer(1, 20))
         
         # Key Event Enrichment Results

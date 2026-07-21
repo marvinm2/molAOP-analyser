@@ -649,6 +649,32 @@ table.dataframe tr:nth-child(even) {
     line-height: 1.4;
 }
 
+/* Batch-level provenance warning (issues #67 / #68) — same visual language as
+   the results-page banner. */
+.batch-resource-warning {
+    margin: 16px 0;
+    padding: 12px 14px;
+    background: #fdf6ea;
+    border-left: 4px solid #EB5B25;
+    font-size: 14px;
+    color: #29235C;
+}
+
+.batch-resource-warning p {
+    margin: 0 0 6px;
+}
+
+.batch-resource-warning p:last-child {
+    margin-bottom: 0;
+}
+
+/* Inline caveat next to an option label — e.g. resources the mapping-confidence
+   filter cannot apply to (issue #67). */
+.settings-note {
+    font-size: 12px;
+    color: #777;
+}
+
 .settings-options {
     display: flex;
     flex-direction: column;

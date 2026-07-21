@@ -178,7 +178,7 @@ class TestBatchMinConfidencePersistence:
     def test_threshold_stored_on_the_batch_record(self, batch_app, temp_database):
         from database import BatchRecord
 
-        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock')):
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock', [])):
             self._launch(batch_app, min_confidence='high')
 
         session = temp_database.get_session()
@@ -190,14 +190,14 @@ class TestBatchMinConfidencePersistence:
 
     def test_threshold_applied_when_loading_the_reference_sets(self, batch_app):
         """Batch parity: the same shared loader call the single flow makes."""
-        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock')) as loader:
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock', [])) as loader:
             self._launch(batch_app, min_confidence='medium')
         assert loader.call_args.kwargs['min_confidence'] == 'medium'
 
     def test_default_threshold_is_all(self, batch_app, temp_database):
         from database import BatchRecord
 
-        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock')) as loader:
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock', [])) as loader:
             self._launch(batch_app)
         assert loader.call_args.kwargs['min_confidence'] == 'all'
 

@@ -455,12 +455,12 @@
                 <label>
                     <input type="checkbox" name="resources" value="GO_BP"
                            {% if 'GO_BP' in sel_resources %}checked{% endif %}>
-                    Gene Ontology (Biological Process)
+                    Gene Ontology (Biological Process) <span class="settings-note">&mdash; no confidence field</span>
                 </label>
                 <label>
                     <input type="checkbox" name="resources" value="Reactome"
                            {% if 'Reactome' in sel_resources %}checked{% endif %}>
-                    Reactome
+                    Reactome <span class="settings-note">&mdash; no confidence field</span>
                 </label>
             </div>
         </div>
@@ -473,6 +473,15 @@
                 Raising the threshold drops weaker mappings from each Key Event's gene set;
                 a KE whose mappings are all below the threshold is not tested. Mappings
                 without a recorded confidence are always kept.
+            </p>
+            {# Issue #67: say where the filter actually bites. The GO BP and
+               Reactome gene sets come from GMT exports with no confidence
+               field, so raising the threshold leaves them untouched. #}
+            <p class="settings-subgroup__hint" style="margin: 0 0 8px;">
+                <strong>Applies to WikiPathways mappings only.</strong> The Gene Ontology and
+                Reactome gene sets are served as GMT exports that carry no confidence field,
+                so they are used in full whatever you choose here. The results page records
+                which resources the threshold was actually applied to.
             </p>
             {% set sel_min_conf = min_confidence or 'all' %}
             <select name="min_confidence" id="min_confidence"

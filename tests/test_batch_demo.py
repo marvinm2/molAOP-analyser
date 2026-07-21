@@ -22,7 +22,7 @@ def demo_client(flask_client, temp_database, tmp_path, monkeypatch):
     """
     monkeypatch.setattr(app_module, 'db_manager', temp_database)
     monkeypatch.setattr(app_module, 'run_batch', lambda *a, **k: None)
-    monkeypatch.setattr(app_module, 'load_cached_reference_sets', lambda *a, **k: ({}, 'mock'))
+    monkeypatch.setattr(app_module, 'load_cached_reference_sets', lambda *a, **k: ({}, 'mock', []))
     monkeypatch.setattr('config.Config.UPLOAD_FOLDER', str(tmp_path))
     return flask_client
 

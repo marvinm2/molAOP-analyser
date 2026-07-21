@@ -49,6 +49,11 @@ class ExperimentRecord(Base):
     # Issue #60: minimum KE-mapping confidence used for enrichment
     # ('all'/'medium'/'high'). NULL for pre-#60 rows (coerced to 'all' on read).
     min_confidence = Column(String(20))
+    # Issue #68: how each requested resource actually RESOLVED (JSON list of
+    # per-resource dicts: source, status, ke_count, confidence_applied). The
+    # column above records the request; this one records the outcome, which is
+    # what makes a run reproducible. NULL for pre-#68 rows.
+    resource_resolution = Column(Text)
 
     # Analysis results summary (JSON)
     enrichment_results = Column(Text)  # JSON string of enrichment results
@@ -195,6 +200,9 @@ class BatchRecord(Base):
     # Issue #60: minimum KE-mapping confidence applied to every condition
     # ('all'/'medium'/'high'). NULL for pre-#60 rows (read as 'all').
     min_confidence = Column(String(20))
+    # Issue #68: per-resource resolution shared by every condition in the batch
+    # (JSON, see ExperimentRecord.resource_resolution). NULL for pre-#68 rows.
+    resource_resolution = Column(Text)
 
     # Shared column mapping (same for all files in the batch)
     id_column = Column(String(100))
@@ -410,6 +418,33 @@ def _ensure_id_match_fraction_column(engine) -> None:
             )
 
 
+def _ensure_resource_resolution_column(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for 'resource_resolution' (#68).
+
+    Adds ``resource_resolution TEXT`` to ``experiments`` and ``batches`` when
+    absent. Existing rows keep NULL, which the UI reads as "not recorded" — the
+    pre-#68 behaviour, where only the requested resource list was stored.
+
+    Security note: table and column names are module-internal constants — no
+    user input is interpolated into the SQL.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    for table in ('experiments', 'batches'):
+        with engine.connect() as conn:
+            result = conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_cols = {row[1] for row in result}
+            if 'resource_resolution' not in existing_cols:
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN resource_resolution TEXT")
+                )
+                conn.commit()
+                logger.info(
+                    f"Added 'resource_resolution' column to '{table}' table (#68 migration)"
+                )
+
+
 class DatabaseManager:
     """Manager class for database operations."""
     
@@ -464,6 +499,10 @@ class DatabaseManager:
             # Idempotent additive migration: add 'id_match_fraction' to
             # batch_conditions (#69). No-op on fresh databases.
             _ensure_id_match_fraction_column(self.engine)
+
+            # Idempotent additive migration: add 'resource_resolution' to
+            # experiments and batches (#68). No-op on fresh databases.
+            _ensure_resource_resolution_column(self.engine)
 
             # Create session factory
             self.SessionLocal = sessionmaker(
@@ -522,6 +561,7 @@ class DatabaseManager:
                 record.pval_column = analysis_params.get('pval_column')
                 record.selected_resources = analysis_params.get('selected_resources')
                 record.min_confidence = analysis_params.get('min_confidence')  # #60
+                record.resource_resolution = analysis_params.get('resource_resolution')  # #68
                 record.analysis_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
             
             # Add results summary if provided

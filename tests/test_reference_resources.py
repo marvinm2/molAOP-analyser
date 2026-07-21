@@ -17,7 +17,7 @@ class TestLoadCachedReferenceSets:
         wp = {"KE:1": {"A", "B"}}
         with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")) as wp_loader, \
              patch.object(app, "_load_gmt_resource_reference_sets") as gmt_loader:
-            sets, source = app.load_cached_reference_sets()
+            sets, source, _ = app.load_cached_reference_sets()
         wp_loader.assert_called_once()
         gmt_loader.assert_not_called()
         assert sets == {"KE:1": {"A", "B"}}
@@ -29,7 +29,7 @@ class TestLoadCachedReferenceSets:
         go = {"KE:1": {"B", "C"}, "KE:2": {"D"}}
         with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
              patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
-            sets, source = app.load_cached_reference_sets(["WikiPathways", "GO_BP"])
+            sets, source, _ = app.load_cached_reference_sets(["WikiPathways", "GO_BP"])
         assert sets == {"KE:1": {"A", "B", "C"}, "KE:2": {"D"}}
         assert source == "api"  # WikiPathways source still drives data_source
 
@@ -51,7 +51,7 @@ class TestLoadCachedReferenceSets:
 
         with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
              patch.object(app, "_load_gmt_resource_reference_sets", side_effect=_boom):
-            sets, source = app.load_cached_reference_sets(["WikiPathways", "Reactome"])
+            sets, source, _ = app.load_cached_reference_sets(["WikiPathways", "Reactome"])
         # Reactome skipped; WikiPathways retained -> analysis still runs.
         assert sets == {"KE:1": {"A"}}
         assert source == "api"
@@ -59,14 +59,14 @@ class TestLoadCachedReferenceSets:
     def test_unknown_resource_falls_back_to_default(self):
         wp = {"KE:1": {"A"}}
         with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")) as wp_loader:
-            sets, source = app.load_cached_reference_sets(["bogus"])
+            sets, source, _ = app.load_cached_reference_sets(["bogus"])
         wp_loader.assert_called_once()
         assert sets == {"KE:1": {"A"}}
 
     def test_gmt_only_selection_sets_gmt_source(self):
         go = {"KE:1": {"X"}}
         with patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
-            sets, source = app.load_cached_reference_sets(["GO_BP"])
+            sets, source, _ = app.load_cached_reference_sets(["GO_BP"])
         assert sets == {"KE:1": {"X"}}
         # No WikiPathways component -> data_source is 'gmt' (picker falls back to CSV).
         assert source == "gmt"
@@ -197,7 +197,7 @@ class TestGmtResourcesUnaffectedByConfidence:
 
         parsed = parse_gmt_reference_sets(self.GMT)
         with patch.object(app, "fetch_gmt_reference_sets", return_value=parsed):
-            sets, _ = app.load_cached_reference_sets(["GO_BP"], min_confidence=threshold)
+            sets, _, _ = app.load_cached_reference_sets(["GO_BP"], min_confidence=threshold)
         assert sets == {"KE:1115": {"SOD1", "CAT"}, "KE:1392": {"NFE2L2"}}
 
 
@@ -292,3 +292,144 @@ class TestConfidenceScopedCacheKeys:
             app._load_gmt_resource_reference_sets("GO_BP", "high")
         assert fetch.call_count == 2
         assert len(store) == 2
+
+
+class TestCachePreservesOriginalSource:
+    """Issue #68: a cache hop must not erase where the gene sets came from."""
+
+    @staticmethod
+    def _fake_cache(monkeypatch, store):
+        fake_cache = MagicMock()
+        fake_cache.get.side_effect = lambda key: store.get(key)
+        fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
+        monkeypatch.setattr(app, "_reference_cache", fake_cache)
+        return fake_cache
+
+    def test_cached_csv_fallback_still_reads_as_csv(self, monkeypatch):
+        """The reproducibility hole: sets built during a Builder outage were
+        reported as a plain cache hit one hop later, indistinguishable from a
+        live API response."""
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._fake_cache(monkeypatch, {key: ({"KE:1": {"A"}}, "csv")})
+
+        sets, source = app._load_wikipathways_reference_sets("all")
+        assert sets == {"KE:1": {"A"}}
+        assert source == "cache(csv)"
+
+    def test_cached_api_response_reads_as_cached_api(self, monkeypatch):
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._fake_cache(monkeypatch, {key: ({"KE:1": {"A"}}, "api")})
+
+        _, source = app._load_wikipathways_reference_sets("all")
+        assert source == "cache(api)"
+
+    def test_a_cached_csv_fallback_is_still_warned_about(self, monkeypatch):
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._fake_cache(monkeypatch, {key: ({"KE:1": {"A"}}, "csv")})
+
+        _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
+        assert any("bundled" in w for w in app.resource_resolution_warnings(resolution))
+
+
+class TestResourceResolutionRecording:
+    """Issue #68: record what actually resolved, not just what was requested."""
+
+    def test_loaded_resources_are_recorded_with_their_source(self):
+        wp = {"KE:1": {"A"}}
+        go = {"KE:1": {"B"}, "KE:2": {"C"}}
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+             patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "cache(api)")):
+            _, _, resolution = app.load_cached_reference_sets(["WikiPathways", "GO_BP"])
+
+        by_resource = {e["resource"]: e for e in resolution}
+        assert by_resource["WikiPathways"]["status"] == "loaded"
+        assert by_resource["WikiPathways"]["source"] == "api"
+        assert by_resource["WikiPathways"]["ke_count"] == 1
+        assert by_resource["GO_BP"]["source"] == "cache(api)"
+        assert by_resource["GO_BP"]["ke_count"] == 2
+
+    def test_skipped_resource_is_recorded_and_warned_about(self):
+        """The failure mode this issue exists for: a resource silently absent."""
+        wp = {"KE:1": {"A"}}
+
+        def _boom(resource, min_confidence="all"):
+            raise RuntimeError("builder GMT export unavailable")
+
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+             patch.object(app, "_load_gmt_resource_reference_sets", side_effect=_boom):
+            _, _, resolution = app.load_cached_reference_sets(["WikiPathways", "Reactome"])
+
+        skipped = [e for e in resolution if e["status"] == "skipped"]
+        assert [e["resource"] for e in skipped] == ["Reactome"]
+        assert "unavailable" in skipped[0]["error"]
+
+        warnings = app.resource_resolution_warnings(resolution)
+        assert any("Reactome" in w and "left out" in w for w in warnings)
+
+    def test_csv_fallback_is_disclosed(self):
+        wp = {"KE:1": {"A"}}
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")):
+            _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
+
+        warnings = app.resource_resolution_warnings(resolution)
+        assert any("bundled" in w for w in warnings)
+
+    def test_clean_run_produces_no_warnings(self):
+        wp = {"KE:1": {"A"}}
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")):
+            _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
+        assert app.resource_resolution_warnings(resolution, "high") == []
+
+    def test_description_reads_as_a_sentence(self):
+        wp = {"KE:1": {"A"}}
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "cache(csv)")):
+            _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
+        assert app.describe_resource_resolution(resolution) == (
+            "WikiPathways (bundled reference files, cached)"
+        )
+
+    def test_legacy_records_describe_as_empty(self):
+        """Runs stored before the resolution existed omit the line, not guess."""
+        assert app.describe_resource_resolution([]) == ''
+        assert app.resource_resolution_warnings([]) == []
+        assert app._parse_resource_resolution(None) == []
+        assert app._parse_resource_resolution('not json') == []
+
+
+class TestConfidenceApplicabilityIsRecorded:
+    """Issue #67: the threshold only bites where mappings carry a confidence."""
+
+    def test_gmt_resources_are_marked_unfiltered(self):
+        wp = {"KE:1": {"A"}}
+        go = {"KE:1": {"B"}}
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+             patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
+            _, _, resolution = app.load_cached_reference_sets(
+                ["WikiPathways", "GO_BP"], min_confidence="high"
+            )
+        by_resource = {e["resource"]: e for e in resolution}
+        assert by_resource["WikiPathways"]["confidence_applied"] is True
+        assert by_resource["GO_BP"]["confidence_applied"] is False
+
+        warnings = app.resource_resolution_warnings(resolution, "high")
+        assert any("GO_BP" in w and "confidence field" in w for w in warnings)
+
+    def test_csv_fallback_cannot_apply_the_threshold_either(self):
+        """KE-WP.csv has no confidence column, so 'high' is a no-op there too."""
+        wp = {"KE:1": {"A"}}
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")):
+            _, _, resolution = app.load_cached_reference_sets(
+                ["WikiPathways"], min_confidence="high"
+            )
+        assert resolution[0]["confidence_applied"] is False
+
+    def test_no_applicability_warning_at_the_default_threshold(self):
+        """'All mappings' filters nothing, so there is nothing to caveat."""
+        wp = {"KE:1": {"A"}}
+        go = {"KE:1": {"B"}}
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+             patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
+            _, _, resolution = app.load_cached_reference_sets(
+                ["WikiPathways", "GO_BP"], min_confidence="all"
+            )
+        assert app.resource_resolution_warnings(resolution, "all") == []

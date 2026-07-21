@@ -19,11 +19,27 @@
       {% set mc = batch.min_confidence or 'all' %}
       {{ {'all': 'All mappings', 'medium': 'Medium and High only', 'high': 'High only'}.get(mc, mc) }}
     </p>
+    {# Issue #68: what the gene-set resources actually resolved to for this
+       batch — the requested list alone cannot show a skipped resource. #}
+    {% if resource_resolution_text %}
+    <p><strong>Gene Set Provenance:</strong> {{ resource_resolution_text }}</p>
+    {% endif %}
     <p><strong>Harmonised Background:</strong> {{ batch.harmonised_gene_count }} genes (intersection of all conditions)</p>
     <p><strong>Completed:</strong> {{ batch.completed_at.strftime('%Y-%m-%d %H:%M') if batch.completed_at else 'N/A' }}</p>
     {% if batch.owner %}<p><strong>Owner:</strong> {{ batch.owner }}</p>{% endif %}
     {% if batch.description %}<p><strong>Description:</strong> {{ batch.description }}</p>{% endif %}
   </div>
+
+  {# Issues #67 / #68: a resource that was skipped, or served from the bundled
+     files, changes what these results mean across every condition. #}
+  {% if resource_warnings %}
+  <div class="batch-resource-warning">
+    <p><strong>Read the gene-set provenance before comparing this batch with another.</strong></p>
+    {% for warning in resource_warnings %}
+    <p>{{ warning }}</p>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <!-- Harmonisation note — transparent to user per locked design decision -->
   <div class="batch-harmonisation-note">

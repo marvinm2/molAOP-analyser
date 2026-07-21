@@ -312,6 +312,8 @@
             </div>
             <div class="metadata-summary__item">
                 <span class="metadata-summary__label">Gene Set Resources</span>
+                {# Issue #68: this is the REQUESTED selection; what actually
+                   loaded is on the provenance line below the table. #}
                 <span class="metadata-summary__value">{{ metadata.get('selected_resources', 'WikiPathways') }}</span>
             </div>
             {# Issue #60: the mapping-confidence threshold the gene sets were built at. #}
@@ -392,18 +394,37 @@
                 </span>.
             </p>
             <p><strong>Background gene set size:</strong> {{ background_size }}</p>
-            <!-- Data source indicator -->
+            {# Issue #68: per-resource provenance. The old single line collapsed
+               every non-API case into "Local reference files" and could not
+               represent a mixed-resource run at all. #}
+            {% if metadata.get('resource_resolution') %}
             <p style="font-size: 13px; color: #555; margin-top: 4px;">
-                <strong>KE-WP mapping data:</strong>
-                {% if metadata.get('data_source') == 'api' %}
-                    <span style="color: #009FE3; font-weight: 500;">Live (molAOP Builder API)</span>
-                {% elif metadata.get('data_source') == 'cache' %}
-                    <span style="color: #45A6B2; font-weight: 500;">Cached (molAOP Builder, &lt;1 hour)</span>
-                {% else %}
-                    <span style="color: #EB5B25; font-weight: 500;">Local reference files</span>
-                {% endif %}
+                <strong>Gene set provenance:</strong>
+                {% for entry in metadata.get('resource_resolution') %}
+                    <span style="white-space: nowrap;">
+                        {{ entry.resource }} &mdash;
+                        {% if entry.status != 'loaded' %}
+                            <span style="color: #EB5B25; font-weight: 500;">unavailable, skipped</span>
+                        {% else %}
+                            <span style="color: {{ '#009FE3' if entry.source == 'api' else ('#EB5B25' if entry.source in ['csv', 'cache(csv)'] else '#45A6B2') }}; font-weight: 500;">{{ resource_source_labels.get(entry.source, entry.source) }}</span>
+                            ({{ entry.ke_count }} KEs){% endif %}</span>{% if not loop.last %}; {% endif %}
+                {% endfor %}
             </p>
+            {% endif %}
         </div>
+
+        {# Issues #67 / #68: the run did not use exactly what was asked for.
+           A skipped resource changes which Key Events were testable, and the
+           confidence threshold only bites where the mappings carry one — both
+           belong on the page, not only in the server log. #}
+        {% if metadata.get('resource_warnings') %}
+        <p class="resource-warning" style="margin: 0 0 12px 0; padding: 12px 14px; background: #fdf6ea; border-left: 4px solid #EB5B25; font-size: 14px; color: #29235C;">
+            <strong>Read the gene-set provenance before comparing this run with another.</strong>
+            {% for warning in metadata.get('resource_warnings') %}
+            <br>{{ warning }}
+            {% endfor %}
+        </p>
+        {% endif %}
 
         {# Issue #69: the identifier column did not match the gene sets. Say so
            loudly — the table and network below are well-formed but meaningless,
@@ -817,6 +838,9 @@
             {# Issue #60: carry the confidence threshold explicitly so the report
                is correct even if the session has been lost. #}
             <input type="hidden" name="min_confidence" value="{{ metadata.get('min_confidence', 'all') }}">
+            {# Issue #68: gene-set provenance for the report, carried explicitly
+               for the same reason as the threshold above. #}
+            <textarea name="resource_resolution" style="display: none;">{{ metadata.get('resource_resolution') | tojson }}</textarea>
             {# Issue #65: KE accounting for the report's analysis-parameters section. #}
             <textarea name="ke_summary" style="display: none;">{{ ke_summary | tojson }}</textarea>
             <textarea name="enrichment_results" style="display: none;">{{ table_json | safe }}</textarea>

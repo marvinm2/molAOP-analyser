@@ -262,7 +262,16 @@ class Config:
     # Builder API settings
     BUILDER_API_URL = os.environ.get('BUILDER_API_URL', 'https://molaop-builder.vhp4safety.nl/')
     BUILDER_API_TIMEOUT = int(os.environ.get('BUILDER_API_TIMEOUT', '30'))
-    CACHE_DIR = os.environ.get('CACHE_DIR', '/tmp/molaop_cache')
+    # Reference-set disk cache. Issue #68: on /tmp the cache is container-local
+    # and dies with every restart, so identical submissions minutes apart could
+    # resolve to different gene-set sources. When the deployed service's mounted
+    # volume is present the cache lives there instead, making cache behaviour
+    # stable across restarts. CACHE_DIR overrides either way.
+    CACHE_DIR = os.environ.get('CACHE_DIR') or (
+        '/data/molaop_cache'
+        if os.path.isdir('/data') and os.access('/data', os.W_OK)
+        else '/tmp/molaop_cache'
+    )
     CACHE_TTL = 3600  # 1 hour
 
     # Database location. Defaults to a file in the working directory, which in

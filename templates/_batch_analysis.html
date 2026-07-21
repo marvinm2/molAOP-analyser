@@ -210,11 +210,11 @@
             </label>
             <label style="font-size: 14px; color: #29235C;">
                 <input type="checkbox" class="batch-resource" value="GO_BP">
-                Gene Ontology (Biological Process)
+                Gene Ontology (Biological Process) <span style="color: #777;">&mdash; no confidence field</span>
             </label>
             <label style="font-size: 14px; color: #29235C;">
                 <input type="checkbox" class="batch-resource" value="Reactome">
-                Reactome
+                Reactome <span style="color: #777;">&mdash; no confidence field</span>
             </label>
         </div>
 
@@ -224,6 +224,13 @@
             the threshold drops weaker mappings from each Key Event's gene set; a KE whose
             mappings are all below the threshold is not tested. Mappings without a recorded
             confidence are always kept. Applied equally to all conditions.
+        </p>
+        {# Issue #67: the threshold only bites where the mappings carry a
+           confidence, i.e. the WikiPathways mappings from the Builder API. #}
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            <strong>Applies to WikiPathways mappings only.</strong> The Gene Ontology and
+            Reactome gene sets are served as GMT exports that carry no confidence field,
+            so they are used in full whatever you choose here.
         </p>
         <div style="margin-bottom: 24px;">
             <select id="batch-min-confidence" style="padding: 8px; font-size: 14px; max-width: 320px;">

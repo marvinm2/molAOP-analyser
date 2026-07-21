@@ -184,7 +184,7 @@ class TestAnalyzeRouteBehaviour:
     def test_partial_mismatch_warns_on_the_results_page(self, flask_client):
         """Enough overlap to produce results, too little for them to mean anything."""
         from app import load_cached_reference_sets
-        reference_sets, _ = load_cached_reference_sets(
+        reference_sets, _, _ = load_cached_reference_sets(
             ['WikiPathways', 'GO_BP', 'Reactome'], min_confidence='all')
         aop_kes = ['KE:1115', 'KE:1194', 'KE:1392', 'KE:149', 'KE:177',
                    'KE:1825', 'KE:373', 'KE:1097', 'KE:759']

@@ -213,7 +213,7 @@ class TestFlaskRoutes:
              patch('os.path.exists', return_value=True), \
              patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=raw_upload_df), \
-             patch('app.load_cached_reference_sets', return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache')):
+             patch('app.load_cached_reference_sets', return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache', [])):
 
             response = authenticated_client.post('/analyze', data={
                 'filename': 'test.csv',
@@ -295,7 +295,7 @@ class TestFlaskRoutes:
              patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=raw_upload_df), \
              patch('app.load_cached_reference_sets',
-                   return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache')):
+                   return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache', [])):
 
             response = authenticated_client.post('/analyze', data={
                 'filename': 'test.csv',
@@ -390,7 +390,7 @@ class TestFlaskRoutes:
              patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=raw_upload_df), \
              patch('app.load_cached_reference_sets',
-                   return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache')):
+                   return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache', [])):
 
             response = authenticated_client.post('/analyze', data={
                 'filename': 'test.csv',
@@ -1578,7 +1578,7 @@ class TestMinConfidenceControl:
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
              patch('app.validate_file_path', return_value=True), \
-             patch('app.load_cached_reference_sets', return_value=({'KE:115': {'BRCA1'}}, 'cache')) as loader:
+             patch('app.load_cached_reference_sets', return_value=({'KE:115': {'BRCA1'}}, 'cache', [])) as loader:
             response = client.post('/analyze', data=form)
         return response, loader
 
@@ -1814,3 +1814,88 @@ class TestRepresentationColumnRendered:
         response = self._analyze(authenticated_client, 'ns')
         assert response.status_code == 200
         assert b'rep-badge--ns' in response.data
+
+
+class TestResourceProvenanceOnResultsPage:
+    """Issues #67 / #68: what the run used, and where it differed from the ask."""
+
+    @staticmethod
+    def _analyze(client, resolution, min_confidence='all'):
+        import pandas as pd
+
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FC': [1.5, -0.8, 2.1],
+            'pval': [0.001, 0.05, 0.0001],
+            'significant': [True, False, True],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.01], 'FDR': [0.02],
+            'Representation': ['enriched'], 'num_overlap': [2],
+            'pct_sig_in_KE': [60.0], 'total_KE_genes_in_dataset': [5],
+            'odds_ratio': [3.5], 'overlap': ['BRCA1, EGFR'], 'KE': ['KE:115'],
+            'sig_in_KE': [2], 'sig_not_KE': [0],
+            'non_sig_in_KE': [1], 'non_sig_not_KE': [0],
+            'p_value_depleted': [0.99], 'FDR_depleted': [0.99],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.load_cached_reference_sets',
+                   return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'api', resolution)), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.build_ke_gene_mapping', return_value={}), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True):
+            return client.post('/analyze', data={
+                'filename': 'test.csv',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+                'aop_selection': 'AOP:1',
+                'logfc_threshold': '1.0',
+                'resources': ['WikiPathways', 'Reactome'],
+                'min_confidence': min_confidence,
+            })
+
+    def test_skipped_resource_is_announced_on_the_page(self, authenticated_client):
+        resolution = [
+            {'resource': 'WikiPathways', 'status': 'loaded', 'source': 'api',
+             'ke_count': 1, 'confidence_applied': True, 'error': None},
+            {'resource': 'Reactome', 'status': 'skipped', 'source': None,
+             'ke_count': 0, 'confidence_applied': False, 'error': 'HTTP 502'},
+        ]
+        response = self._analyze(authenticated_client, resolution)
+        assert response.status_code == 200
+        body = response.data
+        assert b'Reactome' in body
+        assert b'unavailable, skipped' in body
+        assert b'left out of this' in body
+
+    def test_confidence_applicability_is_disclosed(self, authenticated_client):
+        """A 'high only' run over GMT resources is not filtered throughout."""
+        resolution = [
+            {'resource': 'WikiPathways', 'status': 'loaded', 'source': 'api',
+             'ke_count': 1, 'confidence_applied': True, 'error': None},
+            {'resource': 'Reactome', 'status': 'loaded', 'source': 'api',
+             'ke_count': 1, 'confidence_applied': False, 'error': None},
+        ]
+        response = self._analyze(authenticated_client, resolution, min_confidence='high')
+        assert response.status_code == 200
+        assert b'carries no confidence field' in response.data
+
+    def test_clean_run_shows_provenance_without_a_warning(self, authenticated_client):
+        resolution = [
+            {'resource': 'WikiPathways', 'status': 'loaded', 'source': 'api',
+             'ke_count': 1, 'confidence_applied': True, 'error': None},
+        ]
+        response = self._analyze(authenticated_client, resolution)
+        body = response.data
+        assert b'Gene set provenance' in body
+        assert b'Builder API, live' in body
+        assert b'class="resource-warning"' not in body
