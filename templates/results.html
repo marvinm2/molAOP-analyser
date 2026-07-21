@@ -314,6 +314,11 @@
                 <span class="metadata-summary__label">Gene Set Resources</span>
                 <span class="metadata-summary__value">{{ metadata.get('selected_resources', 'WikiPathways') }}</span>
             </div>
+            {# Issue #60: the mapping-confidence threshold the gene sets were built at. #}
+            <div class="metadata-summary__item">
+                <span class="metadata-summary__label">Min. Mapping Confidence</span>
+                <span class="metadata-summary__value">{{ metadata.get('min_confidence_label', 'All mappings') }}</span>
+            </div>
             {% if metadata.get('analysis_date') %}
             <div class="metadata-summary__item">
                 <span class="metadata-summary__label">Analysed</span>
@@ -771,6 +776,9 @@
             <input type="hidden" name="fc_column" value="{{ metadata.get('fc_column', '') }}">
             <input type="hidden" name="pval_column" value="{{ metadata.get('pval_column', '') }}">
             <input type="hidden" name="id_type" value="{{ id_type }}">
+            {# Issue #60: carry the confidence threshold explicitly so the report
+               is correct even if the session has been lost. #}
+            <input type="hidden" name="min_confidence" value="{{ metadata.get('min_confidence', 'all') }}">
             {# Issue #65: KE accounting for the report's analysis-parameters section. #}
             <textarea name="ke_summary" style="display: none;">{{ ke_summary | tojson }}</textarea>
             <textarea name="enrichment_results" style="display: none;">{{ table_json | safe }}</textarea>

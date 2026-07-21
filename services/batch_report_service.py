@@ -28,6 +28,7 @@ from services.report_service import (
 from services.comparison_service import comparison_matrix_to_dataframe
 from services.enrichment_service import format_ke_summary
 from services.network_service import ke_accounting_from_network
+from helpers import MIN_CONFIDENCE_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,9 @@ def _batch_meta_rows(batch, conditions, comparison_data) -> List[tuple]:
         ('AOP', f'{batch.aop_label or ""} ({batch.aop_id or "N/A"})'),
         ('Conditions', str(len(conditions))),
         ('Gene Set Resources', batch.selected_resources or 'WikiPathways'),
+        # Issue #60: the mapping-confidence threshold the gene sets were built at.
+        ('Min. Mapping Confidence',
+         MIN_CONFIDENCE_LABELS.get(getattr(batch, 'min_confidence', None) or 'all', 'All mappings')),
         ('Log2FC Threshold', str(batch.logfc_threshold)),
         ('P-value Cutoff', str(batch.pval_cutoff)),
         ('Harmonised Background', f'{batch.harmonised_gene_count or 0:,} genes'),
@@ -348,6 +352,7 @@ def _condition_report_data(batch, cond, enrichment: List[Dict]) -> ReportData:
         enrichment_results=enrichment,
         method='ora',
         selected_resources=batch.selected_resources or 'WikiPathways',
+        min_confidence=getattr(batch, 'min_confidence', None) or 'all',  # Issue #60
     )
 
 
