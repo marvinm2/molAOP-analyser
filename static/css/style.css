@@ -1044,14 +1044,14 @@ select option[data-suggested="true"] {
     flex-wrap: wrap;
 }
 
-.fdr-slider-group {
+.fdr-cutoff-group {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-left: auto;
 }
 
-.fdr-slider-group label {
+.fdr-cutoff-group label {
     font-size: 13px;
     font-weight: 600;
     color: #29235C;
@@ -1060,17 +1060,14 @@ select option[data-suggested="true"] {
     white-space: nowrap;
 }
 
-.fdr-slider-group input[type="range"] {
-    width: 120px;
-    cursor: pointer;
-}
-
-.fdr-slider-group span {
+.fdr-cutoff-group select {
     font-size: 13px;
-    font-weight: 500;
-    color: #307BBF;
-    min-width: 36px;
-    text-align: center;
+    padding: 4px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #fff;
+    color: #29235C;
+    cursor: pointer;
 }
 
 /* ==========================================================================
@@ -1726,7 +1723,7 @@ select option[data-suggested="true"] {
         gap: 8px;
     }
 
-    .fdr-slider-group {
+    .fdr-cutoff-group {
         margin-left: 0;
         flex-wrap: wrap;
     }

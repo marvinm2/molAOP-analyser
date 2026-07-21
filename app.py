@@ -1089,6 +1089,7 @@ def analyze():
             ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
             ke_summary_text=format_ke_summary(ke_summary),  # Issue #65
             fdr_cutoff=Config.SIGNIFICANCE_FDR_CUTOFF,  # Issue #63: one significance cutoff
+            fdr_choices=Config.SIGNIFICANCE_FDR_CHOICES,  # Issue #63: discrete cutoff options
         )
 
     except AOPAnalysisError as e:

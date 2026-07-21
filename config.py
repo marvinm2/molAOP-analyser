@@ -29,6 +29,13 @@ class Config:
     # typical AOP.
     SIGNIFICANCE_FDR_CUTOFF = 0.05
 
+    # The cutoffs offered by the results-page significance control. A discrete
+    # set rather than a continuous slider: the conventional values are what
+    # anyone actually reports, and a slider's step made everything between 0
+    # and its first stop unreachable while leaving 0 (nothing significant) one
+    # tick from the default. SIGNIFICANCE_FDR_CUTOFF must appear in this list.
+    SIGNIFICANCE_FDR_CHOICES = (0.001, 0.01, 0.05, 0.10, 0.25)
+
     # MIN_KE_GENES is the minimum number of a KE's gene-set members that must
     # be measured in the uploaded dataset before that KE is tested. KEs below
     # it are excluded from the enrichment — and therefore from the BH

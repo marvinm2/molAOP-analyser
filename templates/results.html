@@ -574,12 +574,15 @@
             <button onclick="collapseAll()">Collapse All</button>
             {# Issue #63: the single significance control. Applied on load at
                the default cutoff, so the red borders and the FDR column always
-               agree — the button only re-applies after moving the slider. #}
-            <div class="fdr-slider-group" title="Key Events with FDR below this threshold are called significant (red border); the rest are dimmed.">
-                <label for="fdr-slider">Significance threshold (FDR):</label>
-                <input type="range" id="fdr-slider" min="0" max="1" step="0.01" value="{{ fdr_cutoff | default(0.05) }}">
-                <span id="fdr-slider-value">{{ "%.2f"|format(fdr_cutoff | default(0.05)) }}</span>
-                <button id="fdr-apply-btn" class="btn btn--primary">Apply</button>
+               agree, and re-applied immediately on change. Discrete cutoffs
+               rather than a slider — see Config.SIGNIFICANCE_FDR_CHOICES. #}
+            <div class="fdr-cutoff-group" title="Key Events with FDR below this cutoff are called significant (red border); the rest are dimmed.">
+                <label for="fdr-cutoff">Significance cutoff (FDR):</label>
+                <select id="fdr-cutoff">
+                    {% for choice in fdr_choices %}
+                    <option value="{{ choice }}" {% if choice == fdr_cutoff %}selected{% endif %}>{{ choice }}</option>
+                    {% endfor %}
+                </select>
             </div>
             <button onclick="cy.fit(undefined, 20);">Reset View</button>
             <button onclick="downloadPNG()">Export PNG</button>
@@ -1358,15 +1361,12 @@ cy.on('tap', function(event) {
     }
 });
 
-// --- FDR Filter Slider (NETW-04; issue #63) ---
-// One control, one meaning: the slider drives BOTH the significance border and
+// --- FDR significance cutoff (NETW-04; issue #63) ---
+// One control, one meaning: the cutoff drives BOTH the significance border and
 // the dimming of non-passing KEs, and runs on load at the server-side default
 // (FDR_CUTOFF) so the network never disagrees with the FDR column beside it.
-var fdrSlider = document.getElementById('fdr-slider');
-var fdrSliderValue = document.getElementById('fdr-slider-value');
-fdrSlider.addEventListener('input', function() {
-    fdrSliderValue.textContent = parseFloat(fdrSlider.value).toFixed(2);
-});
+// A discrete selector, so every reachable value is one worth reporting.
+var fdrCutoff = document.getElementById('fdr-cutoff');
 
 function applyFdrThreshold(threshold) {
     cy.nodes().not('.gene').forEach(function(node) {
@@ -1381,12 +1381,22 @@ function applyFdrThreshold(threshold) {
     updateNetworkStats();
 }
 
-document.getElementById('fdr-apply-btn').addEventListener('click', function() {
-    applyFdrThreshold(parseFloat(fdrSlider.value));
+// Selecting a cutoff is already a deliberate, discrete choice, so it applies
+// straight away — no separate Apply step to forget (issue #63).
+fdrCutoff.addEventListener('change', function() {
+    applyFdrThreshold(parseFloat(fdrCutoff.value));
+    updateFdrCutoffLabels(fdrCutoff.value);
 });
 
-// Applied on load, not only on click (issue #63).
-applyFdrThreshold(parseFloat(fdrSlider.value));
+// Keep the prose and legend in step with the active cutoff.
+function updateFdrCutoffLabels(value) {
+    document.querySelectorAll('.fdr-cutoff-label').forEach(function(el) {
+        el.textContent = value;
+    });
+}
+
+// Applied on load, not only on change (issue #63).
+applyFdrThreshold(parseFloat(fdrCutoff.value));
 
 // --- Collapse All: remove gene nodes, restore KE-only dagre LR layout ---
 function collapseAll() {

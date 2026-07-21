@@ -266,6 +266,19 @@ class TestNetworkSignificanceIsFdrDriven:
         assert 'significant' in by_id['KE:1']['classes']
         assert 'significant' not in by_id['KE:2']['classes']
 
+    def test_cutoff_choices_include_the_default(self):
+        """
+        Issue #63: the results-page control offers a discrete set of cutoffs.
+        The app-wide default must be one of them, or the page would open on a
+        value the selector cannot represent.
+        """
+        assert Config.SIGNIFICANCE_FDR_CUTOFF in Config.SIGNIFICANCE_FDR_CHOICES
+        # Every offered cutoff is a usable probability, and the list is sorted
+        # and free of duplicates so the dropdown reads sensibly.
+        choices = list(Config.SIGNIFICANCE_FDR_CHOICES)
+        assert all(0 < c <= 1 for c in choices)
+        assert choices == sorted(set(choices))
+
     def test_network_agrees_with_comparison_matrix(self):
         """Issue #63: the batch heatmap and the batch network in the SAME PDF
         must call the same Key Events significant."""
