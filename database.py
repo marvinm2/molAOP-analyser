@@ -13,6 +13,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
 import logging
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -380,13 +381,15 @@ def _ensure_min_confidence_column(engine) -> None:
 class DatabaseManager:
     """Manager class for database operations."""
     
-    def __init__(self, db_url: str = "sqlite:///molAOP_analyser.db"):
+    def __init__(self, db_url: Optional[str] = None):
         """Initialize database manager.
-        
+
         Args:
-            db_url: SQLAlchemy database URL (defaults to SQLite)
+            db_url: SQLAlchemy database URL. Defaults to Config.DATABASE_URL,
+                which the deployed service points at a mounted volume so the
+                database is not lost on redeploy.
         """
-        self.db_url = db_url
+        self.db_url = db_url or Config.DATABASE_URL
         self.engine = None
         self.SessionLocal = None
         

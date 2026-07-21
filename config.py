@@ -240,6 +240,13 @@ class Config:
     CACHE_DIR = os.environ.get('CACHE_DIR', '/tmp/molaop_cache')
     CACHE_TTL = 3600  # 1 hour
 
+    # Database location. Defaults to a file in the working directory, which in
+    # a container is ephemeral — the deployed service overrides this to point
+    # at a mounted volume so shared-result links and batch history survive a
+    # redeploy. Keep the swarm service on `stop-first` when it does: SQLite on
+    # a shared mount tolerates exactly one writer.
+    DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///molAOP_analyser.db')
+
     # Batch analysis settings
     BATCH_MAX_FILES = 10
     BATCH_MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100 MB total batch limit
