@@ -22,7 +22,7 @@ The integration contract between them is documented in
 [`docs/KE-MAPPING-API-REFERENCE.md`](docs/KE-MAPPING-API-REFERENCE.md). Changes to the
 builder's API shape must be mirrored there and in `services/api_service.py`.
 
-Both tools are part of the [VHP4Safety](https://vhp4safety.nl) platform.
+Both tools are part of the [VHP4Safety](https://platform.vhp4safety.nl) platform.
 
 ---
 

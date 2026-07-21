@@ -1,3 +1,38 @@
+/* ==========================================================================
+   DESIGN TOKENS (CSS custom properties)
+
+   Mirrors the token block in the molAOP Builder's static/css/main.css so both
+   apps in the pair are styled from the same named scale. Variable names are
+   kept identical across the two repos - grep for a token in one and the other
+   answers the same way.
+   ========================================================================== */
+
+:root {
+    /* VHP4Safety Color Palette */
+    --color-primary-dark: #29235C;
+    --color-primary-pink: #E6007E;
+    --color-primary-blue: #307BBF;
+    --color-secondary-light-blue: #93D5F6;
+    --color-secondary-cyan: #009FE3;
+    --color-secondary-orange: #EB5B25;
+    --color-secondary-teal: #005A6C;
+    --color-secondary-magenta: #9A1C57;
+    --color-teal-accent: #45A6B2;
+
+    /* Interaction states derived from the palette */
+    --color-primary-pink-hover: #B8005F;
+
+    /* Neutral Colors */
+    --color-white: #ffffff;
+
+    /* Page Layout */
+    --color-bg-page: #f5f6fa;
+
+    /* Semantic Status Colors */
+    --color-status-high: #28a745;
+    --color-status-low: #dc3545;
+}
+
 
 html, body {
     height: 100%;
@@ -11,8 +46,8 @@ body {
     font-family: 'Inter', Arial, sans-serif;
     margin: 0;
     padding: 0;
-    background-color: #f5f6fa;
-    color: #29235C;
+    background-color: var(--color-bg-page);
+    color: var(--color-primary-dark);
 }
 
 /* Legacy header — overridden by .site-nav in base.html */
@@ -28,8 +63,8 @@ header {
     position: sticky;
     top: 0;
     z-index: 100;
-    background-color: #29235C;
-    color: #ffffff;
+    background-color: var(--color-primary-dark);
+    color: var(--color-white);
     padding: 0 24px;
     height: 60px;
     display: flex;
@@ -91,7 +126,7 @@ header {
 .site-nav__links a:focus-visible {
     background-color: rgba(255,255,255,0.20);
     border-color: rgba(255,255,255,0.40);
-    color: #ffffff;
+    color: var(--color-white);
     outline: none;
 }
 
@@ -109,7 +144,7 @@ header {
    ========================================================================== */
 
 .card {
-    background: #ffffff;
+    background: var(--color-white);
     border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     padding: 28px 32px;
@@ -147,7 +182,7 @@ header {
    ========================================================================== */
 
 .site-footer {
-    background-color: #29235C;
+    background-color: var(--color-primary-dark);
     padding: 16px 24px;
     text-align: center;
     color: rgba(255,255,255,0.8);
@@ -156,13 +191,13 @@ header {
 }
 
 .site-footer a {
-    color: #93D5F6;
+    color: var(--color-secondary-light-blue);
     text-decoration: none;
 }
 
 .site-footer a:hover {
     text-decoration: underline;
-    color: #ffffff;
+    color: var(--color-white);
 }
 
 .site-footer__inner {
@@ -182,7 +217,7 @@ header {
 .site-footer__platform-logo {
     height: 28px;
     width: auto;
-    background: #ffffff;
+    background: var(--color-white);
     padding: 4px 8px;
     border-radius: 4px;
     vertical-align: middle;
@@ -193,7 +228,7 @@ header {
    ========================================================================== */
 
 h1 {
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 /* ==========================================================================
@@ -231,7 +266,7 @@ img.logo {
    ========================================================================== */
 
 input[type=button], input[type=submit], input[type=reset], button {
-    background-color: #E6007E;
+    background-color: var(--color-primary-pink);
     color: white;
     padding: 10px 20px;
     border: none;
@@ -242,11 +277,11 @@ input[type=button], input[type=submit], input[type=reset], button {
 }
 
 input[type=button]:hover, input[type=submit]:hover, input[type=reset]:hover, button:hover {
-    background-color: #005A6C;
+    background-color: var(--color-secondary-teal);
 }
 
 button {
-    background-color: #E6007E;
+    background-color: var(--color-primary-pink);
     color: white;
     padding: 10px 20px;
     border: none;
@@ -257,7 +292,7 @@ button {
 }
 
 button:hover {
-    background-color: #005A6C;
+    background-color: var(--color-secondary-teal);
 }
 
 /* Button utility classes */
@@ -275,45 +310,45 @@ button:hover {
 }
 
 .btn--primary {
-    background-color: #307BBF;
+    background-color: var(--color-primary-blue);
 }
 
 .btn--primary:hover {
-    background-color: #29235C;
+    background-color: var(--color-primary-dark);
 }
 
 .btn--accent {
-    background-color: #E6007E;
+    background-color: var(--color-primary-pink);
 }
 
 .btn--accent:hover {
-    background-color: #9A1C57;
+    background-color: var(--color-secondary-magenta);
 }
 
 .btn--teal {
-    background-color: #45A6B2;
+    background-color: var(--color-teal-accent);
 }
 
 .btn--teal:hover {
-    background-color: #005A6C;
+    background-color: var(--color-secondary-teal);
 }
 
 .btn--secondary {
-    background-color: #ffffff;
-    color: #29235C;
-    border: 1.5px solid #29235C;
+    background-color: var(--color-white);
+    color: var(--color-primary-dark);
+    border: 1.5px solid var(--color-primary-dark);
 }
 
 .btn--secondary:hover {
     background-color: #f0f0f7;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .btn--option,
 .btn--option-pct {
-    background-color: #ffffff;
-    color: #29235C;
-    border: 1.5px solid #307BBF;
+    background-color: var(--color-white);
+    color: var(--color-primary-dark);
+    border: 1.5px solid var(--color-primary-blue);
     padding: 6px 14px;
     font-size: 13px;
     font-weight: 500;
@@ -327,18 +362,18 @@ button:hover {
 
 .btn--option:hover,
 .btn--option-pct:hover {
-    background-color: #307BBF;
-    color: #ffffff;
+    background-color: var(--color-primary-blue);
+    color: var(--color-white);
 }
 
 .btn--option-pct {
-    border-color: #45A6B2;
-    color: #005A6C;
+    border-color: var(--color-teal-accent);
+    color: var(--color-secondary-teal);
 }
 
 .btn--option-pct:hover {
-    background-color: #45A6B2;
-    color: #ffffff;
+    background-color: var(--color-teal-accent);
+    color: var(--color-white);
 }
 
 /* Disabled state for any button — readable, clearly inactive */
@@ -412,7 +447,7 @@ table.dataframe th, table.dataframe td {
 }
 
 table.dataframe th {
-    background-color: #307BBF;
+    background-color: var(--color-primary-blue);
     color: white;
     text-align: center;
 }
@@ -432,7 +467,7 @@ table.dataframe th, table.dataframe td {
 }
 
 table.dataframe th {
-    background-color: #307BBF;
+    background-color: var(--color-primary-blue);
     color: white;
 }
 
@@ -508,7 +543,7 @@ table.dataframe tr:nth-child(even) {
 }
 
 #dropdown-table th {
-    background-color: #307BBF;
+    background-color: var(--color-primary-blue);
     color: white;
     font-weight: bold;
 }
@@ -613,7 +648,7 @@ table.dataframe tr:nth-child(even) {
 }
 
 .settings-group__title {
-    color: #29235C;
+    color: var(--color-primary-dark);
     font-weight: 700;
     font-size: 16px;
     margin: 0 0 4px;
@@ -637,7 +672,7 @@ table.dataframe tr:nth-child(even) {
 .settings-subgroup__label {
     display: block;
     font-weight: 600;
-    color: #29235C;
+    color: var(--color-primary-dark);
     font-size: 14px;
     margin-bottom: 8px;
 }
@@ -655,9 +690,9 @@ table.dataframe tr:nth-child(even) {
     margin: 16px 0;
     padding: 12px 14px;
     background: #fdf6ea;
-    border-left: 4px solid #EB5B25;
+    border-left: 4px solid var(--color-secondary-orange);
     font-size: 14px;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .batch-resource-warning p {
@@ -790,7 +825,7 @@ select.wide-dropdown {
    ========================================================================== */
 
 .subheader {
-    background-color: #EB5B25;
+    background-color: var(--color-secondary-orange);
     padding: 8px 20px;
     text-align: center;
     color: white;
@@ -808,17 +843,17 @@ select.wide-dropdown {
 }
 
 .auto-suggestion {
-    background-color: #009FE3;
+    background-color: var(--color-secondary-cyan);
     color: white;
     padding: 2px 6px;
     border-radius: 3px;
     font-size: 11px;
     margin-left: 8px;
-    border: 1px solid #307BBF;
+    border: 1px solid var(--color-primary-blue);
 }
 
 select option[data-suggested="true"] {
-    background-color: #93D5F6;
+    background-color: var(--color-secondary-light-blue);
     font-weight: bold;
 }
 
@@ -828,15 +863,15 @@ select option[data-suggested="true"] {
 
 /* Confidence indicators using house style colors */
 .confidence-high {
-    color: #45A6B2; /* Teal - for high confidence */
+    color: var(--color-teal-accent); /* Teal - for high confidence */
 }
 
 .confidence-medium {
-    color: #EB5B25; /* Orange - for medium confidence */
+    color: var(--color-secondary-orange); /* Orange - for medium confidence */
 }
 
 .confidence-low {
-    color: #9A1C57; /* Deep Magenta - for low confidence */
+    color: var(--color-secondary-magenta); /* Deep Magenta - for low confidence */
 }
 
 /* ==========================================================================
@@ -858,24 +893,24 @@ select option[data-suggested="true"] {
 }
 
 .confidence-badge--high {
-    background-color: #45A6B2; /* Teal */
+    background-color: var(--color-teal-accent); /* Teal */
 }
 
 .confidence-badge--medium {
-    background-color: #EB5B25; /* Orange */
+    background-color: var(--color-secondary-orange); /* Orange */
 }
 
 .confidence-badge--low {
-    background-color: #9A1C57; /* Deep Magenta */
+    background-color: var(--color-secondary-magenta); /* Deep Magenta */
 }
 
 .confidence-badge--very-low {
-    background-color: #9A1C57; /* Deep Magenta */
+    background-color: var(--color-secondary-magenta); /* Deep Magenta */
 }
 
 .confidence-badge--undetected {
-    background-color: #EB5B25; /* Orange */
-    border: 1px solid #9A1C57; /* Deep Magenta outline — signals required action */
+    background-color: var(--color-secondary-orange); /* Orange */
+    border: 1px solid var(--color-secondary-magenta); /* Deep Magenta outline — signals required action */
 }
 
 /* ==========================================================================
@@ -897,11 +932,11 @@ select option[data-suggested="true"] {
 }
 
 .rep-badge--enriched {
-    background-color: #E6007E; /* Primary Magenta */
+    background-color: var(--color-primary-pink); /* Primary Magenta */
 }
 
 .rep-badge--depleted {
-    background-color: #307BBF; /* Primary Blue */
+    background-color: var(--color-primary-blue); /* Primary Blue */
 }
 
 .rep-badge--ns {
@@ -929,14 +964,14 @@ select option[data-suggested="true"] {
 .pathway-view__title {
     font-size: 18px;
     font-weight: 600;
-    color: #29235C;
+    color: var(--color-primary-dark);
     margin: 0;
 }
 
 .pathway-view__caption {
     font-size: 12px;
     font-weight: 400;
-    color: #29235C;
+    color: var(--color-primary-dark);
     margin: 4px 0 0 0;
 }
 
@@ -963,7 +998,7 @@ select option[data-suggested="true"] {
     margin: 0;
     border: 1px solid #ccc;
     border-radius: 4px;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .pathway-view__iframe-wrapper {
@@ -987,12 +1022,12 @@ select option[data-suggested="true"] {
     border: 1px solid #ddd;
     border-radius: 4px;
     margin-top: 0;
-    background-color: #ffffff;
+    background-color: var(--color-white);
 }
 
 .pathway-view__popup-link {
     font-size: 14px;
-    color: #307BBF;
+    color: var(--color-primary-blue);
     text-decoration: none;
     white-space: nowrap;
 }
@@ -1039,7 +1074,7 @@ select option[data-suggested="true"] {
 .metadata-summary__value {
     font-size: 15px;
     font-weight: 600;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 /* ==========================================================================
@@ -1076,7 +1111,7 @@ select option[data-suggested="true"] {
 }
 
 .typeahead-dropdown li .mapped-info {
-    color: #307BBF;
+    color: var(--color-primary-blue);
     font-size: 12px;
 }
 
@@ -1111,7 +1146,7 @@ select option[data-suggested="true"] {
 .fdr-cutoff-group label {
     font-size: 13px;
     font-weight: 600;
-    color: #29235C;
+    color: var(--color-primary-dark);
     margin: 0;
     display: inline;
     white-space: nowrap;
@@ -1123,7 +1158,7 @@ select option[data-suggested="true"] {
     border: 1px solid #ccc;
     border-radius: 4px;
     background: #fff;
-    color: #29235C;
+    color: var(--color-primary-dark);
     cursor: pointer;
 }
 
@@ -1139,7 +1174,7 @@ select option[data-suggested="true"] {
     max-height: calc(100vh - 60px);
     overflow-y: auto;
     background: #fff;
-    border-left: 2px solid #307BBF;
+    border-left: 2px solid var(--color-primary-blue);
     box-shadow: -4px 0 12px rgba(0,0,0,0.12);
     z-index: 200;
     transition: right 0.25s ease;
@@ -1165,7 +1200,7 @@ select option[data-suggested="true"] {
 .ke-drawer__title {
     margin: 0;
     font-size: 15px;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .ke-drawer__close {
@@ -1181,7 +1216,7 @@ select option[data-suggested="true"] {
 }
 
 .ke-drawer__close:hover {
-    color: #E6007E;
+    color: var(--color-primary-pink);
     background: transparent;
 }
 
@@ -1197,7 +1232,7 @@ select option[data-suggested="true"] {
 }
 
 .ke-drawer__type {
-    background: #29235C;
+    background: var(--color-primary-dark);
     color: white;
     padding: 3px 10px;
     border-radius: 12px;
@@ -1213,14 +1248,14 @@ select option[data-suggested="true"] {
 .ke-drawer__ke-title {
     margin: 0 0 8px;
     font-size: 16px;
-    color: #29235C;
+    color: var(--color-primary-dark);
     line-height: 1.3;
 }
 
 .ke-drawer__wiki-link {
     display: inline-block;
     font-size: 13px;
-    color: #307BBF;
+    color: var(--color-primary-blue);
     text-decoration: none;
     margin-bottom: 16px;
 }
@@ -1232,7 +1267,7 @@ select option[data-suggested="true"] {
 .ke-drawer__gene-list h5 {
     margin: 0 0 8px;
     font-size: 14px;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .ke-drawer__gene-scroll {
@@ -1260,7 +1295,7 @@ select option[data-suggested="true"] {
 .ke-drawer__gene-name {
     flex: 1;
     font-weight: 500;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .ke-drawer__gene-fc {
@@ -1271,7 +1306,7 @@ select option[data-suggested="true"] {
 }
 
 .ke-drawer__gene-sig-badge {
-    background: #45A6B2;
+    background: var(--color-teal-accent);
     color: white;
     padding: 1px 6px;
     border-radius: 8px;
@@ -1299,7 +1334,7 @@ select option[data-suggested="true"] {
         height: 80vh;
         max-height: 80vh;
         border-left: none;
-        border-top: 2px solid #307BBF;
+        border-top: 2px solid var(--color-primary-blue);
         border-radius: 12px 12px 0 0;
         transition: bottom 0.25s ease;
     }
@@ -1325,7 +1360,7 @@ select option[data-suggested="true"] {
 }
 
 .drop-zone--active {
-    border: 2px solid #307BBF;
+    border: 2px solid var(--color-primary-blue);
     background-color: #e8f4fb;
 }
 
@@ -1338,7 +1373,7 @@ select option[data-suggested="true"] {
 .drop-zone__text {
     font-size: 16px;
     font-weight: 500;
-    color: #29235C;
+    color: var(--color-primary-dark);
     margin: 0 0 4px;
 }
 
@@ -1350,15 +1385,15 @@ select option[data-suggested="true"] {
 
 .drop-zone__filename {
     font-size: 14px;
-    color: #307BBF;
+    color: var(--color-primary-blue);
     font-weight: 500;
     margin: 8px 0 0;
 }
 
 .drop-zone__remove {
     background: transparent;
-    color: #E6007E;
-    border: 1px solid #E6007E;
+    color: var(--color-primary-pink);
+    border: 1px solid var(--color-primary-pink);
     padding: 4px 10px;
     font-size: 12px;
     border-radius: 4px;
@@ -1369,7 +1404,7 @@ select option[data-suggested="true"] {
 }
 
 .drop-zone__remove:hover {
-    background: #E6007E;
+    background: var(--color-primary-pink);
     color: white;
 }
 
@@ -1414,22 +1449,22 @@ select option[data-suggested="true"] {
   gap: 0.75rem;
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
-  background: #f5f6fa;
+  background: var(--color-bg-page);
 }
 
 .batch-progress__file--running {
   background: #e8f4fb;
-  border-left: 3px solid #307BBF;
+  border-left: 3px solid var(--color-primary-blue);
 }
 
 .batch-progress__file--complete {
   background: #e8f8e8;
-  border-left: 3px solid #28a745;
+  border-left: 3px solid var(--color-status-high);
 }
 
 .batch-progress__file--failed {
   background: #fde8e8;
-  border-left: 3px solid #dc3545;
+  border-left: 3px solid var(--color-status-low);
 }
 
 .batch-progress__label {
@@ -1438,13 +1473,13 @@ select option[data-suggested="true"] {
 }
 
 .batch-progress__error {
-  color: #dc3545;
+  color: var(--color-status-low);
   font-weight: 600;
   margin-top: 1rem;
 }
 
 .batch-meta {
-  background: #f5f6fa;
+  background: var(--color-bg-page);
   border-radius: 8px;
   padding: 1rem 1.5rem;
   margin-bottom: 1.5rem;
@@ -1456,12 +1491,12 @@ select option[data-suggested="true"] {
 
 .batch-harmonisation-note {
   background: #e8f4fb;
-  border-left: 3px solid #307BBF;
+  border-left: 3px solid var(--color-primary-blue);
   padding: 0.75rem 1rem;
   border-radius: 4px;
   margin-bottom: 1.5rem;
   font-size: 0.9rem;
-  color: #29235C;
+  color: var(--color-primary-dark);
 }
 
 .batch-conditions {
@@ -1481,7 +1516,7 @@ select option[data-suggested="true"] {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1rem;
-  background: #f5f6fa;
+  background: var(--color-bg-page);
 }
 
 .batch-condition-card__header h3 {
@@ -1539,7 +1574,7 @@ select option[data-suggested="true"] {
 .file-card__remove {
   background: none;
   border: none;
-  color: #dc3545;
+  color: var(--color-status-low);
   cursor: pointer;
   font-size: 1.2rem;
   width: auto;
@@ -1553,7 +1588,7 @@ select option[data-suggested="true"] {
   align-items: center;
   margin-bottom: 0.5rem;
   padding: 0.5rem;
-  background: #f5f6fa;
+  background: var(--color-bg-page);
   border-radius: 6px;
 }
 
@@ -1568,7 +1603,7 @@ select option[data-suggested="true"] {
 
 .demo-group h4 {
   margin: 0.25rem 0;
-  color: #29235C;
+  color: var(--color-primary-dark);
 }
 
 .demo-group label {
@@ -1578,20 +1613,20 @@ select option[data-suggested="true"] {
 }
 
 .error-text {
-  color: #dc3545;
+  color: var(--color-status-low);
 }
 
 .breadcrumb-link {
   display: inline-block;
   margin-bottom: 1rem;
-  color: #307BBF;
+  color: var(--color-primary-blue);
   text-decoration: none;
   font-size: 14px;
 }
 
 .breadcrumb-link:hover {
   text-decoration: underline;
-  color: #29235C;
+  color: var(--color-primary-dark);
 }
 
 /* ==========================================================================
@@ -1606,14 +1641,14 @@ select option[data-suggested="true"] {
 
 .tag-row__preview summary {
     cursor: pointer;
-    color: #307BBF;
+    color: var(--color-primary-blue);
     font-weight: 500;
     font-size: 12px;
     margin-bottom: 4px;
 }
 
 .tag-row__preview summary:hover {
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .tag-row__preview table {
@@ -1624,7 +1659,7 @@ select option[data-suggested="true"] {
 }
 
 .tag-row__preview th {
-    background: #29235C;
+    background: var(--color-primary-dark);
     color: #fff;
     padding: 4px 8px;
     text-align: left;
@@ -1674,13 +1709,13 @@ select option[data-suggested="true"] {
 }
 
 .landing-tab:hover {
-    color: #29235C;
+    color: var(--color-primary-dark);
     background: transparent;
 }
 
 .landing-tab--active {
-    color: #29235C;
-    border-bottom-color: #307BBF;
+    color: var(--color-primary-dark);
+    border-bottom-color: var(--color-primary-blue);
     font-weight: 600;
 }
 
@@ -1728,9 +1763,9 @@ select option[data-suggested="true"] {
   font-size: 15px; font-weight: 500; color: #666; border-bottom: 2px solid transparent;
   margin-bottom: -2px; transition: color 0.15s, border-color 0.15s;
 }
-.compare-tab:hover { color: #29235C; }
+.compare-tab:hover { color: var(--color-primary-dark); }
 .compare-tab--active {
-  color: #29235C; border-bottom-color: #E6007E; font-weight: 600;
+  color: var(--color-primary-dark); border-bottom-color: var(--color-primary-pink); font-weight: 600;
 }
 
 .compare-tab-panels { padding-top: 16px; }
@@ -1853,21 +1888,21 @@ select option[data-suggested="true"] {
 
 .card--banner__text h3 {
     margin: 0 0 4px 0;
-    color: #29235C;
+    color: var(--color-primary-dark);
     font-size: 18px;
     font-weight: 600;
 }
 
 .card--banner__text p {
     margin: 0;
-    color: #29235C;
+    color: var(--color-primary-dark);
     font-size: 16px;
     line-height: 1.5;
 }
 
 .card--banner__cta {
     flex-shrink: 0;
-    background-color: #E6007E;
+    background-color: var(--color-primary-pink);
     color: white;
     padding: 10px 20px;
     border-radius: 4px;
@@ -1879,7 +1914,7 @@ select option[data-suggested="true"] {
 }
 
 .card--banner__cta:hover {
-    background-color: #b8005f; /* 20% darken of #E6007E per UI-SPEC §Copywriting Contract */
+    background-color: var(--color-primary-pink-hover); /* 20% darken of var(--color-primary-pink) per UI-SPEC §Copywriting Contract */
     text-decoration: none;
 }
 
@@ -1905,13 +1940,13 @@ select option[data-suggested="true"] {
 }
 
 .card--demo:hover {
-    border-color: #29235C;
+    border-color: var(--color-primary-dark);
     box-shadow: 0 2px 8px rgba(41, 35, 92, 0.08);
 }
 
 .card--demo h3 {
     margin: 0 0 8px 0;
-    color: #29235C;
+    color: var(--color-primary-dark);
     font-size: 18px;
 }
 
@@ -1923,7 +1958,7 @@ select option[data-suggested="true"] {
 }
 
 .card--demo button[type="submit"] {
-    background-color: #E6007E;
+    background-color: var(--color-primary-pink);
     color: white;
     padding: 10px 20px;
     border: none;
@@ -1934,7 +1969,7 @@ select option[data-suggested="true"] {
 }
 
 .card--demo button[type="submit"]:hover {
-    background-color: #b8005f; /* 20% darken of #E6007E per UI-SPEC §Copywriting Contract */
+    background-color: var(--color-primary-pink-hover); /* 20% darken of var(--color-primary-pink) per UI-SPEC §Copywriting Contract */
 }
 
 /* AOP picker recommended-only filter toggle (D-06). */
@@ -1945,7 +1980,7 @@ select option[data-suggested="true"] {
     margin: 0 auto 8px auto;
     max-width: 600px;
     font-size: 14px;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 .aop-filter-toggle__label {
@@ -1955,8 +1990,8 @@ select option[data-suggested="true"] {
 
 .aop-filter-toggle__btn {
     background: transparent;
-    border: 1px solid #307BBF;
-    color: #307BBF;
+    border: 1px solid var(--color-primary-blue);
+    color: var(--color-primary-blue);
     padding: 4px 10px;
     border-radius: 4px;
     cursor: pointer;
@@ -1973,7 +2008,7 @@ select option[data-suggested="true"] {
 
 /* Recommended AOP highlight in the typeahead dropdown (D-06 + UI-SPEC §Color). */
 .typeahead-dropdown li.aop-recommended {
-    border-left: 2px solid #307BBF;
+    border-left: 2px solid var(--color-primary-blue);
 }
 
 /* Layout for demo card grids on /demos. */
@@ -1992,13 +2027,13 @@ select option[data-suggested="true"] {
     margin-top: 16px;
     padding: 16px 20px;
     border: 1px solid #e0e0e0;
-    border-left: 4px solid #E6007E;
+    border-left: 4px solid var(--color-primary-pink);
     border-radius: 6px;
     background: #fbfbfd;
 }
 .demo-batch-cta h3 {
     margin: 0 0 6px;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 .demo-batch-cta p {
     margin: 0 0 12px;
@@ -2022,7 +2057,7 @@ select option[data-suggested="true"] {
 /* Info callout box used on multiple pages (/demos unavailable notice, single-analysis intro). */
 .info-callout {
     background-color: #f1f9ff;
-    border-left: 5px solid #307BBF;
+    border-left: 5px solid var(--color-primary-blue);
     padding: 15px;
     margin-bottom: 20px;
     border-radius: 4px;
@@ -2039,7 +2074,7 @@ select option[data-suggested="true"] {
 
 .demos-timepoint-group h4 {
     margin: 0 0 8px 0;
-    color: #29235C;
+    color: var(--color-primary-dark);
     font-size: 15px;
     font-weight: 600;
 }
@@ -2047,7 +2082,7 @@ select option[data-suggested="true"] {
 /* ==========================================================================
    Phase 15: Hub genes panel BEM components (HUBG-01..07)
    Tokens: xs=4px, sm=8px, md=16px, lg=24px, xl=32px
-   Palette: #29235C (brand dark), #307BBF (supporting blue), #E6007E (magenta)
+   Palette: var(--color-primary-dark) (brand dark), var(--color-primary-blue) (supporting blue), var(--color-primary-pink) (magenta)
    ========================================================================== */
 
 /* Hub genes panel card — wraps .card .card--wide, no extra box-shadow needed */
@@ -2069,7 +2104,7 @@ select option[data-suggested="true"] {
 .hub-panel__title {
     font-size: 18px;
     font-weight: 600;
-    color: #29235C;
+    color: var(--color-primary-dark);
     margin: 0;
 }
 
@@ -2100,7 +2135,7 @@ select option[data-suggested="true"] {
 /* Toggle label text */
 .hub-toggle__label {
     font-weight: 400;
-    color: #29235C;
+    color: var(--color-primary-dark);
 }
 
 /* Native checkbox base — accent-color scoped per toggle id below */
@@ -2112,12 +2147,12 @@ select option[data-suggested="true"] {
 
 /* "Show gene nodes" toggle — network-layer control uses supporting blue */
 #show-gene-nodes-toggle {
-    accent-color: #307BBF;
+    accent-color: var(--color-primary-blue);
 }
 
 /* "Significant genes only" toggle — significance filter uses Primary Magenta */
 #sig-only-toggle {
-    accent-color: #E6007E;
+    accent-color: var(--color-primary-pink);
 }
 
 /* ==========================================================================
