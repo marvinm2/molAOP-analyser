@@ -219,8 +219,33 @@ class Config:
     # Wire up aop_ids for the kidney network entry
     CASE_STUDY_AOPS["Kidney-aop-network"]["aop_ids"] = KIDNEY_AOP_IDS  # noqa: E501
 
-    # Flask settings
-    _secret = os.environ.get('SECRET_KEY')
+    # Flask settings.
+    #
+    # SECRET_KEY_FILE takes precedence over SECRET_KEY: the deployed service
+    # points it at a Docker swarm secret (/run/secrets/...), so the key is
+    # never exposed in the service's environment where `docker service
+    # inspect` would print it. SECRET_KEY stays supported for local dev.
+    #
+    # Without either, a random key is generated per process — sessions then
+    # do not survive a restart, and with more than one replica they would not
+    # be shared between them.
+    _secret = None
+    _secret_file = os.environ.get('SECRET_KEY_FILE')
+    if _secret_file:
+        try:
+            with open(_secret_file, 'r', encoding='utf-8') as fh:
+                _secret = fh.read().strip()
+        except OSError as exc:
+            import warnings
+            warnings.warn(f"SECRET_KEY_FILE {_secret_file!r} could not be read ({exc})")
+        else:
+            if not _secret:
+                import warnings
+                warnings.warn(f"SECRET_KEY_FILE {_secret_file!r} is empty")
+
+    if not _secret:
+        _secret = os.environ.get('SECRET_KEY')
+
     if not _secret:
         import warnings
         import secrets as _secrets
