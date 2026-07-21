@@ -12,7 +12,14 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from helpers import load_reference_sets
+from helpers import (
+    DEFAULT_MIN_CONFIDENCE,
+    VALID_MIN_CONFIDENCE,
+    confidence_rank,
+    filter_records_by_confidence,
+    load_reference_sets,
+    record_confidence_rank,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,23 +116,25 @@ def fetch_all_ke_wp_mappings(session, base_url, timeout):
     return all_records
 
 
-def fetch_ke_wp_records(config):
+def fetch_ke_wp_records(config, min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Fetch raw KE-WP mapping records from the Builder API for the WP picker.
 
-    Returns the full record list from ``fetch_all_ke_wp_mappings`` unchanged so
-    that each record retains its ``ke_id``, ``pathway_id``, ``pathway_title``,
-    and ``confidence_level`` fields.  These records are consumed directly by
-    ``build_wp_picker_data()`` in ``services/pathway_picker_service.py``.
-
-    Note: ``fetch_reference_sets_from_api()`` is intentionally left untouched —
-    the reference-set loading pipeline is a separate concern from the picker-data
-    pipeline (Option A from the research notes — additive, no refactor).
+    Returns the record list from ``fetch_all_ke_wp_mappings`` with each record's
+    ``ke_id``, ``pathway_id``, ``pathway_title`` and ``confidence_level`` fields
+    intact.  These records are consumed directly by ``build_wp_picker_data()``
+    in ``services/pathway_picker_service.py``.  Issue #60 adds an optional
+    minimum-confidence filter so the picker matches the mappings that were
+    actually enriched.
 
     Parameters
     ----------
     config : Config
         Application config object providing ``BUILDER_API_URL`` and
         ``BUILDER_API_TIMEOUT`` attributes.
+    min_confidence : str
+        Issue #60 minimum mapping confidence (``"all"``/``"medium"``/``"high"``).
+        Records below the threshold are dropped client-side; records without a
+        confidence value are kept.
 
     Returns
     -------
@@ -151,7 +160,10 @@ def fetch_ke_wp_records(config):
     )
 
     logger.info("fetch_ke_wp_records: fetched %d raw KE-WP records from API", len(records))
-    return records
+    # Issue #60: apply the minimum-confidence threshold client-side. The Builder
+    # confidence_level query param is exact-match only, which cannot express
+    # "Medium and above", and the full record list is needed anyway.
+    return filter_records_by_confidence(records, min_confidence)
 
 
 def load_ke_wp_records_csv(csv_path="data/KE-WP.csv"):
@@ -180,7 +192,7 @@ def load_ke_wp_records_csv(csv_path="data/KE-WP.csv"):
     return records
 
 
-def fetch_reference_sets_from_api(config):
+def fetch_reference_sets_from_api(config, min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Orchestrate API fetching and build reference sets.
 
     Fetches all KE-WP mapping records from the Builder API, normalises
@@ -193,6 +205,11 @@ def fetch_reference_sets_from_api(config):
     config : Config
         Application config object providing ``BUILDER_API_URL``,
         ``BUILDER_API_TIMEOUT`` attributes.
+    min_confidence : str
+        Issue #60 minimum mapping confidence (``"all"``/``"medium"``/``"high"``).
+        Mappings below the threshold are dropped before the gene sets are built,
+        so a KE keeps only the genes of its qualifying pathways and a KE whose
+        mappings are all below threshold disappears entirely.
 
     Returns
     -------
@@ -218,20 +235,24 @@ def fetch_reference_sets_from_api(config):
         timeout=config.BUILDER_API_TIMEOUT,
     )
 
+    # Issue #60: drop below-threshold mappings before the gene sets are built.
+    qualifying = filter_records_by_confidence(records, min_confidence)
+
     # Normalise KE IDs: "KE 55" -> "KE:55"
     ke_wp_data = [
         {
             "KE_ID": record["ke_id"].replace(" ", ":"),
             "WP_ID": record["pathway_id"],
         }
-        for record in records
+        for record in qualifying
     ]
     ke_wp_df = pd.DataFrame(ke_wp_data, columns=["KE_ID", "WP_ID"])
 
     logger.info(
-        "Built KE-WP DataFrame with %d rows from %d API records",
+        "Built KE-WP DataFrame with %d rows from %d API records (min_confidence=%s)",
         len(ke_wp_df),
         len(records),
+        min_confidence,
     )
 
     reference_sets = load_reference_sets(ke_wp_df=ke_wp_df)
