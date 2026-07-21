@@ -1,0 +1,48 @@
+# CODEOWNERS file for the Molecular AOP Analyser
+# Defines who owns specific parts of the codebase and must approve changes
+
+# Global owners - fallback for any files not explicitly covered
+* @marvinm2
+
+# Core application files
+/app.py @marvinm2
+/config.py @marvinm2
+/database.py @marvinm2
+/exceptions.py @marvinm2
+/helpers.py @marvinm2
+/utils.py @marvinm2
+/validation.py @marvinm2
+/cache_manager.py @marvinm2
+
+# Service layer
+/services/ @marvinm2
+
+# Templates and frontend
+/templates/ @marvinm2
+/static/ @marvinm2
+
+# Configuration files
+/requirements*.txt @marvinm2
+/requirements*.in @marvinm2
+/pyproject.toml @marvinm2
+/docker-compose.yml @marvinm2
+/Dockerfile @marvinm2
+
+# Testing
+/tests/ @marvinm2
+/pytest.ini @marvinm2
+/test_integration.py @marvinm2
+
+# CI/CD and workflows
+/.github/ @marvinm2
+
+# Documentation
+/README.md @marvinm2
+/CLAUDE.md @marvinm2
+/CHANGELOG.md @marvinm2
+/docs/ @marvinm2
+
+# Integration contract with the molAOP Builder (requires extra review -
+# changes here must be mirrored in the builder repo, see docs/KE-MAPPING-API-REFERENCE.md)
+/docs/KE-MAPPING-API-REFERENCE.md @marvinm2
+/services/api_service.py @marvinm2

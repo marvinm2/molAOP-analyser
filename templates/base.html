@@ -21,7 +21,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tour.css') }}">
     <meta name="csrf-token" content="{{ csrf_token }}">
     {% block head_extra %}{% endblock %}
@@ -50,7 +50,7 @@
     <footer class="site-footer">
         <div class="site-footer__inner">
             <span>&copy; 2025 Molecular AOP Analyser &mdash; Part of the</span>
-            <a href="https://vhp4safety.nl" target="_blank" rel="noopener" class="site-footer__platform-link">
+            <a href="https://platform.vhp4safety.nl" target="_blank" rel="noopener" class="site-footer__platform-link">
                 <img src="{{ url_for('static', filename='img/vhp4safety-logo.png') }}" alt="VHP4Safety" class="site-footer__platform-logo">
             </a>
             <span>platform</span>
