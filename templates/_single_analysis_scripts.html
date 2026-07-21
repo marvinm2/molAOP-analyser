@@ -7,6 +7,10 @@
     {% if volcano_data %}
     window.volcanoData = {{ volcano_data | tojson }};
     const volcanoData = window.volcanoData;
+    // Issue #64: Top N% thresholds are computed server-side over the FULL
+    // dataset. volcanoData is capped at Config.MAX_GENES_DISPLAY, so deriving
+    // them here would use a truncated subset on any larger upload.
+    window.logfcPercentiles = {{ logfc_percentiles | default({}) | tojson }};
     const threshold = {{ logfc_threshold or 'null' }};
     const pvalThreshold = {{ pval_cutoff }};
     const pvalY = {{ pval_y | default(1.3) | float }};
@@ -264,15 +268,18 @@ function setThreshold(value) {
 }
 
 function setPercentageThreshold(percentage) {
-    if (typeof volcanoData !== 'undefined' && volcanoData.length > 0) {
-        const absLogFCs = volcanoData.map(d => Math.abs(parseFloat(d.log2FC) || 0)).sort((a, b) => b - a);
-        const targetIndex = Math.floor(absLogFCs.length * (percentage / 100));
-        const threshold = Math.round(absLogFCs[targetIndex] * 100) / 100;
-        document.getElementById('logfc_threshold').value = threshold;
-        document.getElementById('volcanoForm').requestSubmit();
-    } else {
+    // Issue #64: read the server-computed threshold rather than recomputing it
+    // from volcanoData, which is truncated to Config.MAX_GENES_DISPLAY.
+    const percentiles = window.logfcPercentiles || {};
+    const threshold = percentiles[percentage];
+
+    if (threshold === undefined || threshold === null) {
         alert('Please load a dataset first to use percentage-based thresholds.');
+        return;
     }
+
+    document.getElementById('logfc_threshold').value = threshold;
+    document.getElementById('volcanoForm').requestSubmit();
 }
 </script>
 

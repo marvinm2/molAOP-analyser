@@ -368,8 +368,10 @@
                     <button type="button" class="btn--option" onclick="setThreshold(1.0)">1.0</button>
                     <button type="button" class="btn--option" onclick="setThreshold(1.5)">1.5</button>
                     <button type="button" class="btn--option" onclick="setThreshold(2.0)">2.0</button>
-                    <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(10)">Top 10%</button>
-                    <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(20)">Top 20%</button>
+                    <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(10)"
+                            title="Sets the log2FC threshold at the 10th percentile of |log2FC| across all measured genes. The p-value criterion still applies, so fewer than 10% of genes will be called significant.">Top 10%</button>
+                    <button type="button" class="btn--option-pct" onclick="setPercentageThreshold(20)"
+                            title="Sets the log2FC threshold at the 20th percentile of |log2FC| across all measured genes. The p-value criterion still applies, so fewer than 20% of genes will be called significant.">Top 20%</button>
                 </div>
                 <div class="threshold-custom">
                     <span class="threshold-custom-label">Custom:</span>

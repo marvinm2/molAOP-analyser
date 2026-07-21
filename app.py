@@ -30,7 +30,7 @@ from services.api_service import (
 )
 from exceptions import AOPAnalysisError, format_error_response
 from utils import cleanup_file, validate_file_path
-from services.data_service import load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data
+from services.data_service import load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data, compute_logfc_percentiles
 from services.enrichment_service import run_enrichment_analysis, build_ke_gene_mapping, run_enrichment
 from services.network_service import build_cytoscape_network
 from services.column_detector import column_detector
@@ -603,6 +603,11 @@ def preview():
     pval_cutoff = Config.PVAL_CUTOFF  # Statistical significance threshold (typically 0.05)
     pval_y = -math.log10(pval_cutoff)  # Y-axis position for significance line
     volcano_data = []  # Will store plot data points
+    # Issue #64: |log2FC| thresholds for the Top N% quick buttons, computed
+    # server-side over the FULL dataset. The volcano payload below is truncated
+    # to Config.MAX_GENES_DISPLAY, so a client-side percentile over it would be
+    # taken on an arbitrary subset whenever the upload exceeds the cap.
+    logfc_percentiles = {}
 
     # Check if user explicitly confirmed column selections
     columns_confirmed = request.form.get("columns_confirmed") == "true"
@@ -619,8 +624,17 @@ def preview():
             df_v['log2FC'] = pd.to_numeric(df_v['log2FC'], errors='coerce')  # Numeric fold changes
             df_v['pval'] = pd.to_numeric(df_v['pval'], errors='coerce')  # Numeric p-values
 
-            # Remove any remaining invalid data and limit for performance
-            df_v = df_v.dropna().head(Config.MAX_GENES_DISPLAY)
+            # Remove any remaining invalid data
+            df_v = df_v.dropna()
+
+            # Issue #64: derive the Top N% thresholds here, while the full gene
+            # set is still in hand. Mirrors the previous client-side maths --
+            # sort |log2FC| descending, index at N% of the row count -- so the
+            # numbers are unchanged for datasets under the display cap.
+            logfc_percentiles = compute_logfc_percentiles(df_v['log2FC'])
+
+            # Limit for performance (plotting payload only)
+            df_v = df_v.head(Config.MAX_GENES_DISPLAY)
             volcano_data = df_v.to_dict(orient="records")
         except Exception as e:
             logger.warning(f"Volcano plot generation failed: {e}")
@@ -630,6 +644,9 @@ def preview():
         columns=columns,
         filename=filename,
         volcano_data=volcano_data,
+        # Issue #64: Top N% thresholds computed over the full dataset, not the
+        # truncated volcano payload.
+        logfc_percentiles=logfc_percentiles,
         selected_columns={"id": id_col, "fc": fc_col, "pval": pval_col, "pval_adj": pval_adj_col_form},
         column_suggestions=column_suggestions,
         logfc_threshold=logfc_threshold,

@@ -3,7 +3,11 @@ import os
 import tempfile
 import pytest
 import pandas as pd
-from services.data_service import load_and_validate_data, process_gene_expression
+from services.data_service import (
+    load_and_validate_data,
+    process_gene_expression,
+    compute_logfc_percentiles,
+)
 
 
 class TestLoadAndValidateData:
@@ -115,3 +119,48 @@ class TestProcessGeneExpression:
         df = self._make_df(['A', 'B'], [2.0, 2.0], [0.9, 0.9])
         result, stats = process_gene_expression(df, logfc_threshold=0.0)
         assert stats['significant_genes'] == 0
+
+
+class TestComputeLogfcPercentiles:
+    """Top N% quick-threshold calculation (issue #64)."""
+
+    def test_known_percentiles(self):
+        """Threshold is the |log2FC| at the Nth percentile, descending."""
+        # 100 genes with |log2FC| of 1..100. Sorted descending, index 10 is the
+        # 11th largest value (90.0) and index 20 the 21st (80.0).
+        values = pd.Series(range(1, 101))
+        result = compute_logfc_percentiles(values)
+        assert result == {10: 90.0, 20: 80.0}
+
+    def test_uses_absolute_values(self):
+        """Down-regulated genes count toward the threshold too."""
+        result = compute_logfc_percentiles(pd.Series([-5.0, -4.0, 3.0, 2.0, 1.0]))
+        # |values| descending: 5, 4, 3, 2, 1 -> index 0 for both 10% and 20%.
+        assert result[10] == 5.0
+
+    def test_unaffected_by_display_cap(self):
+        """
+        The regression this fixes: percentiles must reflect the full dataset,
+        not the truncated volcano payload.
+        """
+        from config import Config
+
+        # A dataset larger than the display cap, with the largest fold changes
+        # placed AFTER the cap so a truncated calculation cannot see them.
+        n = Config.MAX_GENES_DISPLAY + 4000
+        values = pd.Series(list(range(1, n + 1)))
+
+        full = compute_logfc_percentiles(values)
+        truncated = compute_logfc_percentiles(values.head(Config.MAX_GENES_DISPLAY))
+
+        assert full != truncated
+        assert full[10] == round(float(n - int(n * 0.10)), 2)
+
+    def test_small_dataset_does_not_overrun(self):
+        """Index must stay in range for tiny inputs."""
+        assert compute_logfc_percentiles(pd.Series([1.0])) == {10: 1.0, 20: 1.0}
+
+    def test_empty_input_returns_empty(self):
+        """No usable data yields no thresholds rather than raising."""
+        assert compute_logfc_percentiles(pd.Series([], dtype=float)) == {}
+        assert compute_logfc_percentiles(pd.Series([None, None], dtype=object)) == {}

@@ -129,6 +129,47 @@ def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0, pval
     
     return df_processed, stats
 
+def compute_logfc_percentiles(logfc: pd.Series, percentages: Tuple[int, ...] = (10, 20)) -> Dict[int, float]:
+    """
+    Compute |log2FC| thresholds for the "Top N%" quick-threshold buttons.
+
+    Issue #64: this used to be done in the browser over the volcano payload,
+    which app.py truncates to Config.MAX_GENES_DISPLAY. Any upload larger than
+    that cap therefore had its percentile taken over an arbitrary subset. The
+    calculation belongs server-side, where the full gene list is available.
+
+    The maths deliberately mirrors the original client-side implementation
+    (sort |log2FC| descending, index at N% of the row count) so results are
+    unchanged for datasets that fit under the cap.
+
+    Note this sets a fold-change threshold only -- the p-value criterion is
+    still applied on top of it by process_gene_expression(), so the resulting
+    DEG count is not N% of genes.
+
+    Args:
+        logfc: Series of log2 fold-change values (the full dataset).
+        percentages: Percentages to compute thresholds for.
+
+    Returns:
+        Dict mapping each percentage to its rounded |log2FC| threshold. Empty
+        if there is no usable data.
+    """
+    abs_logfc = pd.to_numeric(logfc, errors='coerce').abs().dropna()
+    if abs_logfc.empty:
+        return {}
+
+    ordered = abs_logfc.sort_values(ascending=False).to_numpy()
+
+    thresholds = {}
+    for pct in percentages:
+        index = int(len(ordered) * (pct / 100))
+        # Guard the boundary: at 100%, or on very small datasets, the computed
+        # index can land past the last element.
+        index = min(index, len(ordered) - 1)
+        thresholds[pct] = round(float(ordered[index]), 2)
+
+    return thresholds
+
 def guess_id_type(gene_series: pd.Series) -> str:
     """
     Guess the type of gene identifiers.
