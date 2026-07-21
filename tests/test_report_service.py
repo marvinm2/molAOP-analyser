@@ -2,6 +2,8 @@
 Unit tests for report generation service.
 """
 
+from dataclasses import replace
+
 import pytest
 from services.report_service import report_generator, ReportData, get_software_versions
 
@@ -272,3 +274,54 @@ class TestMinConfidenceInReport:
         html_content = report_generator.generate_html_report(sample_report_data)
         assert 'Minimum Mapping Confidence' in html_content
         assert 'High only' in html_content
+
+
+@pytest.mark.unit
+class TestKeAccountingInReport:
+    """Issue #65: the report states the multiple-testing denominator."""
+
+    _SUMMARY = {
+        'total_kes': 24, 'tested': 18, 'excluded_no_mapping': 2,
+        'excluded_too_few_genes': 4, 'excluded_error': 0, 'min_ke_genes': 5,
+    }
+
+    def _with_summary(self, sample_report_data, summary):
+        return replace(sample_report_data, ke_summary=summary)
+
+    def test_ke_summary_text_property(self, sample_report_data):
+        rd = self._with_summary(sample_report_data, self._SUMMARY)
+        assert rd.ke_summary_text == (
+            '18 of 24 Key Events tested; 4 excluded (fewer than 5 measured genes), '
+            '2 excluded (no gene set mapped)'
+        )
+
+    def test_html_report_includes_accounting(self, sample_report_data):
+        html = report_generator.generate_html_report(
+            self._with_summary(sample_report_data, self._SUMMARY)
+        )
+        assert 'Key Events tested' in html
+        assert '18 of 24 Key Events tested' in html
+        assert '4 excluded (fewer than 5 measured genes)' in html
+
+    def test_html_report_omits_accounting_when_absent(self, sample_report_data):
+        """Back-compat: ReportData without the summary renders as before."""
+        assert sample_report_data.ke_summary is None
+        html = report_generator.generate_html_report(sample_report_data)
+        assert 'Key Events tested:</label>' not in html
+
+    def test_pdf_report_generates_with_accounting(self, sample_report_data):
+        """The PDF path must survive the extra parameter row."""
+        pdf = report_generator._generate_reportlab_pdf(
+            self._with_summary(sample_report_data, self._SUMMARY)
+        )
+        assert pdf.startswith(b'%PDF')
+
+    def test_html_significance_call_uses_fdr(self, sample_report_data):
+        """Issue #63: the enrichment table highlights rows on FDR, not raw p."""
+        rd = replace(sample_report_data, enrichment_results=[
+            dict(sample_report_data.enrichment_results[0], KE='KE:RAWONLY',
+                 Title='Raw p only', p_value=0.01, FDR=0.30),
+        ])
+        html = report_generator.generate_html_report(rd)
+        # The single data row must not be marked significant on its raw p.
+        assert '<tr class="significant">' not in html

@@ -91,3 +91,52 @@ class TestReportAssembly:
         pdf = brs.generate_batch_pdf(_batch(), _conditions(), _comparison_data())
         assert pdf[:4] == b'%PDF'
         assert len(pdf) > 1000
+
+
+class TestKeAccountingSection:
+    """Issue #65: each condition section states its multiple-testing denominator."""
+
+    _NETWORK_WITH_REASONS = {
+        'nodes': [
+            {'data': {'id': 'KE:1', 'label': 'Alpha', 'ke_type': 'MIE',
+                      'excluded_reason': None}, 'classes': 'significant'},
+            {'data': {'id': 'KE:2', 'label': 'Beta', 'ke_type': 'AO',
+                      'excluded_reason': 'too_few_genes'}, 'classes': 'too-few-genes'},
+            {'data': {'id': 'KE:3', 'label': 'Gamma', 'ke_type': 'intermediate',
+                      'excluded_reason': 'no_mapping'}, 'classes': 'no-genes'},
+        ],
+        'edges': [{'data': {'source': 'KE:1', 'target': 'KE:2', 'id': 'KER:1'}}],
+    }
+
+    def _conditions_with_reasons(self):
+        conds = _conditions()
+        for c in conds:
+            c.network_json = json.dumps(self._NETWORK_WITH_REASONS)
+        return conds
+
+    def test_html_states_ke_accounting(self):
+        html = brs.generate_batch_html(
+            _batch(), self._conditions_with_reasons(), _comparison_data()
+        )
+        assert '1 of 3 Key Events tested' in html
+        assert 'fewer than 5 measured genes' in html
+        assert 'no gene set mapped' in html
+
+    def test_html_omits_accounting_for_legacy_networks(self):
+        """Batches run before the field existed render exactly as before."""
+        html = brs.generate_batch_html(_batch(), _conditions(), _comparison_data())
+        assert 'Key Events:' not in html
+        assert 'no gene set mapped' not in html
+
+    def test_pdf_generates_with_accounting(self):
+        pdf = brs.generate_batch_pdf(
+            _batch(), self._conditions_with_reasons(), _comparison_data()
+        )
+        assert pdf[:4] == b'%PDF'
+
+    def test_network_image_border_follows_fdr_significance(self):
+        """Issue #63: the network image reds the same KEs the heatmap calls
+        significant — both now read the server-side 'significant' class, which
+        build_cytoscape_network derives from FDR."""
+        png = brs.render_ke_network_png(json.dumps(self._NETWORK_WITH_REASONS))
+        assert png is not None and png[:4] == b'\x89PNG'

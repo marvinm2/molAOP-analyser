@@ -10,6 +10,8 @@ import numpy as np
 import pandas as pd
 from typing import Any
 
+from config import Config
+
 logger = logging.getLogger(__name__)
 
 # VHP4Safety palette — fixed order by upload position.
@@ -47,7 +49,8 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
             fdr_matrix       — 2-D list (rows=KEs, cols=conditions) of raw FDR
                                floats, None where data is absent
             neg_log10_matrix — 2-D list of -log10(FDR) floats, None where FDR
-                               is absent or > 0.05 (non-significant)
+                               is absent or above Config.SIGNIFICANCE_FDR_CUTOFF
+                               (non-significant)
             condition_colors — list of hex colour strings from CONDITION_PALETTE
 
         Returns an empty dict ``{}`` if no enrichment rows are found.
@@ -112,7 +115,7 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
     # Compute -log10(FDR) matrix: None for absent or non-significant cells.
     def _neg_log10(fdr_val: Any) -> float | None:
         """Return -log10(fdr_val) or None for missing/non-significant values."""
-        if pd.isna(fdr_val) or fdr_val > 0.05:
+        if pd.isna(fdr_val) or fdr_val > Config.SIGNIFICANCE_FDR_CUTOFF:
             return None
         return float(-np.log10(max(float(fdr_val), 1e-300)))
 
@@ -151,9 +154,10 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
     condition_doses = [getattr(c, 'dose', '') or '' for c in conditions]
     condition_timepoints = [getattr(c, 'timepoint', '') or '' for c in conditions]
 
-    # Significant-KE count per condition: number of KEs with FDR < 0.05.
+    # Significant-KE count per condition: number of KEs with FDR below the
+    # single app-wide cutoff (issue #63 — same rule as the network borders).
     # Derive from the pivot (columns already reindexed to condition_labels order).
-    sig_ke_series = (pivot < 0.05).sum(axis=0).reindex(condition_labels).fillna(0)
+    sig_ke_series = (pivot < Config.SIGNIFICANCE_FDR_CUTOFF).sum(axis=0).reindex(condition_labels).fillna(0)
     condition_sig_ke_counts = [int(v) for v in sig_ke_series]
 
     return {

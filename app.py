@@ -35,9 +35,15 @@ from services.api_service import (
 )
 from exceptions import AOPAnalysisError, format_error_response
 from utils import cleanup_file, validate_file_path
-from services.data_service import load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data, compute_logfc_percentiles
-from services.enrichment_service import run_enrichment_analysis, build_ke_gene_mapping, run_enrichment
-from services.network_service import build_cytoscape_network
+from services.data_service import (
+    load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data,
+    compute_logfc_percentiles,
+)
+from services.enrichment_service import (
+    run_enrichment_analysis, build_ke_gene_mapping, run_enrichment,
+    get_ke_summary, format_ke_summary,
+)
+from services.network_service import build_cytoscape_network, ke_accounting_from_network
 from services.column_detector import column_detector
 from services.gene_id_validator import gene_id_validator
 from database import db_manager, init_database, SharedResult, cleanup_expired_shared_results, BatchRecord, ConditionRecord, cleanup_expired_batches
@@ -456,6 +462,11 @@ def shared_results(uuid_str):
             gene_count=record.gene_count,
             significant_genes=record.significant_genes,
             method=record.method or 'ora',  # D-06: coerce NULL (pre-Phase-14 shared links) to 'ora'
+            # Issue #65: SharedResult has no field for the KE accounting, so
+            # recover it from the stored network payload (None for links
+            # created before the field existed — the block is then omitted).
+            ke_summary_text=format_ke_summary(ke_accounting_from_network(record.network_json)),
+            fdr_cutoff=Config.SIGNIFICANCE_FDR_CUTOFF,  # Issue #63
         )
     finally:
         session_db.close()
@@ -815,11 +826,17 @@ def analyze():
             gene_logfc_map=gene_logfc_map if method == 'ora' else None,
         )
 
+        # Issue #65: tested/excluded KE accounting produced by the enrichment
+        # backend. Feeds the results page, the network node styling and the
+        # report so the BH denominator is visible and reproducible.
+        ke_summary = get_ke_summary(enrichment_results)
+
         # Build network visualization data
         cy_network = build_cytoscape_network(
             ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
             reference_sets=current_reference_sets,
             method=method,
+            excluded_kes=(ke_summary or {}).get('excluded_reasons'),
         )
 
         # Plan 11-03 (D-04 passthrough): capture raw and adjusted p-value
@@ -987,6 +1004,9 @@ def analyze():
         # carried one p-value column.
         stored_metadata['pval_adj_column'] = pval_adj_col
         stored_metadata['significant_genes'] = len(df_processed[df_processed['significant'] == True])
+        # Issue #65: KE accounting travels with the metadata so the shared-results
+        # page and the report can state the multiple-testing denominator.
+        stored_metadata['ke_summary'] = ke_summary
         stored_metadata['data_source'] = data_source
         stored_metadata['selected_resources'] = ", ".join(resources)
         # Issue #60: record the mapping-confidence threshold used, for the
@@ -1066,6 +1086,9 @@ def analyze():
             tour_active=(request.form.get('tour') == '1'),  # Phase 13: guided tour resume signal (TUTR-03)
             hub_list=hub_list,  # Phase 15: hub gene ranking (HUBG-01..07)
             wp_picker_data=wp_picker_data,  # Phase 999.4: pathway view picker (None when no mappings)
+            ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
+            ke_summary_text=format_ke_summary(ke_summary),  # Issue #65
+            fdr_cutoff=Config.SIGNIFICANCE_FDR_CUTOFF,  # Issue #63: one significance cutoff
         )
 
     except AOPAnalysisError as e:
@@ -1175,6 +1198,17 @@ def generate_report():
         else:
             logger.warning("No network PNG data received from form")
         
+        # Issue #65: the tested/excluded KE accounting is posted back from the
+        # results page (session metadata is not updated in place by /analyze).
+        # A malformed or absent field simply omits the line from the report.
+        try:
+            ke_summary = json.loads(request.form.get('ke_summary') or 'null')
+        except json.JSONDecodeError:
+            logger.warning("Invalid ke_summary in report form data — omitting KE accounting")
+            ke_summary = None
+        if not isinstance(ke_summary, dict):
+            ke_summary = metadata.get('ke_summary') if isinstance(metadata, dict) else None
+
         report_data = ReportData(
             metadata=metadata,
             filename=request.form.get('filename', metadata.get('filename', 'unknown')),
@@ -1196,6 +1230,7 @@ def generate_report():
             method=request.form.get('method') or metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
             selected_resources=request.form.get('selected_resources') or metadata.get('selected_resources', 'WikiPathways'),  # #55: forward resources to report
             min_confidence=request.form.get('min_confidence') or metadata.get('min_confidence', DEFAULT_MIN_CONFIDENCE),  # #60: forward confidence threshold to report
+            ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
         )
         
         # Generate report based on format

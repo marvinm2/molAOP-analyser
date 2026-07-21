@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 import gseapy as gp
 
+from services.enrichment_service import KE_SUMMARY_ATTR, _build_ke_summary
+
 logger = logging.getLogger(__name__)
 
 
@@ -173,9 +175,24 @@ def run_gsea_analysis(
             f"{sorted(dropped)}"
         )
 
+    # Issue #65 — same tested/excluded accounting the Fisher backend produces,
+    # so the results page, network and reports read one shape regardless of
+    # method. A dropped KE with zero measured overlap is 'no_mapping'; one with
+    # a non-empty but sub-min_size overlap is 'too_few_genes'.
+    excluded_reasons = {ke: 'no_mapping' for ke in set(ke_list) - set(reference_sets.keys())}
+    for ke in dropped:
+        excluded_reasons[ke] = (
+            'too_few_genes' if kes_to_overlap_count.get(ke, 0) else 'no_mapping'
+        )
+    ke_summary = _build_ke_summary(ke_list, len(res), excluded_reasons, min_size)
+
     # Sort by FDR ascending; use KE ID as tie-breaker so row order is fully
     # deterministic regardless of the internal ordering gseapy returns.
     res = res.sort_values(['FDR', 'KE'], ascending=[True, True], kind='mergesort')
 
-    return res[['KE', 'Title', 'NES', 'p_value', 'FDR', 'lead_genes',
-                'total_KE_genes_in_dataset']]
+    out = res[['KE', 'Title', 'NES', 'p_value', 'FDR', 'lead_genes',
+               'total_KE_genes_in_dataset']]
+    # Attach on the returned object: pandas only propagates .attrs through
+    # operations that call __finalize__, so set it last.
+    out.attrs[KE_SUMMARY_ATTR] = ke_summary
+    return out
