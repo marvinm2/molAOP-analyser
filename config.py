@@ -18,7 +18,26 @@ class Config:
     # Data processing settings
     MAX_GENES_DISPLAY = 10000
     PVAL_CUTOFF = 0.05
-    
+
+    # Enrichment statistics — issues #63 / #65
+    #
+    # SIGNIFICANCE_FDR_CUTOFF is the single definition of "a Key Event is
+    # significant" used across the enrichment table, the red network borders,
+    # the cross-condition comparison matrix and the reports. It gates the
+    # Benjamini-Hochberg adjusted p-value (the `FDR` column) — never the raw
+    # Fisher p-value, which over-calls enrichment across the 10-20 KEs of a
+    # typical AOP.
+    SIGNIFICANCE_FDR_CUTOFF = 0.05
+
+    # MIN_KE_GENES is the minimum number of a KE's gene-set members that must
+    # be measured in the uploaded dataset before that KE is tested. KEs below
+    # it are excluded from the enrichment — and therefore from the BH
+    # multiple-testing denominator — and are reported as "could not assess"
+    # rather than "assessed and not enriched". Fisher's exact test on a handful
+    # of genes has too little power for the result to be interpretable.
+    MIN_KE_GENES = 5
+
+
     # Required data files
     REQUIRED_DATA_FILES = [
         'data/aop_ke_map.csv',
