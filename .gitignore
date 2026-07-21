@@ -22,6 +22,7 @@ venv/
 
 # Temporary files
 *.tmp
+temp/
 *.log
 cookies.txt
 demo_preview.html
@@ -43,6 +44,15 @@ data/Cisplatin_Kidney/
 
 # Browser automation artifacts (screenshots, console logs)
 .playwright-mcp/
+
+# Coverage artifacts
+htmlcov/
+.coverage
+coverage.xml
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
 
 # Case-study research scratchpad (private DESeq2 inputs + derived analyses)
 casestudy/

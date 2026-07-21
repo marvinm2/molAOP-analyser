@@ -1,0 +1,91 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-lint-${{ hashFiles('requirements-dev.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-lint-
+
+    - name: Install lint tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black isort ruff
+
+    # Syntax errors and undefined names fail the build; everything else is advisory.
+    - name: Lint with flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics --output-file=flake8-report.txt
+
+    - name: Unused imports and variables (ruff)
+      run: |
+        ruff check . --output-format=concise || echo "Ruff findings reported above"
+
+    - name: Check code formatting with black
+      run: |
+        black --check --diff . || echo "Code formatting issues found"
+
+    - name: Check import sorting with isort
+      run: |
+        isort --check-only --diff . || echo "Import sorting issues found"
+
+    - name: Upload lint results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: lint-reports
+        path: flake8-report.txt
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit pip-audit
+
+    - name: Run bandit security linter
+      run: |
+        bandit -r . -x ./tests,./venv -f json -o bandit-report.json || true
+        bandit -r . -x ./tests,./venv -f txt || true
+
+    - name: Audit dependencies for known vulnerabilities
+      run: |
+        pip-audit -r requirements.txt --format json --output pip-audit-report.json || true
+        pip-audit -r requirements.txt || true
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          pip-audit-report.json

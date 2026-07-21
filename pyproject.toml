@@ -1,0 +1,48 @@
+[tool.black]
+line-length = 88
+target-version = ['py311', 'py312']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.planning
+  | \.venv
+  | _build
+  | build
+  | dist
+  | venv
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+known_first_party = ["services"]
+
+[tool.coverage.run]
+# The test files themselves are not the subject of measurement; including them
+# inflated the total. pytest.ini tried to express this with --cov-exclude, which
+# is not a pytest-cov option and did nothing.
+omit = [
+    "tests/*",
+    "test_*.py",
+    "venv/*",
+    ".venv/*",
+]
+
+[tool.ruff]
+exclude = [".planning", "venv", ".venv", "temp", "uploads"]
+
+[tool.ruff.lint]
+# Narrow selection: unused-import / unused-variable / redefined-while-unused only.
+# flake8 already covers the style surface in CI; enabling broader rule packs here
+# would be a separate decision, not a side effect of the repo cleanup.
+select = ["F401", "F811", "F841"]

@@ -1,6 +1,28 @@
 # Molecular AOP Analyser
 
+[![CI/CD Pipeline](https://github.com/marvinm2/molAOP-analyser/actions/workflows/ci.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/ci.yml)
+[![Code Quality](https://github.com/marvinm2/molAOP-analyser/actions/workflows/code-quality.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/code-quality.yml)
+[![Publish Docker image](https://github.com/marvinm2/molAOP-analyser/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/docker-publish.yml)
+
 This web application allows users to upload or select gene expression datasets and perform Key Event (KE) enrichment analysis in the context of Molecular Adverse Outcome Pathways (AOPs). The results are visualized in interactive tables and network diagrams with comprehensive reporting capabilities.
+
+**Live instance:** https://molaop-analyser.vhp4safety.nl
+**Container image:** `ghcr.io/marvinm2/molaop-analyser`
+
+## Related
+
+The analyser is the downstream half of a pair of tools.
+
+| Tool | Role | Links |
+|---|---|---|
+| **[Molecular AOP Builder](https://github.com/marvinm2/molAOP-builder)** | Curator-facing app that builds and approves KE→WikiPathways, KE→GO and KE→Reactome mappings. **Produces** the mapping data. | [live](https://molaop-builder.vhp4safety.nl) · [API docs](https://molaop-builder.vhp4safety.nl/api/docs) |
+| **Molecular AOP Analyser** (this repo) | User-facing app for KE enrichment of gene-expression data. **Consumes** the builder's approved mappings via its public REST API. | [live](https://molaop-analyser.vhp4safety.nl) |
+
+The integration contract between them is documented in
+[`docs/KE-MAPPING-API-REFERENCE.md`](docs/KE-MAPPING-API-REFERENCE.md). Changes to the
+builder's API shape must be mirrored there and in `services/api_service.py`.
+
+Both tools are part of the [VHP4Safety](https://vhp4safety.nl) platform.
 
 ---
 
