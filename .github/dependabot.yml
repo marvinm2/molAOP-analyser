@@ -1,10 +1,11 @@
 version: 2
+
+# No "pip" ecosystem here, deliberately. requirements.txt / requirements-dev.txt are
+# pip-compile locks that must be regenerated inside python:3.11-bookworm so the pins match
+# the image (see CLAUDE.md). Dependabot edits the lock in place on whatever it resolves on,
+# which is exactly what that workflow forbids. Bump the loose specs in requirements.in and
+# recompile instead.
 updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
