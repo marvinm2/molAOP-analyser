@@ -20,7 +20,12 @@ from flask_wtf.csrf import CSRFProtect, generate_csrf
 
 from config import Config, ExperimentMetadata
 from validation import validate_form_data, validate_file_upload, log_validation_error
-from helpers import load_reference_sets
+from helpers import (
+    DEFAULT_MIN_CONFIDENCE,
+    MIN_CONFIDENCE_LABELS,
+    VALID_MIN_CONFIDENCE,
+    load_reference_sets,
+)
 from cache_manager import cache, cached_data_loader, get_reference_cache
 from services.api_service import (
     fetch_reference_sets_from_api,
@@ -649,6 +654,13 @@ def preview():
         # Issue #55: preserve the gene-set resource selection across HTMX re-renders
         # (e.g. "Update Plot"). Defaults to WikiPathways before any choice is made.
         selected_resources=[r for r in request.form.getlist('resources') if r in VALID_RESOURCES] or list(DEFAULT_RESOURCES),
+        # Issue #60: preserve the minimum mapping-confidence choice across HTMX
+        # re-renders. Unknown values fall back to the default ('all').
+        min_confidence=(
+            request.form.get('min_confidence', DEFAULT_MIN_CONFIDENCE).strip().lower()
+            if request.form.get('min_confidence', '').strip().lower() in VALID_MIN_CONFIDENCE
+            else DEFAULT_MIN_CONFIDENCE
+        ),
     )
 
     # HTMX swaps in just the partial — no full-page reload, no scroll-to-top.
@@ -706,6 +718,16 @@ def analyze():
         if not resources:
             resources = list(DEFAULT_RESOURCES)
 
+        # Issue #60: minimum KE-mapping confidence. Whitelisted before any
+        # expensive computation; blank falls back to 'all' (current behaviour).
+        min_confidence = (request.form.get('min_confidence') or DEFAULT_MIN_CONFIDENCE).strip().lower()
+        if min_confidence not in VALID_MIN_CONFIDENCE:
+            return (
+                "Invalid minimum mapping confidence. Choose 'all', 'medium' or 'high' "
+                "on the analysis form.",
+                400,
+            )
+
         method = form_data['method']
         
         # Extract validated parameters
@@ -757,7 +779,9 @@ def analyze():
         ke_list, edges, ke_type_map, ke_title_map = load_aop_data(aop_id)
         
         # Get cached reference sets and run enrichment analysis
-        current_reference_sets, data_source = load_cached_reference_sets(resources)
+        current_reference_sets, data_source = load_cached_reference_sets(
+            resources, min_confidence=min_confidence
+        )
 
         # Pre-build gene_logfc_map so the enrichment service can derive the
         # observed Direction column ("N↑ / M↓") for each KE alongside the
@@ -883,7 +907,9 @@ def analyze():
         # An API failure on this non-critical call falls back silently to CSV.
         if data_source in ('api', 'cache'):
             try:
-                raw_ke_wp_records = fetch_ke_wp_records(Config)
+                # Issue #60: same threshold as the enrichment, so the picker
+                # only lists pathways whose mappings were actually tested.
+                raw_ke_wp_records = fetch_ke_wp_records(Config, min_confidence=min_confidence)
                 # Built inside the try so a malformed-but-successful Builder
                 # response (missing/extra keys, schema drift) degrades to the
                 # CSV fallback instead of raising an uncaught KeyError that
@@ -946,6 +972,10 @@ def analyze():
         stored_metadata['significant_genes'] = len(df_processed[df_processed['significant'] == True])
         stored_metadata['data_source'] = data_source
         stored_metadata['selected_resources'] = ", ".join(resources)
+        # Issue #60: record the mapping-confidence threshold used, for the
+        # results page, shared results and the report (FAIR provenance).
+        stored_metadata['min_confidence'] = min_confidence
+        stored_metadata['min_confidence_label'] = MIN_CONFIDENCE_LABELS[min_confidence]
         stored_metadata['analysis_date'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
 
         # Save experiment metadata and results to database
@@ -960,6 +990,7 @@ def analyze():
                     'fc_column': fc_col,
                     'pval_column': pval_col,
                     'selected_resources': ", ".join(resources),
+                    'min_confidence': min_confidence,  # Issue #60
                 }
                 
                 results_summary = {
@@ -1147,6 +1178,7 @@ def generate_report():
             software_versions=get_software_versions(),
             method=request.form.get('method') or metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
             selected_resources=request.form.get('selected_resources') or metadata.get('selected_resources', 'WikiPathways'),  # #55: forward resources to report
+            min_confidence=request.form.get('min_confidence') or metadata.get('min_confidence', DEFAULT_MIN_CONFIDENCE),  # #60: forward confidence threshold to report
         )
         
         # Generate report based on format
@@ -1207,27 +1239,49 @@ _GMT_RESOURCE_CACHE_KEYS = {
 }
 
 
-def _load_wikipathways_reference_sets():
+def _confidence_cache_key(base_key, min_confidence):
+    """Suffix a reference-set cache key with the minimum-confidence threshold (#60).
+
+    Gene sets differ per threshold, so every cache entry must be keyed by it —
+    otherwise an 'all' set could be served for a 'high' request (or vice versa).
+
+    Args:
+        base_key: the per-resource base cache key.
+        min_confidence: 'all', 'medium' or 'high'.
+
+    Returns:
+        str: threshold-scoped cache key.
+    """
+    return f"{base_key}:minconf={min_confidence}"
+
+
+def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Load WikiPathways KE->gene sets (disk cache -> Builder API -> local CSV).
+
+    Args:
+        min_confidence: issue #60 minimum KE-mapping confidence ('all', 'medium'
+            or 'high'). Below-threshold mappings are dropped before the gene
+            sets are built; the cache entry is keyed by the threshold.
 
     Returns:
         tuple: (reference_sets dict, source string) where source is one of
         'api', 'cache', 'csv'.
     """
-    cached = _reference_cache.get(REFERENCE_CACHE_KEY)
+    cache_key = _confidence_cache_key(REFERENCE_CACHE_KEY, min_confidence)
+    cached = _reference_cache.get(cache_key)
     if cached is not None:
         reference_sets, original_source = cached
         logger.info(
             f"Loaded {len(reference_sets)} WikiPathways KE sets from disk cache "
-            f"(originally from {original_source})"
+            f"(originally from {original_source}, min_confidence={min_confidence})"
         )
         return reference_sets, "cache"
 
     # Try API
     try:
-        reference_sets = fetch_reference_sets_from_api(Config)
+        reference_sets = fetch_reference_sets_from_api(Config, min_confidence=min_confidence)
         _reference_cache.set(
-            REFERENCE_CACHE_KEY,
+            cache_key,
             (reference_sets, "api"),
             expire=Config.CACHE_TTL,
         )
@@ -1241,14 +1295,16 @@ def _load_wikipathways_reference_sets():
             f"Builder API unavailable ({exc}); falling back to local CSV files"
         )
 
-    # Fall back to CSV
+    # Fall back to CSV. The local KE-WP.csv carries no confidence column, so
+    # min_confidence is a documented no-op here (#60 graceful degradation).
     reference_sets = load_reference_sets(
         ke_wp_path='data/KE-WP.csv',
         wp_gene_path='data/edges_wpid_to_gene.csv',
-        node_path='data/node_attributes.csv'
+        node_path='data/node_attributes.csv',
+        min_confidence=min_confidence,
     )
     _reference_cache.set(
-        REFERENCE_CACHE_KEY,
+        cache_key,
         (reference_sets, "csv"),
         expire=Config.CACHE_TTL,
     )
@@ -1259,17 +1315,24 @@ def _load_wikipathways_reference_sets():
     return reference_sets, "csv"
 
 
-def _load_gmt_resource_reference_sets(resource):
+def _load_gmt_resource_reference_sets(resource, min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Load a GMT-backed resource (GO_BP/Reactome): disk cache -> Builder GMT export.
 
     Unlike WikiPathways there is no local CSV fallback for these resources, so a
     Builder outage makes the resource temporarily unavailable; the caller skips
     it rather than failing the whole analysis.
 
+    Args:
+        resource: 'GO_BP' or 'Reactome'.
+        min_confidence: issue #60 threshold. The GMT exports carry no confidence
+            field, so filtering is a no-op for these resources — but the cache
+            key is still scoped by the threshold so entries can never leak
+            across levels.
+
     Returns:
         tuple: (reference_sets dict, source string) where source is 'cache' or 'api'.
     """
-    cache_key = _GMT_RESOURCE_CACHE_KEYS[resource]
+    cache_key = _confidence_cache_key(_GMT_RESOURCE_CACHE_KEYS[resource], min_confidence)
     cached = _reference_cache.get(cache_key)
     if cached is not None:
         reference_sets, _ = cached
@@ -1291,7 +1354,8 @@ def _load_gmt_resource_reference_sets(resource):
     return reference_sets, "api"
 
 
-def load_cached_reference_sets(resources=DEFAULT_RESOURCES):
+def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
+                               min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Load and merge KE->gene reference sets for the selected resources.
 
     Each resource is loaded (and disk-cached) independently, then the per-KE
@@ -1304,6 +1368,10 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES):
         resources: iterable of resource keys from VALID_RESOURCES. Unknown
             values are ignored; an empty/invalid selection falls back to
             WikiPathways.
+        min_confidence: issue #60 minimum KE-mapping confidence — 'all'
+            (default, current behaviour), 'medium' (Medium+High) or 'high'.
+            Unknown values fall back to 'all'. Shared by the single and batch
+            flows so both stay consistent by construction.
 
     Returns:
         tuple: (merged reference_sets dict, data_source string). For backward
@@ -1316,16 +1384,19 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES):
     if not selected:
         selected = list(DEFAULT_RESOURCES)
 
+    if min_confidence not in VALID_MIN_CONFIDENCE:
+        min_confidence = DEFAULT_MIN_CONFIDENCE
+
     merged = {}
     wp_source = None
     loaded = []
     for resource in selected:
         try:
             if resource == "WikiPathways":
-                sets, source = _load_wikipathways_reference_sets()
+                sets, source = _load_wikipathways_reference_sets(min_confidence)
                 wp_source = source
             else:
-                sets, source = _load_gmt_resource_reference_sets(resource)
+                sets, source = _load_gmt_resource_reference_sets(resource, min_confidence)
         except Exception as exc:
             logger.warning("Resource %s unavailable (%s); skipping", resource, exc)
             continue
@@ -1342,8 +1413,8 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES):
         data_source = "gmt"
 
     logger.info(
-        "Merged %d KE sets across resources [%s] (data_source=%s)",
-        len(merged), ", ".join(loaded) or "-", data_source,
+        "Merged %d KE sets across resources [%s] (data_source=%s, min_confidence=%s)",
+        len(merged), ", ".join(loaded) or "-", data_source, min_confidence,
     )
     return merged, data_source
 
@@ -1485,7 +1556,8 @@ def batch_upload():
 def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
                               timepoints, id_col, fc_col, pval_col, aop_id,
                               logfc_threshold, pval_threshold, resources,
-                              harmonised_genes, batch_name, owner, description):
+                              harmonised_genes, batch_name, owner, description,
+                              min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Create the BatchRecord + ConditionRecords and launch run_batch in a thread.
 
     Shared by the interactive batch wizard (/batch/analyze) and the one-click
@@ -1501,6 +1573,8 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
         resources: gene-set resources (e.g. ['WikiPathways']).
         harmonised_genes: intersection gene set from harmonise_backgrounds.
         batch_name/owner/description: batch metadata.
+        min_confidence: issue #60 minimum KE-mapping confidence ('all',
+            'medium' or 'high'); applied to every condition in the batch.
 
     Returns:
         The new BatchRecord primary key.
@@ -1530,6 +1604,7 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
             logfc_threshold=logfc_threshold,
             pval_cutoff=pval_threshold,
             selected_resources=", ".join(resources),
+            min_confidence=min_confidence,  # Issue #60
             id_column=id_col,
             fc_column=fc_col,
             pval_column=pval_col,
@@ -1568,7 +1643,9 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
         session_db.close()
 
     # Launch analysis in a background thread (returns immediately to caller).
-    current_reference_sets, _ = load_cached_reference_sets(resources)
+    current_reference_sets, _ = load_cached_reference_sets(
+        resources, min_confidence=min_confidence
+    )
     db_url = db_manager.db_url
     thread = threading.Thread(
         target=run_batch,
@@ -1632,6 +1709,14 @@ def batch_analyze():
     resources = [r for r in request.form.getlist('resources') if r in VALID_RESOURCES]
     if not resources:
         resources = list(DEFAULT_RESOURCES)
+
+    # Issue #60: minimum KE-mapping confidence, applied to every condition.
+    min_confidence = (request.form.get('min_confidence') or DEFAULT_MIN_CONFIDENCE).strip().lower()
+    if min_confidence not in VALID_MIN_CONFIDENCE:
+        return jsonify({
+            'error': "Minimum mapping confidence must be one of 'all', 'medium', 'high'. "
+                     f"Got: {request.form.get('min_confidence')}."
+        }), 400
 
     filenames = request.form.getlist('filenames[]')
     condition_labels = request.form.getlist('condition_labels[]')
@@ -1704,6 +1789,7 @@ def batch_analyze():
             logfc_threshold=logfc_threshold,
             pval_threshold=pval_threshold,
             resources=resources,
+            min_confidence=min_confidence,
             harmonised_genes=harmonised_genes,
             batch_name=batch_name,
             owner=owner,
@@ -1824,6 +1910,7 @@ def batch_demo():
             logfc_threshold=0.0,
             pval_threshold=Config.PVAL_CUTOFF,
             resources=list(DEFAULT_RESOURCES),
+            min_confidence=DEFAULT_MIN_CONFIDENCE,  # Issue #60: demo uses all mappings
             harmonised_genes=harmonised_genes,
             batch_name='PXR agonist comparison (demo)',
             owner='',

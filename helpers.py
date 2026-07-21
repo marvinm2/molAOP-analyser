@@ -11,6 +11,13 @@ logger = logging.getLogger(__name__)
 VALID_MIN_CONFIDENCE = ("all", "medium", "high")
 DEFAULT_MIN_CONFIDENCE = "all"
 
+# Human-readable labels for results pages and reports.
+MIN_CONFIDENCE_LABELS = {
+    "all": "All mappings",
+    "medium": "Medium and High only",
+    "high": "High only",
+}
+
 # Ordinal rank per confidence level; a mapping qualifies when its rank is at
 # least the rank of the requested threshold.
 _CONFIDENCE_RANKS = {"low": 1, "medium": 2, "high": 3}
