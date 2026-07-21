@@ -64,6 +64,7 @@ from services.comparison_service import (
 )
 from services import batch_report_service
 from services.hub_service import compute_hub_genes
+from services.results_context import build_results_context
 from services.pathway_picker_service import build_wp_picker_data
 
 # Configure logging — JSON format when LOG_FORMAT=json (production), human-readable otherwise
@@ -1117,28 +1118,26 @@ def analyze():
         
         return render_template(
             "results.html",
-            table=enrichment_table,
-            table_json=table_json_str,  # Pre-serialize for template
-            volcano_data=volcano_data,
-            volcano_json=json.dumps(volcano_data),  # Pre-serialize for template
-            id_type=id_type,
-            background_size=stats['total_genes'],
-            threshold=logfc_threshold,
-            network_json=json.dumps(cy_network),
-            ke_gene_json=json.dumps(ke_gene_map),
-            ke_type_map=json.dumps(ke_type_map),
-            ke_title_map=json.dumps(ke_title_map),
-            metadata=stored_metadata,
-            method=method,
-            pval_threshold=pval_threshold,
-            tour_active=(request.form.get('tour') == '1'),  # Phase 13: guided tour resume signal (TUTR-03)
-            hub_list=hub_list,  # Phase 15: hub gene ranking (HUBG-01..07)
-            wp_picker_data=wp_picker_data,  # Phase 999.4: pathway view picker (None when no mappings)
-            ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
-            ke_summary_text=format_ke_summary(ke_summary),  # Issue #65
-            fdr_cutoff=Config.SIGNIFICANCE_FDR_CUTOFF,  # Issue #63: one significance cutoff
-            fdr_choices=Config.SIGNIFICANCE_FDR_CHOICES,  # Issue #63: discrete cutoff options
-            background_overlap=background_overlap,  # Issue #69: ID-column sanity check
+            **build_results_context(
+                table=enrichment_table,
+                table_json=table_json_str,  # Pre-serialized just above
+                volcano_data=volcano_data,
+                id_type=id_type,
+                background_size=stats['total_genes'],
+                threshold=logfc_threshold,
+                network=cy_network,
+                ke_gene_map=ke_gene_map,
+                ke_type_map=ke_type_map,
+                ke_title_map=ke_title_map,
+                metadata=stored_metadata,
+                method=method,
+                pval_threshold=pval_threshold,
+                tour_active=(request.form.get('tour') == '1'),  # Phase 13: guided tour resume signal (TUTR-03)
+                hub_list=hub_list,  # Phase 15: hub gene ranking (HUBG-01..07)
+                wp_picker_data=wp_picker_data,  # Phase 999.4: pathway view picker (None when no mappings)
+                ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
+                background_overlap=background_overlap,  # Issue #69: ID-column sanity check
+            ),
         )
 
     except GeneIdMismatchError as e:
@@ -2395,24 +2394,29 @@ def batch_condition_results(batch_uuid_str, position):
 
         return render_template(
             'results.html',
-            table=enrichment_table,
-            table_json=json.dumps(enrichment_table),
-            volcano_data=[],
-            volcano_json='[]',
-            id_type='symbol',
-            background_size=cond.gene_count or 0,
-            threshold=batch.logfc_threshold,
-            network_json=json.dumps(network),
-            ke_gene_json=json.dumps(ke_gene_map),
-            ke_type_map=json.dumps(ke_type_map),
-            ke_title_map=json.dumps(ke_title_map),
-            metadata=metadata,
-            # Phase 999.4: the Pathway view section is scoped to the live
-            # /analyze results page only — shared results and batch-condition
-            # re-renders are explicitly out of scope this phase. Pass None
-            # explicitly so the {% if wp_picker_data %} guard reliably hides
-            # the section here rather than relying on Jinja2 undefined-falsy.
-            wp_picker_data=None,
+            **build_results_context(
+                table=enrichment_table,
+                volcano_data=[],  # volcano points are not stored per condition
+                id_type='symbol',
+                background_size=cond.gene_count or 0,
+                threshold=batch.logfc_threshold,
+                network=network,
+                ke_gene_map=ke_gene_map,
+                ke_type_map=ke_type_map,
+                ke_title_map=ke_title_map,
+                metadata=metadata,
+                method='ora',  # batch runs are ORA-only; BatchRecord has no method column
+                pval_threshold=batch.pval_cutoff,
+                # Issue #65: ConditionRecord has no field for the accounting, so
+                # recover it from the stored network exactly as the shared-result
+                # view does. None for records predating the field.
+                ke_summary=ke_accounting_from_network(network),
+                hub_list=compute_hub_genes(ke_gene_map, ke_title_map),
+                # Phase 999.4: the Pathway view section is scoped to the live
+                # /analyze results page only — shared results and batch-condition
+                # re-renders are explicitly out of scope this phase.
+                wp_picker_data=None,
+            ),
         )
     finally:
         session_db.close()
