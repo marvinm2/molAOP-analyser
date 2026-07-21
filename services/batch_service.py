@@ -276,7 +276,9 @@ def _run_condition(
         db_session: SQLAlchemy session to use for commits.
     """
     from services.data_service import load_and_validate_data, process_gene_expression
-    from services.enrichment_service import run_enrichment_analysis, build_ke_gene_mapping
+    from services.enrichment_service import (
+        run_enrichment_analysis, build_ke_gene_mapping, get_ke_summary,
+    )
     from services.network_service import build_cytoscape_network
 
     cond.status = 'running'
@@ -312,10 +314,14 @@ def _run_condition(
         df_filtered, reference_sets, ke_list, ke_title_map
     )
 
-    # Build Cytoscape network
+    # Build Cytoscape network. The tested/excluded KE accounting (issue #65)
+    # rides along on the node payloads — ConditionRecord has no field of its
+    # own for it, so the batch report recovers the counts from network_json.
+    ke_summary = get_ke_summary(enrichment_results)
     cy_network = build_cytoscape_network(
         ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
         reference_sets=reference_sets,
+        excluded_kes=(ke_summary or {}).get('excluded_reasons'),
     )
 
     # Build KE gene membership maps for the drawer / results page

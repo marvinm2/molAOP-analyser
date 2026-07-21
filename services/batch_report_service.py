@@ -26,6 +26,8 @@ from services.report_service import (
     REPORTLAB_AVAILABLE,
 )
 from services.comparison_service import comparison_matrix_to_dataframe
+from services.enrichment_service import format_ke_summary
+from services.network_service import ke_accounting_from_network
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +252,8 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
 
         rd = _condition_report_data(batch, cond, enrichment)
         enrichment_html = report_generator._generate_enrichment_section(rd)
+        # Issue #65: state the multiple-testing denominator for this condition.
+        ke_accounting = format_ke_summary(ke_accounting_from_network(cond.network_json))
 
         net_png = render_ke_network_png(cond.network_json)
         if net_png:
@@ -275,6 +279,7 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
                 {meta_line}{' — ' if meta_line else ''}
                 {cond.significant_genes or 0:,} significant of {cond.gene_count or 0:,} genes
             </p>
+            {f'<p class="note">Key Events: {ke_accounting}</p>' if ke_accounting else ''}
             {enrichment_html}
             <h3>AOP Network</h3>
             {net_html}
@@ -474,6 +479,10 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
             f"{cond.significant_genes or 0:,} significant of {cond.gene_count or 0:,} genes",
             normal_style,
         ))
+        # Issue #65: state the multiple-testing denominator for this condition.
+        ke_accounting = format_ke_summary(ke_accounting_from_network(cond.network_json))
+        if ke_accounting:
+            story.append(Paragraph(f'Key Events: {ke_accounting}', normal_style))
         story.append(Spacer(1, 8))
 
         if enrichment:

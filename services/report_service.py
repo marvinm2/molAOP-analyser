@@ -98,6 +98,12 @@ class ReportData:
     # remain compatible.
     selected_resources: str = 'WikiPathways'
 
+    # Issue #65: tested/excluded Key Event accounting from the enrichment run
+    # (see enrichment_service.run_enrichment_analysis). Defaulted to None so
+    # existing ReportData(...) constructions remain compatible; when None the
+    # accounting line is simply omitted from the report.
+    ke_summary: Optional[Dict[str, Any]] = None
+
     # System information
     analysis_timestamp: datetime = None
     software_versions: Optional[Dict[str, str]] = None
@@ -106,6 +112,12 @@ class ReportData:
         """Set analysis timestamp if not provided."""
         if self.analysis_timestamp is None:
             self.analysis_timestamp = datetime.now()
+
+    @property
+    def ke_summary_text(self) -> str:
+        """Issue #65: one-line tested/excluded KE accounting ('' when absent)."""
+        from services.enrichment_service import format_ke_summary
+        return format_ke_summary(self.ke_summary)
 
     @property
     def method_label(self) -> str:
@@ -322,6 +334,18 @@ class ReportGenerator:
                     <span>{report_data.pval_cutoff}</span>
                 </div>
             """
+
+        # Issue #65: state how many of the AOP's Key Events entered the
+        # analysis (and the BH multiple-testing denominator), and why the rest
+        # did not. Omitted entirely when the accounting is unavailable.
+        ke_accounting = report_data.ke_summary_text
+        ke_accounting_item = f"""
+                <div class="param-item full-width">
+                    <label>Key Events tested:</label>
+                    <span>{ke_accounting}</span>
+                </div>
+        """ if ke_accounting else ''
+
         return f"""
         <section class="analysis-params">
             <h2>Analysis Settings</h2>
@@ -351,6 +375,7 @@ class ReportGenerator:
                     <label>P-value Column:</label>
                     <span>{report_data.pval_column}</span>
                 </div>
+                {ke_accounting_item}
             </div>
         </section>
         """
@@ -416,7 +441,8 @@ class ReportGenerator:
             ke_size = result.get('total_KE_genes_in_dataset', 0)
             pval_str = f"{pval:.2e}" if pval < 0.001 else f"{pval:.4f}"
             adj_pval_str = f"{adj_pval:.2e}" if adj_pval < 0.001 else f"{adj_pval:.4f}"
-            row_class = 'significant' if adj_pval < 0.05 else ''
+            # Issue #63: FDR drives the significance call, never the raw p.
+            row_class = 'significant' if adj_pval < Config.SIGNIFICANCE_FDR_CUTOFF else ''
 
             if is_gsea:
                 nes = result.get('NES', 0)
@@ -500,8 +526,9 @@ class ReportGenerator:
             
             <div class="results-summary">
                 <p><strong>Total Key Events tested:</strong> {len(report_data.enrichment_results)}</p>
-                <p><strong>Significantly enriched (FDR < 0.05):</strong> 
-                   {len([r for r in report_data.enrichment_results if r.get('FDR', 1) < 0.05])}</p>
+                {f'<p><strong>Key Event accounting:</strong> {report_data.ke_summary_text}</p>' if report_data.ke_summary_text else ''}
+                <p><strong>Significantly enriched (FDR &lt; {Config.SIGNIFICANCE_FDR_CUTOFF}):</strong>
+                   {len([r for r in report_data.enrichment_results if r.get('FDR', 1) < Config.SIGNIFICANCE_FDR_CUTOFF])}</p>
             </div>
         </section>
         """
@@ -896,7 +923,7 @@ class ReportGenerator:
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]
         for i, result in enumerate(enrichment_results[:max_rows], 1):
-            if result.get('FDR', 1) < 0.05:
+            if result.get('FDR', 1) < Config.SIGNIFICANCE_FDR_CUTOFF:
                 table_style.append(('BACKGROUND', (0, i), (-1, i), colors.lightyellow))
 
         enrichment_table.setStyle(TableStyle(table_style))
@@ -998,7 +1025,12 @@ class ReportGenerator:
             ['Significant Genes', f"{report_data.significant_genes:,}"],
             ['Gene ID Type', report_data.id_type],
         ] + threshold_rows
-        
+
+        # Issue #65: KE accounting alongside the analysis parameters, so the
+        # reader can reproduce the BH multiple-testing denominator.
+        if report_data.ke_summary_text:
+            summary_data.append(['Key Events tested', report_data.ke_summary_text])
+
         summary_table = Table(summary_data, colWidths=[2.5*inch, 3.5*inch])
         summary_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), primary_color),
@@ -1032,10 +1064,18 @@ class ReportGenerator:
             
             # Summary statistics
             story.append(Spacer(1, 12))
-            sig_count = len([r for r in report_data.enrichment_results if r.get('FDR', 1) < 0.05])
+            # Issue #63: significance is the BH-adjusted FDR against the single
+            # app-wide cutoff — same rule as the network borders and heatmap.
+            cutoff = Config.SIGNIFICANCE_FDR_CUTOFF
+            sig_count = len([r for r in report_data.enrichment_results if r.get('FDR', 1) < cutoff])
+            excluded_line = (
+                f"<b>Key Event accounting:</b> {report_data.ke_summary_text}<br/>"
+                if report_data.ke_summary_text else ''
+            )
             summary_text = f"""
             <b>Total Key Events tested:</b> {len(report_data.enrichment_results)}<br/>
-            <b>Significantly enriched (FDR &lt; 0.05):</b> {sig_count}<br/>
+            {excluded_line}
+            <b>Significantly enriched (FDR &lt; {cutoff}):</b> {sig_count}<br/>
             <i>Note: Only top 15 results shown in table above</i>
             """
             story.append(Paragraph(summary_text, normal_style))
@@ -1148,7 +1188,7 @@ class ReportGenerator:
                 • <font color="#b3e6b3">Green circles</font>: Molecular Initiating Events (MIEs)<br/>
                 • <font color="#ffd9b3">Orange circles</font>: Intermediate Key Events<br/>
                 • <font color="#f4b3b3">Pink circles</font>: Adverse Outcomes (AOs)<br/>
-                • <font color="red">Red border</font>: Significantly enriched Key Events (p-value &lt; 0.05)<br/>
+                • <font color="red">Red border</font>: Significantly enriched Key Events (FDR &lt; """ + str(Config.SIGNIFICANCE_FDR_CUTOFF) + """)<br/>
                 • Arrows indicate causal relationships between Key Events
                 """
                 story.append(Paragraph(legend_text, normal_style))
