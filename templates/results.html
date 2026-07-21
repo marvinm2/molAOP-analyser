@@ -367,6 +367,12 @@
                     </span>
                     (adjusted p-value).
                 </li>
+                <li><strong>Representation:</strong>
+                    <span class="help-tooltip">Which way the Key Event went
+                        <span class="tooltiptext">Both tails of Fisher's exact test are run. <em>Enriched</em> means more of the KE's genes responded than the background rate predicts; <em>Depleted</em> means fewer did — a Key Event whose machinery was conspicuously spared, which is a result in its own right. <em>Not significant</em> means neither tail passed the cutoff. The P-value and FDR columns describe enrichment; the depletion columns at the end of the table describe the other tail.</span>
+                    </span>
+                    &mdash; enriched, depleted, or not significant at the selected FDR cutoff.
+                </li>
                 <li><strong>Odds Ratio:</strong>
                     <span class="help-tooltip">Effect size
                         <span class="tooltiptext">Quantifies enrichment strength. OR > 1 indicates over-representation. For example, OR = 3.5 means genes in this KE are 3.5x more likely to be significant than expected by chance.</span>
@@ -432,6 +438,7 @@
                             'Title': 'Key Event Title',
                             'p_value': 'P-value',
                             'FDR': 'FDR',
+                            'Representation': 'Representation',
                             'num_overlap': '# Overlap',
                             'pct_sig_in_KE': '% Enrichment',
                             'total_KE_genes_in_dataset': 'KE Gene Count',
@@ -442,6 +449,8 @@
                             'sig_not_KE': 'Sig not KE',
                             'non_sig_in_KE': 'Non-sig in KE',
                             'non_sig_not_KE': 'Non-sig not KE',
+                            'p_value_depleted': 'P-value (depletion)',
+                            'FDR_depleted': 'FDR (depletion)',
                             'NES': 'NES',
                             'lead_genes': 'Lead Edge Genes'
                         } %}
@@ -465,9 +474,15 @@
                             {% endif %}
                         {% elif col == 'NES' %}
                             <td>{{ "%.2f"|format(val) }}</td>
+                        {% elif col == 'Representation' %}
+                            {# Issue #70: which tail the Key Event fell on. Kept in
+                               step with the FDR selector by applyFdrThreshold(). #}
+                            <td class="representation-cell" data-ke="{{ row['KE'] }}">
+                                <span class="rep-badge rep-badge--{{ val }}">{{ representation_labels.get(val, val) }}</span>
+                            </td>
                         {% else %}
                         <td>
-                            {% if col in ['p_value', 'FDR'] %}
+                            {% if col in ['p_value', 'FDR', 'p_value_depleted', 'FDR_depleted'] %}
                                 {% if val < 0.001 %}
                                     {{ "%.2e"|format(val) }}
                                 {% else %}
@@ -498,7 +513,8 @@
             <br><br>
             <strong>Color coding:</strong><br>
             - Node color reflects gene-level log<sub>2</sub> fold change.<br>
-            - KE nodes with a <span style="color:red;">red border</span> are statistically significant (FDR &lt; <span class="fdr-cutoff-label">{{ fdr_cutoff | default(0.05) }}</span>, Benjamini-Hochberg adjusted).<br>
+            - KE nodes with a <span style="color:red;">red border</span> are significantly enriched (FDR &lt; <span class="fdr-cutoff-label">{{ fdr_cutoff | default(0.05) }}</span>, Benjamini-Hochberg adjusted).<br>
+            - KE nodes with a <span style="color:#307BBF;">double blue border</span> are significantly <em>depleted</em> — fewer of their genes responded than the background rate predicts.<br>
             - KE nodes with a <span style="color:#777;">dashed grey border</span> could not be assessed (fewer than {{ ke_summary.min_ke_genes if ke_summary else 5 }} of their genes were measured).<br>
             - Gene nodes with a <span style="color:green;">green border</span> are also significantly affected.
             <br><br>
@@ -544,7 +560,11 @@
                         <div style="margin-top: 8px;">
                             <div class="network-legend__item">
                                 <div class="network-legend__swatch" style="background: #ffd9b3; border: 3px solid red;"></div>
-                                <span>Significant KE (FDR &lt; <span class="fdr-cutoff-label">{{ fdr_cutoff | default(0.05) }}</span>)</span>
+                                <span>Enriched KE (FDR &lt; <span class="fdr-cutoff-label">{{ fdr_cutoff | default(0.05) }}</span>)</span>
+                            </div>
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #ffd9b3; border: 3px double #307BBF;"></div>
+                                <span>Depleted KE (fewer significant genes than expected)</span>
                             </div>
                             <div class="network-legend__item">
                                 <div style="width: 16px; height: 16px; background: linear-gradient(to right, #2c7bb6, #ffffcc, #d73027); border: 2px solid green; border-radius: 50%; margin-right: 8px; flex-shrink: 0;"></div>
@@ -846,10 +866,15 @@ const keTitleMap = {{ ke_title_map | safe }};
 const keTypeMap = {{ ke_type_map | safe }};
 const fdrByKe = {};
 const pValueByKe = {};
+// Issue #70 — the depletion tail, so the Representation column and the network
+// both follow the FDR selector instead of freezing at the server-side default.
+const fdrDepletedByKe = {};
 tableData.forEach(function(row) {
     fdrByKe[row.KE] = row.FDR;
     pValueByKe[row.KE] = row.p_value;
+    fdrDepletedByKe[row.KE] = row.FDR_depleted;
 });
+const REPRESENTATION_LABELS = {{ representation_labels | tojson | safe }};
 
 // Hub gene data island (Phase 15 HUBG-01..07)
 const hubData = {{ hub_list | tojson | safe }};
@@ -1048,6 +1073,18 @@ const cy = cytoscape({
         style: {
             'border-width': 3,
             'border-color': 'red'
+        }
+    },
+    {
+        // Issue #70 — significantly UNDER-represented: the KE's genes were
+        // conspicuously spared while the rest of the transcriptome responded.
+        // A blue border, so direction is readable at a glance and a depleted
+        // KE never reads as an untested or unremarkable one.
+        selector: 'node.depleted',
+        style: {
+            'border-width': 3,
+            'border-color': '#307BBF',
+            'border-style': 'double'
         }
     },
     {
@@ -1383,17 +1420,43 @@ cy.on('tap', function(event) {
 // A discrete selector, so every reachable value is one worth reporting.
 var fdrCutoff = document.getElementById('fdr-cutoff');
 
+// Issue #70 — one place decides which tail a KE fell on, used by both the
+// network classes and the Representation column.
+function callRepresentation(keId, threshold) {
+    var fdr = fdrByKe[keId];
+    if (fdr === undefined || fdr === null) return null;  // not tested
+    if (fdr < threshold) return 'enriched';
+    var fdrDep = fdrDepletedByKe[keId];
+    if (fdrDep !== undefined && fdrDep !== null && fdrDep < threshold) return 'depleted';
+    return 'ns';
+}
+
 function applyFdrThreshold(threshold) {
     cy.nodes().not('.gene').forEach(function(node) {
-        var fdr = fdrByKe[node.data('id')];
-        var tested = (fdr !== undefined && fdr !== null);
+        var call = callRepresentation(node.data('id'), threshold);
         // Significance is the BH-adjusted FDR, never the raw p-value.
-        node.toggleClass('significant', tested && fdr < threshold);
-        // Untested KEs are not dimmed — their own class already marks them as
-        // "could not assess" rather than "assessed and not enriched".
-        node.toggleClass('fdr-filtered', tested && fdr >= threshold);
+        node.toggleClass('significant', call === 'enriched');
+        // A depleted KE is a result, not a null one — styled distinctly and
+        // never dimmed (issue #70).
+        node.toggleClass('depleted', call === 'depleted');
+        // Untested KEs are not dimmed either — their own class already marks
+        // them as "could not assess" rather than "assessed and not enriched".
+        node.toggleClass('fdr-filtered', call === 'ns');
     });
+    updateRepresentationColumn(threshold);
     updateNetworkStats();
+}
+
+// Keep the table's Representation badges in step with the selected cutoff.
+function updateRepresentationColumn(threshold) {
+    document.querySelectorAll('.representation-cell').forEach(function(cell) {
+        var call = callRepresentation(cell.dataset.ke, threshold);
+        if (!call) return;
+        var badge = cell.querySelector('.rep-badge');
+        if (!badge) return;
+        badge.className = 'rep-badge rep-badge--' + call;
+        badge.textContent = REPRESENTATION_LABELS[call] || call;
+    });
 }
 
 // Selecting a cutoff is already a deliberate, discrete choice, so it applies

@@ -303,6 +303,47 @@ class TestNetworkSignificanceIsFdrDriven:
         assert net_significant == matrix_significant == {'KE:1'}
 
 
+class TestDepletedKeStyling:
+    """Issue #70: a depleted KE must not render like an unremarkable one."""
+
+    def _build(self, enrichment, ke_list, **kwargs):
+        return build_cytoscape_network(
+            ke_list,
+            pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID']),
+            enrichment,
+            {ke: ke for ke in ke_list},
+            {ke: 'intermediate' for ke in ke_list},
+            **kwargs,
+        )
+
+    def _enrichment(self, fdr, fdr_depleted):
+        return pd.DataFrame([{
+            'KE': 'KE:1', 'p_value': 1 - fdr, 'FDR': fdr,
+            'p_value_depleted': fdr_depleted, 'FDR_depleted': fdr_depleted,
+            'odds_ratio': 0.2,
+        }])
+
+    def test_depleted_ke_gets_its_own_class(self):
+        node = self._build(self._enrichment(0.95, 0.001), {'KE:1'})['nodes'][0]
+        assert 'depleted' in node['classes']
+        assert 'significant' not in node['classes']
+        assert node['data']['fdr_depleted'] == pytest.approx(0.001)
+
+    def test_enriched_ke_is_not_also_depleted(self):
+        node = self._build(self._enrichment(0.001, 0.99), {'KE:1'})['nodes'][0]
+        assert 'significant' in node['classes']
+        assert 'depleted' not in node['classes']
+
+    def test_results_without_the_depletion_tail_are_unaffected(self):
+        """Legacy results (and GSEA) carry no FDR_depleted — no class, no crash."""
+        enrichment = pd.DataFrame([
+            {'KE': 'KE:1', 'p_value': 0.9, 'FDR': 0.95, 'odds_ratio': 0.2}
+        ])
+        node = self._build(enrichment, {'KE:1'})['nodes'][0]
+        assert 'depleted' not in node['classes']
+        assert node['data']['fdr_depleted'] is None
+
+
 class TestExcludedKeStyling:
     """Issue #65: untested KEs must not render like tested-but-unenriched ones."""
 

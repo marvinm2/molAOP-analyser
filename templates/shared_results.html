@@ -332,6 +332,7 @@
                             'Title': 'Key Event Title',
                             'p_value': 'P-value',
                             'FDR': 'FDR',
+                            'Representation': 'Representation',
                             'num_overlap': '# Overlap',
                             'pct_sig_in_KE': '% Enrichment',
                             'total_KE_genes_in_dataset': 'KE Gene Count',
@@ -342,6 +343,8 @@
                             'sig_not_KE': 'Sig not KE',
                             'non_sig_in_KE': 'Non-sig in KE',
                             'non_sig_not_KE': 'Non-sig not KE',
+                            'p_value_depleted': 'P-value (depletion)',
+                            'FDR_depleted': 'FDR (depletion)',
                             'NES': 'NES',
                             'lead_genes': 'Lead Edge Genes'
                         } %}
@@ -367,9 +370,14 @@
                             {% endif %}
                         {% elif col == 'NES' %}
                             <td>{{ "%.2f"|format(val) if val is not none else '—' }}</td>
+                        {% elif col == 'Representation' %}
+                            {# Issue #70: which tail the Key Event fell on. Fixed at the
+                               cutoff the analysis was run with — a shared link has no
+                               cutoff selector to keep it in step with. #}
+                            <td><span class="rep-badge rep-badge--{{ val }}">{{ representation_labels.get(val, val) }}</span></td>
                         {% else %}
                         <td>
-                            {% if col in ['p_value', 'FDR'] %}
+                            {% if col in ['p_value', 'FDR', 'p_value_depleted', 'FDR_depleted'] %}
                                 {% if val is not none and val < 0.001 %}
                                     {{ "%.2e"|format(val) }}
                                 {% elif val is not none %}
@@ -402,7 +410,8 @@
             <br><br>
             <strong>Color coding:</strong><br>
             - Node color reflects gene-level log<sub>2</sub> fold change.<br>
-            - KE nodes with a <span style="color:red;">red border</span> are statistically significant (FDR &lt; {{ fdr_cutoff | default(0.05) }}, Benjamini-Hochberg adjusted).<br>
+            - KE nodes with a <span style="color:red;">red border</span> are significantly enriched (FDR &lt; {{ fdr_cutoff | default(0.05) }}, Benjamini-Hochberg adjusted).<br>
+            - KE nodes with a <span style="color:#307BBF;">double blue border</span> are significantly <em>depleted</em> &mdash; fewer of their genes responded than the background rate predicts.<br>
             - KE nodes with a <span style="color:#777;">dashed grey border</span> could not be assessed (too few of their genes were measured).<br>
             - Gene nodes with a <span style="color:green;">green border</span> are also significantly affected.
             <br><br>
@@ -444,7 +453,11 @@
                         <div style="margin-top: 8px;">
                             <div class="network-legend__item">
                                 <div class="network-legend__swatch" style="background: #ffd9b3; border: 3px solid red;"></div>
-                                <span>Significant KE (FDR &lt; {{ fdr_cutoff | default(0.05) }})</span>
+                                <span>Enriched KE (FDR &lt; {{ fdr_cutoff | default(0.05) }})</span>
+                            </div>
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #ffd9b3; border: 3px double #307BBF;"></div>
+                                <span>Depleted KE (fewer significant genes than expected)</span>
                             </div>
                             <div class="network-legend__item">
                                 <div style="width: 16px; height: 16px; background: linear-gradient(to right, #2c7bb6, #ffffcc, #d73027); border: 2px solid green; border-radius: 50%; margin-right: 8px; flex-shrink: 0;"></div>
@@ -677,6 +690,12 @@ const cy = cytoscape({
     {
         selector: 'node.significant',
         style: { 'border-width': 3, 'border-color': 'red' }
+    },
+    {
+        // Issue #70 — significantly under-represented, mirroring the styling on
+        // the results page so a shared link reads the same as the run it came from.
+        selector: 'node.depleted',
+        style: { 'border-width': 3, 'border-color': '#307BBF', 'border-style': 'double' }
     },
     {
         // KEs without a measurable gene set — muted so the gap is obvious

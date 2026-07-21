@@ -132,6 +132,46 @@ def assess_background_overlap(
     return result
 
 
+# Issue #70 — the three states a tested Key Event can be in once both tails of
+# the Fisher test are run. 'ns' means "tested, neither tail significant", which
+# is what the one-sided-only output used to conflate with depletion.
+REPRESENTATION_ENRICHED = 'enriched'
+REPRESENTATION_DEPLETED = 'depleted'
+REPRESENTATION_NS = 'ns'
+
+# Human-readable forms, shared by the results page, the reports and the
+# documentation so all three word it identically.
+REPRESENTATION_LABELS = {
+    REPRESENTATION_ENRICHED: 'Enriched',
+    REPRESENTATION_DEPLETED: 'Depleted',
+    REPRESENTATION_NS: 'Not significant',
+}
+
+
+def _call_representation(
+    fdr_enriched: float,
+    fdr_depleted: float,
+    fdr_cutoff: float,
+) -> str:
+    """Classify one tested KE as enriched, depleted or non-significant (#70).
+
+    Args:
+        fdr_enriched: BH-adjusted p-value of the over-representation tail.
+        fdr_depleted: BH-adjusted p-value of the under-representation tail.
+        fdr_cutoff: Cutoff both are compared against.
+
+    Returns:
+        One of the ``REPRESENTATION_*`` constants. Over-representation wins a
+        tie: the two tails cannot both be significant except in degenerate
+        tables, and over-representation is the headline statistic.
+    """
+    if fdr_enriched is not None and fdr_enriched < fdr_cutoff:
+        return REPRESENTATION_ENRICHED
+    if fdr_depleted is not None and fdr_depleted < fdr_cutoff:
+        return REPRESENTATION_DEPLETED
+    return REPRESENTATION_NS
+
+
 def run_enrichment_analysis(
     df: pd.DataFrame,
     reference_sets: Dict[str, Set[str]],
@@ -139,6 +179,7 @@ def run_enrichment_analysis(
     ke_title_map: Dict[str, str],
     gene_logfc_map: Optional[Dict[str, float]] = None,
     min_ke_genes: int = Config.MIN_KE_GENES,
+    fdr_cutoff: float = Config.SIGNIFICANCE_FDR_CUTOFF,
 ) -> pd.DataFrame:
     """
     Run Fisher's exact test enrichment analysis for Key Events.
@@ -164,8 +205,19 @@ def run_enrichment_analysis(
             tests and from the BH denominator, and are recorded in the KE
             accounting summary instead of being dropped silently.
 
+        fdr_cutoff: BH-adjusted cutoff used to fill the ``Representation``
+            column (issue #70). Both tails are always computed; this only
+            decides where the pre-rendered ``enriched`` / ``depleted`` / ``ns``
+            call is drawn. Consumers that let the user move the cutoff (the
+            results-page selector, the network) recompute the call from
+            ``FDR`` and ``FDR_depleted`` instead of reading this column.
+
     Returns:
-        pd.DataFrame: Enrichment results sorted by FDR. The tested/excluded KE
+        pd.DataFrame: Enrichment results sorted by FDR. Alongside the
+        over-representation ``p_value``/``FDR``, every tested KE also carries
+        ``p_value_depleted``/``FDR_depleted`` (the under-representation tail)
+        and a ``Representation`` call of ``enriched``/``depleted``/``ns``
+        (issue #70). The tested/excluded KE
         accounting is attached to ``.attrs[KE_SUMMARY_ATTR]`` (issue #65) and
         is read back with ``get_ke_summary()``::
 
@@ -207,6 +259,7 @@ def run_enrichment_analysis(
     r_ke = []; r_title = []; r_total = []; r_sig_in = []; r_sig_not = []
     r_nsig_in = []; r_nsig_not = []; r_pct = []; r_odds = []; r_pval = []
     r_overlap = []; r_noverlap = []
+    r_pval_dep = []  # issue #70 — the other tail (under-representation)
     r_direction = []  # populated only when gene_logfc_map is supplied
     emit_direction = gene_logfc_map is not None
 
@@ -254,6 +307,13 @@ def run_enrichment_analysis(
             # Run Fisher's exact test (one-tailed, greater)
             odds, pval = fisher_exact([[a, b], [c, d]], alternative="greater")
 
+            # Issue #70 — the opposite tail. Over-representation stays the
+            # headline statistic, but a KE whose gene set is conspicuously
+            # spared while the rest of the transcriptome responds is a real,
+            # interpretable result; tested on one tail only it is reported as
+            # p ≈ 1 and reads exactly like "nothing here".
+            _, pval_dep = fisher_exact([[a, b], [c, d]], alternative="less")
+
             # Add statistical warnings for edge cases
             if a == 0:
                 logger.warning(f"KE {ke}: No significant genes found - result may not be meaningful")
@@ -274,6 +334,7 @@ def run_enrichment_analysis(
             r_pct.append(round((a / len(ke_genes)) * 100, 1) if ke_genes else 0)
             r_odds.append(round(odds, 4) if (not pd.isna(odds) and not math.isinf(odds)) else 'NA')
             r_pval.append(pval)
+            r_pval_dep.append(pval_dep)
             r_overlap.append(", ".join(sorted(sig_in_ke)))
             r_noverlap.append(a)
 
@@ -305,10 +366,20 @@ def run_enrichment_analysis(
     # Column order matters: results.html and shared_results.html render the
     # table by iterating dict keys, so `Direction` lands right after
     # `num_overlap` -- read alongside the overlap count it summarises.
+    fdr_enriched = multipletests(r_pval, method="fdr_bh")[1]
+    # Issue #70 — each tail is corrected within its own family of tests, so the
+    # enrichment FDR keeps exactly the value it had before depletion testing
+    # was added and the two columns stay independently interpretable.
+    fdr_depleted = multipletests(r_pval_dep, method="fdr_bh")[1]
+
     columns = {
         'Title': r_title,
         'p_value': r_pval,
-        'FDR': multipletests(r_pval, method="fdr_bh")[1],
+        'FDR': fdr_enriched,
+        'Representation': [
+            _call_representation(fdr_up, fdr_down, fdr_cutoff)
+            for fdr_up, fdr_down in zip(fdr_enriched, fdr_depleted)
+        ],
         'num_overlap': r_noverlap,
     }
     if emit_direction:
@@ -323,6 +394,8 @@ def run_enrichment_analysis(
         'sig_not_KE': r_sig_not,
         'non_sig_in_KE': r_nsig_in,
         'non_sig_not_KE': r_nsig_not,
+        'p_value_depleted': r_pval_dep,
+        'FDR_depleted': fdr_depleted,
     })
     df_results = pd.DataFrame(columns)
     df_results = df_results.sort_values("FDR")

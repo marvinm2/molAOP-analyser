@@ -309,6 +309,14 @@ CYP3A4         3.21             0.00001   0.0001
             <li><strong>% Enrichment:</strong> Percentage of KE genes that are significant in your dataset</li>
             <li><strong>P-value:</strong> Statistical significance from Fisher's exact test</li>
             <li><strong>FDR:</strong> False Discovery Rate (adjusted p-value) using Benjamini-Hochberg correction</li>
+            <li><strong>Representation:</strong> Which tail of Fisher's exact test the Key Event fell on at the selected
+                FDR cutoff. <em>Enriched</em> means more of the KE's genes responded than the background rate predicts.
+                <em>Depleted</em> means fewer did &mdash; a Key Event whose molecular machinery was conspicuously spared
+                while the rest of the transcriptome responded. Depletion is a real, interpretable result, so it is
+                reported rather than folded into <em>Not significant</em>, which means neither tail passed the cutoff.
+                The P-value and FDR columns always describe over-representation; the depletion tail has its own
+                <code>P-value (depletion)</code> and <code>FDR (depletion)</code> columns at the end of the table, each
+                Benjamini-Hochberg corrected within its own family of tests.</li>
             <li><strong>Odds Ratio:</strong> Magnitude of enrichment (&gt;1 indicates over-representation)</li>
         </ul>
 

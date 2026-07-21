@@ -42,6 +42,7 @@ from services.data_service import (
 from services.enrichment_service import (
     run_enrichment_analysis, build_ke_gene_mapping, run_enrichment,
     get_ke_summary, format_ke_summary, assess_background_overlap,
+    REPRESENTATION_LABELS,
 )
 from services.network_service import build_cytoscape_network, ke_accounting_from_network
 from services.column_detector import column_detector
@@ -131,6 +132,10 @@ def inject_csrf_token():
 # AUTC-01: Expose the detector's qualitative confidence label helper to Jinja2 templates.
 # Templates call confidence_label(match.confidence) to get "High"/"Medium"/"Low"/"Very Low".
 app.jinja_env.globals['confidence_label'] = column_detector.get_confidence_description
+
+# Issue #70: enriched/depleted/ns wording lives in the enrichment service so the
+# results page, the shared-results page and the reports all say the same thing.
+app.jinja_env.globals['representation_labels'] = REPRESENTATION_LABELS
 
 _UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 

@@ -172,6 +172,110 @@ class TestRunEnrichmentAnalysis:
         assert 'Direction' not in result_no_map.columns
 
 
+class TestDepletionTail:
+    """Issue #70 — depleted Key Events must be distinguishable from null ones."""
+
+    @staticmethod
+    def _depleted_dataset():
+        """A KE whose gene set responds far less than the background rate.
+
+        500 genes, 250 significant (50% background). The KE holds 100 of them
+        with only 5 significant — the one-sided 'greater' test returns p ≈ 1,
+        which is exactly what a KE with nothing going on returns.
+        """
+        genes = [f"GENE{i}" for i in range(500)]
+        ke_genes = set(genes[:100])
+        # 5 significant inside the KE, 245 significant outside it.
+        sig = set(genes[:5]) | set(genes[100:345])
+        df = _make_gene_df(genes, [g in sig for g in genes])
+        return df, {'KE:DEP': ke_genes}, {'KE:DEP'}, {'KE:DEP': 'Depleted KE'}
+
+    def test_depleted_ke_is_called_depleted(self):
+        """Under-representation surfaces as a 'depleted' call, not as 'ns'."""
+        df, reference_sets, ke_list, ke_title_map = self._depleted_dataset()
+
+        result = run_enrichment_analysis(df, reference_sets, ke_list, ke_title_map)
+        row = result.iloc[0]
+
+        # The headline (over-representation) statistic is unchanged: near 1.
+        assert row['FDR'] > 0.5
+        # The other tail is where the signal is.
+        assert row['FDR_depleted'] < 0.01
+        assert row['Representation'] == 'depleted'
+
+    def test_enriched_ke_is_called_enriched(self):
+        """The over-represented case keeps its existing verdict."""
+        genes = [f"GENE{i}" for i in range(200)]
+        sig = set(genes[:40])
+        df = _make_gene_df(genes, [g in sig for g in genes])
+        reference_sets = {'KE:UP': set(genes[:30])}  # 30 genes, 30 significant
+
+        result = run_enrichment_analysis(
+            df, reference_sets, {'KE:UP'}, {'KE:UP': 'Enriched KE'}
+        )
+        row = result.iloc[0]
+        assert row['Representation'] == 'enriched'
+        assert row['FDR'] < 0.01
+        assert row['FDR_depleted'] > 0.5
+
+    def test_unremarkable_ke_is_called_ns(self):
+        """A KE tracking the background rate is 'ns' on both tails."""
+        genes = [f"GENE{i}" for i in range(200)]
+        # 50% significant everywhere, inside and outside the KE.
+        sig_flags = [i % 2 == 0 for i in range(200)]
+        df = _make_gene_df(genes, sig_flags)
+        reference_sets = {'KE:FLAT': set(genes[:40])}
+
+        result = run_enrichment_analysis(
+            df, reference_sets, {'KE:FLAT'}, {'KE:FLAT': 'Flat KE'}
+        )
+        assert result.iloc[0]['Representation'] == 'ns'
+
+    def test_cutoff_is_configurable(self):
+        """The call follows the supplied cutoff, both tails corrected by BH."""
+        df, reference_sets, ke_list, ke_title_map = self._depleted_dataset()
+
+        default = run_enrichment_analysis(df, reference_sets, ke_list, ke_title_map)
+        fdr_depleted = default.iloc[0]['FDR_depleted']
+
+        strict = run_enrichment_analysis(
+            df, reference_sets, ke_list, ke_title_map,
+            fdr_cutoff=fdr_depleted / 2,
+        )
+        assert strict.iloc[0]['Representation'] == 'ns'
+
+    def test_enrichment_fdr_unchanged_by_the_second_tail(self):
+        """Adding depletion testing must not move the enrichment FDR.
+
+        Each tail is BH-corrected within its own family, so the enrichment
+        column keeps the values it had before issue #70.
+        """
+        genes = [f"GENE{i}" for i in range(100)]
+        df = _make_gene_df(genes, [i < 30 for i in range(100)])
+        reference_sets = {
+            'KE:1': {f"GENE{i}" for i in range(20)},
+            'KE:2': {f"GENE{i}" for i in range(50, 70)},
+        }
+        result = run_enrichment_analysis(
+            df, reference_sets, {'KE:1', 'KE:2'}, {'KE:1': 'A', 'KE:2': 'B'}
+        )
+        # Recompute the one-sided BH by hand over the same two tests.
+        from scipy.stats import fisher_exact
+        from statsmodels.stats.multitest import multipletests
+        expected = {}
+        for ke, ke_genes in reference_sets.items():
+            a = sum(1 for g in ke_genes if int(g[4:]) < 30)
+            c = len(ke_genes) - a
+            expected[ke] = fisher_exact(
+                [[a, 30 - a], [c, 70 - c]], alternative='greater'
+            )[1]
+        kes = list(expected)
+        adjusted = dict(zip(kes, multipletests([expected[k] for k in kes],
+                                               method='fdr_bh')[1]))
+        for _, row in result.iterrows():
+            assert row['FDR'] == pytest.approx(adjusted[row['KE']])
+
+
 class TestBuildKeGeneMapping:
     """Tests for KE-to-gene mapping builder."""
 

@@ -59,6 +59,7 @@ except ImportError:
 
 from config import Config, ExperimentMetadata
 from helpers import MIN_CONFIDENCE_LABELS  # Issue #60: confidence threshold labels
+from services.enrichment_service import REPRESENTATION_LABELS  # Issue #70
 
 logger = logging.getLogger(__name__)
 
@@ -483,6 +484,11 @@ class ReportGenerator:
                 # Observed direction of overlap genes; empty for legacy shared
                 # records (or any caller that didn't pass gene_logfc_map).
                 direction = result.get('Direction', '')
+                # Issue #70: which tail the KE fell on. Empty for legacy records
+                # produced before the depletion tail was computed.
+                representation = REPRESENTATION_LABELS.get(
+                    result.get('Representation'), ''
+                )
                 odds_ratio_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
                 table_rows += f"""
             <tr class="{row_class}">
@@ -493,6 +499,7 @@ class ReportGenerator:
                 <td>{ke_size}</td>
                 <td>{pval_str}</td>
                 <td>{adj_pval_str}</td>
+                <td>{representation}</td>
                 <td>{odds_ratio_str}</td>
             </tr>
             """
@@ -516,6 +523,7 @@ class ReportGenerator:
                             <th>KE Gene Count</th>
                             <th>P-value</th>
                             <th>FDR</th>
+                            <th>Representation</th>
                             <th>Odds Ratio</th>
             """
 
@@ -525,6 +533,11 @@ class ReportGenerator:
             <p class="section-description">
                 Statistical enrichment analysis of significantly differentially expressed genes
                 against Key Event gene sets. Results are ranked by adjusted p-value.
+                The reported P-value and FDR are one-sided tests for
+                <em>over</em>-representation. The opposite tail is tested as well and
+                reported in the Representation column: a Key Event marked
+                <em>Depleted</em> carries significantly fewer responding genes than the
+                background rate predicts, which is a result rather than a null one.
             </p>
 
             <div class="table-container">
@@ -545,6 +558,8 @@ class ReportGenerator:
                 {f'<p><strong>Key Event accounting:</strong> {report_data.ke_summary_text}</p>' if report_data.ke_summary_text else ''}
                 <p><strong>Significantly enriched (FDR &lt; {Config.SIGNIFICANCE_FDR_CUTOFF}):</strong>
                    {len([r for r in report_data.enrichment_results if r.get('FDR', 1) < Config.SIGNIFICANCE_FDR_CUTOFF])}</p>
+                <p><strong>Significantly depleted (FDR &lt; {Config.SIGNIFICANCE_FDR_CUTOFF}):</strong>
+                   {len([r for r in report_data.enrichment_results if r.get('Representation') == 'depleted'])}</p>
             </div>
         </section>
         """
@@ -891,7 +906,10 @@ class ReportGenerator:
         if is_gsea:
             table_data = [['KE ID', 'Key Event Title', 'NES', 'P-value', 'FDR', 'KE Gene Count', 'Lead Edge Genes']]
         else:
-            table_data = [['KE ID', 'Key Event Title', '# Overlap', 'Direction', 'P-value', 'FDR', 'Odds Ratio']]
+            # Issue #70 — 'Repr.' carries the enriched/depleted call, so a
+            # depleted KE is not read off the table as an unremarkable one.
+            table_data = [['KE ID', 'Key Event Title', '# Overlap', 'Direction',
+                           'P-value', 'FDR', 'Repr.', 'Odds Ratio']]
 
         for result in enrichment_results[:max_rows]:
             pval = result.get('p_value', 0)
@@ -915,16 +933,21 @@ class ReportGenerator:
             else:
                 odds_ratio = result.get('odds_ratio', 0)
                 odds_str = f"{odds_ratio:.2f}" if isinstance(odds_ratio, (int, float)) and odds_ratio != 'NA' else str(odds_ratio)
+                # Blank for legacy records that predate the depletion tail;
+                # 'ns' renders as a dash so the column stays scannable.
+                repr_str = {'enriched': 'Enriched', 'depleted': 'Depleted',
+                            'ns': '–'}.get(result.get('Representation'), '')
                 table_data.append([
                     result.get('KE', 'N/A'), title,
                     str(result.get('num_overlap', 0)), result.get('Direction', ''),
-                    pval_str, fdr_str, odds_str,
+                    pval_str, fdr_str, repr_str, odds_str,
                 ])
 
         if is_gsea:
             col_widths = [0.6*inch, 1.6*inch, 0.6*inch, 0.8*inch, 0.8*inch, 0.8*inch, 1.8*inch]
         else:
-            col_widths = [0.8*inch, 2.0*inch, 0.7*inch, 0.9*inch, 0.7*inch, 0.7*inch, 0.7*inch]
+            col_widths = [0.7*inch, 1.7*inch, 0.6*inch, 0.8*inch, 0.65*inch,
+                          0.65*inch, 0.75*inch, 0.6*inch]
         enrichment_table = Table(table_data, colWidths=col_widths)
 
         table_style = [
@@ -941,6 +964,10 @@ class ReportGenerator:
         for i, result in enumerate(enrichment_results[:max_rows], 1):
             if result.get('FDR', 1) < Config.SIGNIFICANCE_FDR_CUTOFF:
                 table_style.append(('BACKGROUND', (0, i), (-1, i), colors.lightyellow))
+            elif result.get('Representation') == 'depleted':
+                # Issue #70 — a depleted KE is a finding too, shaded distinctly
+                # from an enriched one rather than left looking like a null row.
+                table_style.append(('BACKGROUND', (0, i), (-1, i), HexColor('#E8F1F9')))
 
         enrichment_table.setStyle(TableStyle(table_style))
         return enrichment_table

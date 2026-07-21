@@ -853,6 +853,37 @@ select option[data-suggested="true"] {
 }
 
 /* ==========================================================================
+   REPRESENTATION BADGE — issue #70
+   Which tail of Fisher's exact test a Key Event fell on. Depletion gets its
+   own colour rather than reading as a null result; 'ns' stays deliberately
+   quiet so the eye lands on the calls that carry information.
+   ========================================================================== */
+
+.rep-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    color: white;
+}
+
+.rep-badge--enriched {
+    background-color: #E6007E; /* Primary Magenta */
+}
+
+.rep-badge--depleted {
+    background-color: #307BBF; /* Primary Blue */
+}
+
+.rep-badge--ns {
+    background-color: #f0f0f0;
+    color: #666;
+}
+
+/* ==========================================================================
    PATHWAY VIEW SECTION (Phase 999.4 PinPath)
    ========================================================================== */
 

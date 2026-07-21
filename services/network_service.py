@@ -73,7 +73,9 @@ def build_cytoscape_network(
             (issue #63). Defaults to ``Config.SIGNIFICANCE_FDR_CUTOFF`` — the
             same cutoff the enrichment table, the comparison matrix and the
             results-page FDR slider use. The raw Fisher p-value is echoed onto
-            the node payload for transparency but never drives the call.
+            the node payload for transparency but never drives the call. The
+            same cutoff decides the `depleted` class from ``FDR_depleted``
+            (issue #70).
         excluded_kes: Optional KE_ID → exclusion reason map (issue #65), as
             produced by ``enrichment_service.get_ke_summary()['excluded_reasons']``.
             KEs excluded for ``'too_few_genes'`` get a `too-few-genes` class and
@@ -104,6 +106,16 @@ def build_cytoscape_network(
             # BH-adjusted FDR, not the raw p-value. _to_native() already
             # mapped NaN/inf to None, so a missing FDR is never significant.
             is_significant = fdr is not None and fdr < fdr_cutoff
+            # Issue #70 — the depletion tail, so an under-represented KE is
+            # styled as a result rather than dimmed like a null one. Absent on
+            # GSEA results (NES already carries direction) and on results
+            # produced before both tails were computed.
+            fdr_depleted = _to_native(enrichment_row.get('FDR_depleted'))
+            is_depleted = (
+                not is_significant
+                and fdr_depleted is not None
+                and fdr_depleted < fdr_cutoff
+            )
             # D-10/D-12: extract and belt-and-suspenders clamp NES under GSEA.
             # The gsea_service already clamped to ±3 but the network builder
             # must not trust upstream (two independent clamps per D-12 spec).
@@ -113,8 +125,10 @@ def build_cytoscape_network(
         else:
             odds_ratio = 0
             is_significant = False
+            is_depleted = False
             p_value = None
             fdr = None
+            fdr_depleted = None
             nes = None
 
         # Get KE metadata
@@ -128,6 +142,10 @@ def build_cytoscape_network(
         classes = []
         if is_significant:
             classes.append("significant")
+        if is_depleted:
+            # Issue #70 — significantly under-represented. A distinct class, not
+            # the significance border, so the reader can tell which way it went.
+            classes.append("depleted")
         if excluded_reason == 'too_few_genes':
             # Assessed-impossible, not assessed-and-null: fewer than the
             # minimum number of the KE's genes were measured (issue #65).
@@ -150,6 +168,10 @@ def build_cytoscape_network(
             "has_gene_set": has_gene_set,
             "p_value": p_value,   # EXPO-06: raw Fisher p, reported not gating (#63)
             "fdr": fdr,           # EXPO-06: per-KE significance in .cyjs export
+            # Issue #70: depletion tail, so a stored network (.cyjs, batch
+            # report, shared link) can restyle for direction without the
+            # enrichment table beside it. None on GSEA and on older results.
+            "fdr_depleted": fdr_depleted,
             "method": method,     # D-10: frontend gradient selector
             # Issue #65: None when the KE was tested, otherwise the reason it
             # was not. Lets consumers of a stored network (batch report, .cyjs)

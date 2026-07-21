@@ -1754,3 +1754,63 @@ class TestBatchMinConfidence:
         response = flask_client.get('/')
         assert response.status_code == 200
         assert b'batch-min-confidence' in response.data
+
+class TestRepresentationColumnRendered:
+    """Issue #70: the results page must show which tail a Key Event fell on."""
+
+    @staticmethod
+    def _analyze(client, representation):
+        import pandas as pd
+
+        processed_df = pd.DataFrame({
+            'ID': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FC': [1.5, -0.8, 2.1],
+            'pval': [0.001, 0.05, 0.0001],
+            'significant': [True, False, True],
+        })
+        enrichment_df = pd.DataFrame({
+            'Title': ['Test KE'], 'p_value': [0.9], 'FDR': [0.95],
+            'Representation': [representation],
+            'num_overlap': [1], 'pct_sig_in_KE': [20.0],
+            'total_KE_genes_in_dataset': [5], 'odds_ratio': [0.2],
+            'overlap': ['BRCA1'], 'KE': ['KE:115'],
+            'sig_in_KE': [1], 'sig_not_KE': [1],
+            'non_sig_in_KE': [4], 'non_sig_not_KE': [0],
+            'p_value_depleted': [0.0004], 'FDR_depleted': [0.0004],
+        })
+        edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
+
+        with patch('app.load_and_validate_data', return_value=processed_df), \
+             patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 3})), \
+             patch('app.load_aop_data', return_value=({'KE:115'}, edges_df, {'KE:115': 'KE'}, {'KE:115': 'Test KE'})), \
+             patch('app.run_enrichment', return_value=enrichment_df), \
+             patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
+             patch('app.build_ke_gene_mapping', return_value={}), \
+             patch('app.guess_id_type', return_value='HGNC'), \
+             patch('app.cleanup_file'), \
+             patch('os.path.exists', return_value=True), \
+             patch('app.validate_file_path', return_value=True):
+            return client.post('/analyze', data={
+                'filename': 'test.csv',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+                'aop_selection': 'AOP:1',
+                'logfc_threshold': '1.0',
+            })
+
+    def test_depleted_ke_renders_as_a_labelled_badge(self, authenticated_client):
+        """A KE with FDR ≈ 1 but a significant depletion tail reads as depleted,
+        not as the blank cell the one-sided output used to produce."""
+        response = self._analyze(authenticated_client, 'depleted')
+        assert response.status_code == 200
+        body = response.data
+        assert b'rep-badge--depleted' in body
+        assert b'Depleted' in body
+        # Both depletion columns are exposed, so the call can be checked.
+        assert b'FDR (depletion)' in body
+
+    def test_non_significant_ke_renders_quietly(self, authenticated_client):
+        response = self._analyze(authenticated_client, 'ns')
+        assert response.status_code == 200
+        assert b'rep-badge--ns' in response.data
