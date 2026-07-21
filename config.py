@@ -2,10 +2,54 @@
 Configuration settings for the Molecular AOP Analyser application.
 """
 import os
+import secrets
+import warnings
 from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime, timezone
 import zoneinfo
+
+
+def resolve_secret_key():
+    """Resolve Flask's SECRET_KEY from the environment.
+
+    SECRET_KEY_FILE takes precedence over SECRET_KEY: the deployed service
+    points it at a Docker swarm secret (/run/secrets/...), so the key is never
+    exposed in the service's environment where `docker service inspect` would
+    print it. SECRET_KEY stays supported for local dev.
+
+    Without either, a random key is generated per process — sessions then do
+    not survive a restart, and with more than one replica they would not be
+    shared between them.
+
+    Returns:
+        str: the resolved key. Never raises: an unreadable or empty secret file
+        warns and falls through to the next source, because a missing key must
+        not take the app down.
+    """
+    secret = None
+    secret_file = os.environ.get('SECRET_KEY_FILE')
+    if secret_file:
+        try:
+            with open(secret_file, 'r', encoding='utf-8') as fh:
+                secret = fh.read().strip()
+        except OSError as exc:
+            warnings.warn(f"SECRET_KEY_FILE {secret_file!r} could not be read ({exc})")
+        else:
+            if not secret:
+                warnings.warn(f"SECRET_KEY_FILE {secret_file!r} is empty")
+
+    if not secret:
+        secret = os.environ.get('SECRET_KEY')
+
+    if not secret:
+        warnings.warn(
+            "SECRET_KEY not set — using random key (sessions won't persist across restarts)"
+        )
+        secret = secrets.token_hex(32)
+
+    return secret
+
 
 class Config:
     # File upload settings
@@ -227,37 +271,12 @@ class Config:
 
     # Flask settings.
     #
-    # SECRET_KEY_FILE takes precedence over SECRET_KEY: the deployed service
-    # points it at a Docker swarm secret (/run/secrets/...), so the key is
-    # never exposed in the service's environment where `docker service
-    # inspect` would print it. SECRET_KEY stays supported for local dev.
-    #
-    # Without either, a random key is generated per process — sessions then
-    # do not survive a restart, and with more than one replica they would not
-    # be shared between them.
-    _secret = None
-    _secret_file = os.environ.get('SECRET_KEY_FILE')
-    if _secret_file:
-        try:
-            with open(_secret_file, 'r', encoding='utf-8') as fh:
-                _secret = fh.read().strip()
-        except OSError as exc:
-            import warnings
-            warnings.warn(f"SECRET_KEY_FILE {_secret_file!r} could not be read ({exc})")
-        else:
-            if not _secret:
-                import warnings
-                warnings.warn(f"SECRET_KEY_FILE {_secret_file!r} is empty")
-
-    if not _secret:
-        _secret = os.environ.get('SECRET_KEY')
-
-    if not _secret:
-        import warnings
-        import secrets as _secrets
-        warnings.warn("SECRET_KEY not set — using random key (sessions won't persist across restarts)")
-        _secret = _secrets.token_hex(32)
-    SECRET_KEY = _secret
+    # Resolved once at import by resolve_secret_key() below. Kept as a function
+    # so tests can exercise the resolution by calling it with a controlled
+    # environment — before this they had to importlib.reload(config), which left
+    # every module that had done `from config import Config` holding a stale
+    # class and made unrelated fixtures patch the wrong object (issue #73).
+    SECRET_KEY = resolve_secret_key()
 
     # Session cookie security
     SESSION_COOKIE_HTTPONLY = True

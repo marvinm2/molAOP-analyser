@@ -2009,10 +2009,11 @@ class TestOldUploadsAreSwept:
 
         uploads = tmp_path / 'uploads'
         uploads.mkdir()
-        # Patch the Config that utils actually holds, not config.Config:
-        # tests/test_config_secret.py reloads the config module, so after it has
-        # run the two are different class objects and patching the wrong one
-        # silently leaves the sweep pointed at the real uploads directory.
+        # Patch the Config that utils actually holds. config.Config is the same
+        # object today (#73 removed the module reload that used to make them
+        # diverge), but patching the reference the function reads cannot go
+        # stale, and a sweep pointed at the real uploads directory would delete
+        # a developer's files rather than fail loudly.
         monkeypatch.setattr(utils.Config, 'UPLOAD_FOLDER', str(uploads))
 
         fresh = uploads / 'fresh.txt'
