@@ -160,7 +160,13 @@
                         {% if entry.status != 'loaded' %}
                             <span style="color: #EB5B25; font-weight: 500;">unavailable, skipped</span>
                         {% else %}
-                            <span style="color: {{ '#009FE3' if entry.source == 'api' else ('#EB5B25' if entry.source in ['csv', 'cache(csv)'] else '#45A6B2') }}; font-weight: 500;">{{ resource_source_labels.get(entry.source, entry.source) }}</span>
+                            <span style="color: {{ '#009FE3' if entry.source == 'api' else ('#EB5B25' if entry.source in ['csv', 'cache(csv)'] else '#45A6B2') }}; font-weight: 500;">{{ resource_source_labels.get(entry.source, entry.source) }}{#
+                               Issue #106: how old the cache is. Without it, two
+                               runs minutes apart can be served gene sets of
+                               different vintages and say the same thing. Absent
+                               for a live load, and for a stored run recorded
+                               before the timestamp existed — say nothing rather
+                               than guess a time. #}{% if entry.cached_at %} {{ entry.cached_at }}{% endif %}</span>
                             ({{ entry.ke_count }} KEs){% endif %}</span>{% if not loop.last %}; {% endif %}
                 {% endfor %}
             </p>
