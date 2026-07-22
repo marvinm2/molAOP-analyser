@@ -1,4 +1,4 @@
-"""Route tests for /batch/<uuid>/condition/<n> (issues #74, #75).
+"""Route tests for /batch/<uuid>/condition/<n> and its report export (#74).
 
 The batch-condition page re-renders results.html from stored ConditionRecord
 blobs. Everything the header states about the run therefore has to be carried
@@ -8,13 +8,17 @@ resource. Issue #74 was the latter: a run over all three gene-set resources
 reported "WikiPathways", which is a provenance claim a reader would carry into
 a methods section.
 
-The hub-gene assertions pin the other half of the contract (#75): whatever
-per-gene adjusted p-values the stored ke_gene_json carries must reach the hub
-table unaltered.
+The same applies to the report exported from that page: a hidden field the form
+does not post is a value the generator silently borrows from the session.
+
+Per-gene p-values on the condition page (#75) are covered end-to-end in
+tests/test_batch_hub_pvalues.py — asserting them against a hand-seeded
+ke_gene_json would only exercise the renderer, which was never at fault.
 """
 import json
 import re
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -54,7 +58,7 @@ def _gene(symbol, log2fc, significant, pvalue_adj=None):
 
 
 def _seed(db_manager, *, selected_resources='WikiPathways, GO_BP, Reactome',
-          resolution=_RESOLUTION, with_pvalues=True):
+          resolution=_RESOLUTION, min_confidence='all'):
     """Create one complete batch with a single complete condition."""
     session = db_manager.get_session()
     try:
@@ -62,7 +66,7 @@ def _seed(db_manager, *, selected_resources='WikiPathways, GO_BP, Reactome',
             uuid='22222222-2222-2222-2222-222222222222', status='complete',
             aop_id='AOP:1', aop_label='Test AOP', logfc_threshold=1.0, pval_cutoff=0.05,
             selected_resources=selected_resources,
-            min_confidence='all',
+            min_confidence=min_confidence,
             resource_resolution=json.dumps(resolution) if resolution else None,
             id_column='gene', fc_column='logFC', pval_column='adj.P.Val',
             harmonised_background=json.dumps(['TP53', 'EGFR']), harmonised_gene_count=2,
@@ -71,12 +75,11 @@ def _seed(db_manager, *, selected_resources='WikiPathways, GO_BP, Reactome',
         session.add(batch)
         session.flush()
 
-        adj = 0.0004 if with_pvalues else None
         # TP53 sits in all three KEs, so it clears the hub threshold (3 KEs).
         ke_gene = {
-            'KE:1': [_gene('TP53', 2.0, True, adj), _gene('EGFR', 0.1, False, 0.42 if with_pvalues else None)],
-            'KE:2': [_gene('TP53', 2.0, True, adj)],
-            'KE:3': [_gene('TP53', 2.0, True, adj)],
+            'KE:1': [_gene('TP53', 2.0, True, 0.0004), _gene('EGFR', 0.1, False, 0.42)],
+            'KE:2': [_gene('TP53', 2.0, True, 0.0004)],
+            'KE:3': [_gene('TP53', 2.0, True, 0.0004)],
         }
         session.add(ConditionRecord(
             batch_id=batch.id, position=0, filename='c0.tsv',
@@ -110,14 +113,28 @@ def condition_client(flask_client, temp_database, monkeypatch):
     return _make
 
 
-def _resource_header_value(html):
-    """Extract the rendered 'Gene Set Resources' metadata value."""
+def _metadata_value(html, label):
+    """Extract a rendered value from the metadata-summary header by its label."""
     match = re.search(
-        r'Gene Set Resources</span>.*?metadata-summary__value">(.*?)</span>',
+        re.escape(label) + r'</span>.*?metadata-summary__value">(.*?)</span>',
         html, re.DOTALL,
     )
-    assert match, 'Gene Set Resources header not found on the page'
+    assert match, f'{label!r} header not found on the page'
     return match.group(1).strip()
+
+
+def _resource_header_value(html):
+    """Extract the rendered 'Gene Set Resources' metadata value."""
+    return _metadata_value(html, 'Gene Set Resources')
+
+
+def _hidden_field(html, name):
+    """Extract the value a report-form hidden input posts."""
+    match = re.search(
+        r'<input type="hidden" name="' + re.escape(name) + r'" value="(.*?)">', html
+    )
+    assert match, f'hidden field {name!r} not present in the report form'
+    return match.group(1)
 
 
 class TestResourceProvenance:
@@ -131,11 +148,22 @@ class TestResourceProvenance:
         assert value == 'WikiPathways, GO_BP, Reactome'
 
     def test_resolution_provenance_line_is_rendered(self, condition_client):
+        """The provenance line itself must name every resource and its KE count.
+
+        Asserting each resource name appears *somewhere* on the page proves
+        nothing — the header fixed above already lists all three. Scope the
+        assertions to the provenance paragraph.
+        """
         client, uuid = condition_client()
         html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
-        assert 'Gene set provenance' in html
-        for resource in ('WikiPathways', 'GO_BP', 'Reactome'):
-            assert resource in html
+        line = re.search(
+            r'<strong>Gene set provenance:</strong>(.*?)</p>', html, re.DOTALL
+        )
+        assert line, 'Gene set provenance line not rendered'
+        provenance = line.group(1)
+        for resource, ke_count in (('WikiPathways', 42), ('GO_BP', 7), ('Reactome', 5)):
+            assert resource in provenance
+            assert f'({ke_count} KEs)' in provenance
 
     def test_skipped_resource_raises_a_warning(self, condition_client):
         resolution = [
@@ -159,20 +187,129 @@ class TestResourceProvenance:
         assert 'WikiPathways' not in value
 
 
-class TestHubGenePvalues:
-    """Issue #75: stored per-gene adjusted p-values must reach the hub table."""
+class TestRunSettingsProvenance:
+    """Issues #60/#74: the header must state the batch's own run settings."""
 
-    def test_adjusted_pvalue_is_rendered_for_hub_genes(self, condition_client):
-        client, uuid = condition_client(with_pvalues=True)
+    def test_confidence_threshold_is_the_batch_threshold(self, condition_client):
+        client, uuid = condition_client(min_confidence='high')
         html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
-        row = re.search(r'<td>TP53</td>.*?</tr>', html, re.DOTALL)
-        assert row, 'TP53 hub row not rendered'
-        assert '4.00e-04' in row.group(0)
-        assert '&mdash;' not in row.group(0)
+        assert _metadata_value(html, 'Min. Mapping Confidence') == 'High only'
 
-    def test_absent_pvalue_renders_as_a_dash(self, condition_client):
-        """The em dash is only correct when the stored map genuinely has none."""
-        client, uuid = condition_client(with_pvalues=False)
+    def test_confidence_threshold_reaches_the_report_form(self, condition_client):
+        client, uuid = condition_client(min_confidence='medium')
         html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
-        row = re.search(r'<td>TP53</td>.*?</tr>', html, re.DOTALL)
-        assert row and '&mdash;' in row.group(0)
+        assert _hidden_field(html, 'min_confidence') == 'medium'
+
+    def test_selected_resources_are_posted_to_the_report(self, condition_client):
+        """Without this field the report falls back to the session (#74)."""
+        client, uuid = condition_client()
+        html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
+        assert _hidden_field(html, 'selected_resources') == 'WikiPathways, GO_BP, Reactome'
+
+    def test_unrecorded_selection_is_posted_as_empty_not_wikipathways(
+        self, condition_client
+    ):
+        client, uuid = condition_client(selected_resources=None, resolution=None)
+        html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
+        assert _hidden_field(html, 'selected_resources') == ''
+
+    def test_column_mapping_comes_from_the_batch(self, condition_client):
+        client, uuid = condition_client()
+        html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
+        assert _hidden_field(html, 'id_column') == 'gene'
+        assert _hidden_field(html, 'fc_column') == 'logFC'
+        assert _hidden_field(html, 'pval_column') == 'adj.P.Val'
+
+
+class TestConditionMethod:
+    """The page must render and export the method the batch actually ran."""
+
+    def test_method_defaults_to_ora_without_the_column(self, condition_client):
+        client, uuid = condition_client()
+        html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
+        assert _hidden_field(html, 'method') == 'ora'
+        assert 'Gene Expression Scale' in html
+
+    def test_gsea_batch_renders_and_exports_gsea(self, condition_client, monkeypatch):
+        """A BatchRecord carrying method='gsea' must not be reported as ORA.
+
+        BatchRecord has no ``method`` column on this branch, so the attribute is
+        planted on the model the route queries. That is the shape
+        ``getattr(batch, 'method', None) or 'ora'`` has to cope with once the
+        column lands on the other branch.
+        """
+        client, uuid = condition_client()
+
+        # Make the batch look like a GSEA run without adding a column this
+        # branch does not own.
+        monkeypatch.setattr(BatchRecord, 'method', 'gsea', raising=False)
+        html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
+        assert _hidden_field(html, 'method') == 'gsea'
+        assert 'KE NES Scale' in html
+        assert 'Gene Expression Scale' not in html
+
+
+class TestReportResourceProvenance:
+    """Issue #74: an exported report must not inherit another run's resources.
+
+    ``generate_report`` fell back to ``session['experiment_metadata']`` when the
+    form carried no resource list, and to the literal ``'WikiPathways'`` when
+    the session was empty too. A PDF exported from a batch condition page
+    therefore reported the resources of whatever single analysis the same
+    browser session had last run.
+    """
+
+    _BASE_FORM = {
+        'format': 'html',
+        'filename': 'test.csv',
+        'gene_count': '100',
+        'significant_genes': '10',
+        'aop_id': 'AOP:1',
+        'aop_label': 'Test AOP',
+        'logfc_threshold': '1.0',
+        'pval_cutoff': '0.05',
+        'id_column': 'gene',
+        'fc_column': 'logFC',
+        'pval_column': 'adj.P.Val',
+        'id_type': 'HGNC',
+        'enrichment_results': '[]',
+    }
+
+    def _capture(self, client, form):
+        """POST the report form and return the ReportData the generator saw."""
+        captured = {}
+
+        def _fake_html_report(report_data):
+            captured['data'] = report_data
+            return '<html><body>Report</body></html>'
+
+        with patch('app.report_generator.generate_html_report', _fake_html_report):
+            response = client.post('/generate_report', data=form)
+        assert response.status_code == 200, response.data[:200]
+        return captured['data']
+
+    def test_posted_resources_win_over_the_session(self, flask_client):
+        with flask_client.session_transaction() as sess:
+            sess['experiment_metadata'] = {
+                'dataset_id': 'PREVIOUS RUN',
+                'selected_resources': 'GO_BP',
+            }
+        form = dict(self._BASE_FORM, selected_resources='WikiPathways, Reactome')
+        report = self._capture(flask_client, form)
+        assert report.selected_resources == 'WikiPathways, Reactome'
+
+    def test_empty_posted_resources_do_not_fall_back_to_the_session(self, flask_client):
+        """A batch predating #55 posts an empty field. That is not consent to
+        report the last single analysis's resources."""
+        with flask_client.session_transaction() as sess:
+            sess['experiment_metadata'] = {
+                'dataset_id': 'PREVIOUS RUN',
+                'selected_resources': 'GO_BP, Reactome',
+            }
+        form = dict(self._BASE_FORM, selected_resources='')
+        report = self._capture(flask_client, form)
+        assert report.selected_resources == 'Not recorded'
+
+    def test_absent_field_and_empty_session_is_not_wikipathways(self, flask_client):
+        report = self._capture(flask_client, dict(self._BASE_FORM))
+        assert report.selected_resources == 'Not recorded'

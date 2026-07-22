@@ -43,6 +43,37 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   page now carries both the requested selection (#55) and the per-resource resolution and
   warnings (#68), and the template no longer substitutes a real resource name for an absent
   one — an unrecorded selection reads as *"Not recorded"*.
+
+  The same page was misstating two more of the run's settings, both of which travel into a
+  methods section together with the resources. The mapping-confidence threshold read *"All
+  mappings"* on every condition page, even one run at *"High only"* — and even directly above
+  the warning banner that the stricter threshold had raised. And the column mapping shown on
+  an exported report was whatever the browser session last held rather than the columns the
+  batch was run on. Both now come from the batch record, as does the enrichment method, which
+  the page had hardcoded to over-representation.
+
+  **A report exported from a condition page reported the wrong resources too**, which is the
+  form the claim is most likely to be quoted in. The report form posted no resource list at
+  all, so the generator fell back to the browser session — meaning a PDF exported from a
+  batch condition page named the resources of whatever single analysis had last been run in
+  the same session, and named `WikiPathways` when there was no session to borrow from. The
+  form now posts the run's own selection, always, and the report no longer invents a resource
+  name: a run with nothing recorded reports *"Not recorded"*. The same invented default is
+  gone from the stored-experiment JSON. It remains in the **batch report** (the multi-
+  condition PDF), which is not covered by this change.
+
+- **Hub genes on a batch condition page show their p-value** (#75). The hub-gene panel reads
+  its "Adj. p-value" from the per-gene data stored with each condition, and the batch runner
+  never captured p-values at all — so every hub row of every condition of every batch showed
+  an em dash, while the same file analysed on its own showed a number. Batch runs now capture
+  the raw and adjusted p-value columns from each uploaded file the way a single analysis
+  does, independently of the one column the batch thresholds on, and store them alongside the
+  fold changes. A file that genuinely carries no adjusted p-value column still reads as a
+  dash, which is the honest answer.
+
+  This applies to batches run from now on. Conditions stored before this change hold no
+  p-values and will keep showing a dash; re-run the batch to get them.
+
 - **"No gene set mapped" no longer covers Key Events that are mapped** (#81). The
   per-condition accounting had two exclusion counters, and one of them was answering three
   different questions at once. A Key Event with no curated mapping, a Key Event whose
