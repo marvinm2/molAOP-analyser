@@ -254,7 +254,26 @@ Download KE-WP mappings as a GMT (Gene Matrix Transposed) file. The Builder
 resolves each mapped pathway/term to its **member genes**, so the GMT contains
 gene symbols (not pathway IDs) — ready for `fgsea` / `clusterProfiler`.
 
-**Query params:** `?min_confidence=High|Medium|Low` (optional filter)
+**Query params:** `?min_confidence=High|Medium|Low` (optional **threshold**)
+
+`min_confidence` is a minimum, not a tier selector: `Medium` returns medium- and
+high-confidence mappings, `High` returns high only, and `Low` is equivalent to
+omitting the parameter. Mappings with no recorded confidence are always
+included, so the filter can never silently empty an export.
+
+> **Builder behaviour changed on 2026-07-22 (builder#206).** Before that date the
+> parameter selected a *single* tier, so `min_confidence=Medium` returned medium
+> only and dropped every high-confidence mapping — the opposite of what the name
+> promises. This is why the Analyser's minimum-confidence control could not
+> simply be forwarded to these endpoints (analyser#71): passing it through would
+> have discarded the best-evidenced mappings.
+>
+> Two things to get right when wiring it up:
+> - The Analyser's vocabulary is `("all", "medium", "high")`; the Builder's
+>   whitelist is `{high, medium, low}`. `all` returns **HTTP 400** — translate it
+>   to an omitted parameter rather than forwarding it verbatim.
+> - `min_confidence` must be part of the reference-set cache key, or a run at one
+>   threshold will serve gene sets cached at another.
 
 **Response:** `text/plain` GMT file. One gene set per line, tab-separated:
 ```
