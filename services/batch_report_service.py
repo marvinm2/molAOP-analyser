@@ -26,6 +26,7 @@ from services.report_service import (
     REPORTLAB_AVAILABLE,
 )
 from services.comparison_service import comparison_matrix_to_dataframe
+from services.image_render import render_figure_png
 from services.enrichment_service import format_ke_summary
 from services.network_service import ke_accounting_from_network
 from helpers import MIN_CONFIDENCE_LABELS
@@ -125,7 +126,9 @@ def render_heatmap_png(comparison_data: dict) -> Optional[bytes]:
             paper_bgcolor='white', plot_bgcolor='#f0f0f0',
             height=height, width=width,
         )
-        return fig.to_image(format='png', scale=2)
+        # Issue #104: bounded render — a wedged kaleido subprocess raises here
+        # and the caller falls back to "image unavailable" instead of hanging.
+        return render_figure_png(fig, format='png', scale=2)
     except Exception as exc:
         logger.warning('render_heatmap_png failed: %s', exc)
         return None
