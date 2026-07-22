@@ -2,17 +2,6 @@
    Page-specific overrides only; shared classes and design tokens
    live in static/css/main.css. */
 
-.alert-band {
-    background-color: var(--color-secondary-orange);
-    color: white;
-    text-align: center;
-    padding: 8px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    margin: 0 0 24px 0;
-    border-radius: 4px;
-}
-
 .dose-grid {
     margin-left: 20px;
     display: grid;

@@ -113,7 +113,7 @@ The backend is organized into modular services under `services/`:
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.14+
 - pip (Python package manager)
 - Optionally: Docker and Docker Compose
 
