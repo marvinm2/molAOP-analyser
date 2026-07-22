@@ -544,6 +544,75 @@ class TestPathwayResolutionGap:
         }]
         assert app.resource_resolution_warnings(resolution) == []
 
+
+class TestUnresolvedWarningIsScopedToTheAOP:
+    """Issue #108: the warning must describe the AOP being analysed.
+
+    The resolution is built over the whole reference universe, so before this
+    scoping every run claimed its coverage was understated — naming pathways
+    belonging to Key Events in other AOPs entirely. Asserting a gap that does
+    not exist is worse than the silent gap #79/#81 fixed: it travels into the
+    caveats an author writes around the numbers on the same page.
+    """
+
+    def _resolution(self):
+        return [{
+            'resource': 'WikiPathways', 'status': 'loaded', 'source': 'api',
+            'ke_count': 90, 'confidence_applied': True,
+            'unresolved_pathways': ['WP1234', 'WP3980', 'WP4010'],
+            'unresolved_ke_pathways': {
+                'KE:840': ['WP1234'],
+                'KE:344': ['WP3980'],
+                'KE:1115': ['WP4010'],
+            },
+            'error': None,
+        }]
+
+    def test_pathways_from_other_aops_are_dropped(self):
+        scoped = app.scope_resolution_to_aop(self._resolution(), {'KE:1115'})
+
+        assert scoped[0]['unresolved_pathways'] == ['WP4010']
+        assert scoped[0]['unresolved_ke_pathways'] == {'KE:1115': ['WP4010']}
+
+    def test_warning_is_suppressed_when_this_aop_lost_nothing(self):
+        """The AOP:472 case from the report: none of the three is its own."""
+        scoped = app.scope_resolution_to_aop(
+            self._resolution(), {'KE:1', 'KE:2', 'KE:3'}
+        )
+
+        assert scoped[0]['unresolved_pathways'] == []
+        assert app.resource_resolution_warnings(scoped) == []
+
+    def test_surviving_warning_names_only_this_aops_key_events(self):
+        scoped = app.scope_resolution_to_aop(self._resolution(), {'KE:1115'})
+
+        joined = " ".join(app.resource_resolution_warnings(scoped))
+        assert "WP4010" in joined and "KE:1115" in joined
+        for elsewhere in ("WP1234", "WP3980", "KE:840", "KE:344"):
+            assert elsewhere not in joined
+
+    def test_unknown_key_events_leave_the_resolution_alone(self):
+        """Scoping we cannot perform must not silently empty the accounting.
+
+        An over-broad warning is recoverable; one suppressed because the AOP
+        topology failed to load hides a real gap with no trace.
+        """
+        original = self._resolution()
+
+        assert app.scope_resolution_to_aop(original, None) == original
+        assert app.scope_resolution_to_aop(original, set()) == original
+
+    def test_the_source_resolution_is_not_mutated(self):
+        """The resolution can come from a cache shared with the next caller."""
+        original = self._resolution()
+
+        app.scope_resolution_to_aop(original, {'KE:1115'})
+
+        assert original[0]['unresolved_pathways'] == ['WP1234', 'WP3980', 'WP4010']
+        assert set(original[0]['unresolved_ke_pathways']) == {
+            'KE:840', 'KE:344', 'KE:1115'
+        }
+
 class TestCacheFormatUpgrade:
     """The #79 cache entry gained a third element; warm caches must survive.
 
