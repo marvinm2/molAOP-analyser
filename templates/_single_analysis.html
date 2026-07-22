@@ -474,14 +474,17 @@
                 a KE whose mappings are all below the threshold is not tested. Mappings
                 without a recorded confidence are always kept.
             </p>
-            {# Issue #67: say where the filter actually bites. The GO BP and
-               Reactome gene sets come from GMT exports with no confidence
-               field, so raising the threshold leaves them untouched. #}
+            {# Issue #67/#71: say where the filter actually bites. Since #71 the
+               GO BP and Reactome thresholds are forwarded to the Builder's GMT
+               exports, so all three resources are filtered — but only on the
+               live path; the bundled CSV fallback has no confidence column. #}
             <p class="settings-subgroup__hint" style="margin: 0 0 8px;">
-                <strong>Applies to WikiPathways mappings only.</strong> The Gene Ontology and
-                Reactome gene sets are served as GMT exports that carry no confidence field,
-                so they are used in full whatever you choose here. The results page records
-                which resources the threshold was actually applied to.
+                <strong>Applies to all three resources.</strong> WikiPathways mappings are
+                filtered here; the Gene Ontology and Reactome gene sets are filtered by the
+                Builder when they are fetched. If a resource falls back to the reference files
+                bundled with this image, those carry no confidence column and are used in
+                full — the results page records which resources the threshold was actually
+                applied to.
             </p>
             {% set sel_min_conf = min_confidence or 'all' %}
             <select name="min_confidence" id="min_confidence"

@@ -74,7 +74,48 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 - Design-token layer in `static/css/main.css` mirroring the Builder's `:root` block —
   VHP4Safety palette, spacing, radius, shadow and z-index scales as CSS custom properties.
 
+### Added
+
+- **The mapping-confidence threshold now applies to GO BP and Reactome, not just
+  WikiPathways** (#71). The threshold has been offered on both forms since #60, but it only
+  ever filtered the Builder's curated WikiPathways mappings — a "High only" run over all
+  three resources filtered one component and used the other two whole. #67 made the Analyser
+  *disclose* that rather than fix it, because the fix was not available: the Builder's GMT
+  `?min_confidence=` selected a **single tier**, so forwarding the user's choice would have
+  dropped every high-confidence mapping when they asked for "Medium and High" — worse than
+  not filtering at all.
+
+  molAOP-builder#206 shipped on 2026-07-22 and the parameter now means *at-or-above*, with
+  unrecorded confidences always included, so `services/api_service.fetch_gmt_reference_sets()`
+  forwards it. Verified against the live Builder: `GO_BP` goes 12 KEs / 4,334 genes at `all`
+  to 6 KEs / 1,791 at `high`, `Reactome` 8 / 755 to 4 / 144, and each level's Key Events are a
+  subset of the one below — the nesting that distinguishes a threshold from the old tier
+  selector.
+
+  Two traps handled explicitly. Our vocabulary is `("all", "medium", "high")` and the
+  Builder's whitelist is `{high, medium, low}`: `all` is **not** in it and returns HTTP 400,
+  which would drop the resource for the whole run, so `gmt_min_confidence_param()` translates
+  it to an omitted parameter and degrades anything unrecognised the same way. And the
+  reference-set cache key already carried the threshold, which now matters materially rather
+  than defensively — the three levels fetch genuinely different gene sets, so a shared key
+  would serve a `high` run the sets cached for `all`.
+
+  A run that falls back to the reference files bundled in the image is still unfiltered —
+  those carry no confidence column — and both forms now say the threshold applies to all
+  three resources with that one exception, instead of naming WikiPathways alone.
+
 ### Fixed
+
+- **An unfiltered resource is no longer blamed on the bundled reference files** (#71). The
+  disclosure added with #67 split its explanation on whether a resource appeared in the
+  filterable list, which was the same thing as "has a bundled CSV fallback" only for as long
+  as WikiPathways was the sole filterable resource. Once GO BP and Reactome became filterable,
+  a run recorded before #71 — whose stored resolution marks them unfiltered — would have
+  rendered *"served from the bundled reference files"* for resources that **have no bundled
+  fallback and never did**. The reason is now attributed from the resource's own fallback path
+  (`CSV_FALLBACK_RESOURCES`), so the bundled-files explanation is only ever given where it is
+  true, and everything else says plainly that the threshold was not applied. This is the same
+  class of defect as #108: a disclaimer that reads as diligence while stating something false.
 
 - **The unresolved-pathway warning describes the AOP being analysed** (#108). The warning
   added with #79/#81 — *"N mapped pathway(s) could not be resolved to genes … their coverage

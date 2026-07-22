@@ -261,12 +261,16 @@
             mappings are all below the threshold is not tested. Mappings without a recorded
             confidence are always kept. Applied equally to all conditions.
         </p>
-        {# Issue #67: the threshold only bites where the mappings carry a
-           confidence, i.e. the WikiPathways mappings from the Builder API. #}
+        {# Issue #67/#71: the threshold bites on all three resources now —
+           WikiPathways filtered here, GO BP and Reactome forwarded to the
+           Builder's GMT exports. The bundled CSV fallback has no confidence
+           column, so a run served from it is still unfiltered. #}
         <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
-            <strong>Applies to WikiPathways mappings only.</strong> The Gene Ontology and
-            Reactome gene sets are served as GMT exports that carry no confidence field,
-            so they are used in full whatever you choose here.
+            <strong>Applies to all three resources.</strong> WikiPathways mappings are
+            filtered here; the Gene Ontology and Reactome gene sets are filtered by the
+            Builder when they are fetched. A resource served from the reference files
+            bundled with this image is used in full — the batch records which resources
+            the threshold was actually applied to.
         </p>
         <div style="margin-bottom: 24px;">
             <select id="batch-min-confidence" style="padding: 8px; font-size: 14px; max-width: 320px;">
