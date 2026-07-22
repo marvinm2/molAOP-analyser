@@ -29,6 +29,7 @@ from services.comparison_service import comparison_matrix_to_dataframe
 from services.image_render import render_figure_png
 from services.enrichment_service import format_ke_summary
 from services.network_service import ke_accounting_from_network
+from config import Config
 from helpers import MIN_CONFIDENCE_LABELS
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,41 @@ def batch_method(batch) -> str:
         except Exception:  # pragma: no cover — provenance must never break a report
             pass
     return (getattr(batch, 'method', None) or 'ora')
+
+
+def _mask_nes_by_significance(nes_matrix, fdr_matrix):
+    """Blank NES cells that are not significant at the active cutoff (#107).
+
+    On a diverging scale colour encodes direction, and for a cell nowhere near
+    significance the sign of NES is not a stable quantity: the same conditions
+    scored against a harmonised batch background and against their own
+    per-file backgrounds returned opposite-signed NES for four of six KEs in
+    the weakest condition, every one with FDR >= 0.48. Colouring those cells
+    invites the reader to interpret a direction the data does not support, so
+    they are left blank; the values remain in the matrix table and the exports.
+
+    Args:
+        nes_matrix: 2-D list of NES floats (rows=KEs, cols=conditions).
+        fdr_matrix: the aligned FDR matrix. When absent, nothing can be
+            assessed and the NES matrix is returned unchanged.
+
+    Returns:
+        list: a new matrix with non-significant cells set to None.
+    """
+    if not fdr_matrix:
+        return nes_matrix
+    cutoff = Config.SIGNIFICANCE_FDR_CUTOFF
+    masked = []
+    for row_idx, row in enumerate(nes_matrix):
+        fdr_row = fdr_matrix[row_idx] if row_idx < len(fdr_matrix) else []
+        masked.append([
+            value if (col_idx < len(fdr_row)
+                      and fdr_row[col_idx] is not None
+                      and fdr_row[col_idx] < cutoff)
+            else None
+            for col_idx, value in enumerate(row)
+        ])
+    return masked
 
 
 def _dropped_rows_note(cond) -> str:
@@ -115,6 +151,11 @@ def render_heatmap_png(comparison_data: dict) -> Optional[bytes]:
 
         if is_gsea:
             z = comparison_data.get('nes_matrix') or comparison_data['neg_log10_matrix']
+            # Issue #107: colour direction only where direction is supported.
+            # Applied here as well as on the compare page so the printed
+            # heatmap and the screen cannot make different claims.
+            if comparison_data.get('nes_matrix'):
+                z = _mask_nes_by_significance(z, comparison_data.get('fdr_matrix'))
             heatmap_kwargs = dict(
                 colorscale='RdBu',
                 reversescale=True,  # red = positive NES (coordinated up-shift)
@@ -131,11 +172,19 @@ def render_heatmap_png(comparison_data: dict) -> Optional[bytes]:
                 colorbar=dict(title='-log10(FDR)'),
             )
 
-        fig = go.Figure(data=go.Heatmap(
-            z=z, x=x, y=y,
-            hoverongaps=False,
-            **heatmap_kwargs,
-        ))
+        # Issue #107: the significance mask can blank every cell, and plotly
+        # infers its axes from the data — an all-null z renders a featureless
+        # box with no tick labels at all. A fully transparent companion trace
+        # over the same categories anchors the axes without drawing anything,
+        # so a blank heatmap still says which KEs and conditions it covers.
+        axis_anchor = go.Heatmap(
+            z=[[0] * len(x) for _ in y], x=x, y=y,
+            opacity=0, showscale=False, hoverinfo='skip',
+        )
+        fig = go.Figure(data=[
+            axis_anchor,
+            go.Heatmap(z=z, x=x, y=y, hoverongaps=False, **heatmap_kwargs),
+        ])
         # Size scales with row/column count, bounded for sane PDFs.
         height = max(300, min(1200, 40 * len(y) + 120))
         width = max(500, min(1400, 120 * len(x) + 260))
@@ -370,8 +419,11 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
     is_gsea = batch_method(batch) == 'gsea'
     comparison_caption = (
         'Normalised enrichment score (NES, signed) of each Key Event across '
-        'conditions. Red is a coordinated up-shift, blue a down-shift; the table '
-        'below carries the same NES values.'
+        'conditions. Red is a coordinated up-shift, blue a down-shift. The '
+        'heatmap colours only Key Events reaching FDR &lt; '
+        f'{Config.SIGNIFICANCE_FDR_CUTOFF} — above that cutoff the sign of NES '
+        'is not stable, so colouring it would show noise as direction (#107). '
+        'The table below carries every NES value, significant or not.'
         if is_gsea else
         'Significance (-log10 FDR) of each Key Event across conditions.'
     )
@@ -575,7 +627,11 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
     is_gsea = batch_method(batch) == 'gsea'
     story.append(Paragraph('Cross-Condition Comparison', heading_style))
     story.append(Paragraph(
-        'Normalised enrichment score (NES, signed) per Key Event across conditions.'
+        'Normalised enrichment score (NES, signed) per Key Event across '
+        'conditions. The heatmap colours only Key Events reaching FDR &lt; '
+        f'{Config.SIGNIFICANCE_FDR_CUTOFF}; above that cutoff the sign of NES is '
+        'not stable, so colouring it would show noise as direction (#107). The '
+        'table below carries every NES value, significant or not.'
         if is_gsea else
         'Significance (-log10 FDR) per Key Event across conditions.',
         normal_style,

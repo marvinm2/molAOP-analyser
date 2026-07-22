@@ -2814,6 +2814,10 @@ def batch_compare(batch_uuid_str):
             batch_method=batch_method,
             comparison_data_json=comparison_data_json,
             network_json=json.dumps(first_network) if first_network else 'null',
+            # Issue #107: the page masks the NES heatmap at the significance
+            # cutoff, which must be the one cutoff the rest of the app uses
+            # (#63) rather than a literal repeated through the script.
+            fdr_cutoff=Config.SIGNIFICANCE_FDR_CUTOFF,
         )
     finally:
         session_db.close()

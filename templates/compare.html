@@ -109,6 +109,16 @@
     <!-- Heatmap panel (default visible) -->
     <div id="tab-heatmap" class="compare-tab-panel compare-tab-panel--active">
       <div id="heatmap-div" style="width:100%;min-height:400px;"></div>
+      {# Issue #107: the NES heatmap colours only significant cells, so say so —
+         a blank cell means "direction not supported here", not "no result". #}
+      {% if batch_method == 'gsea' %}
+      <p class="compare-genes-note">
+        Colour shows the normalised enrichment score (NES) for Key Events reaching
+        FDR &lt; {{ fdr_cutoff }}. Cells above that cutoff are left blank: their NES sign is
+        not stable, so colouring them would show noise as direction. Every value,
+        significant or not, is in the Table tab and in the exports.
+      </p>
+      {% endif %}
     </div>
 
     <!-- Table panel -->
@@ -117,8 +127,9 @@
       <p class="compare-genes-note">
         {% if batch_method == 'gsea' %}
           Cells show the normalised enrichment score (NES, signed) with the permutation
-          FDR beneath it. Shading marks FDR &lt; 0.05; an unshaded but consistently
-          signed NES across conditions is still a coordinated shift.
+          FDR beneath it. Shading marks FDR &lt; {{ fdr_cutoff }}; an unshaded but consistently
+          signed NES across conditions is still a coordinated shift, which is why the
+          value is greyed rather than hidden (#107).
         {% else %}
           Cells show the Benjamini&ndash;Hochberg FDR from Fisher's exact test.
           Shading marks FDR &lt; 0.05.
@@ -217,6 +228,47 @@
   // ORA FDR columns. Matrices produced before #76 carry no 'method' key, which
   // reads as ORA — the behaviour those batches were rendered with.
   const isGsea = comparisonData && comparisonData.method === 'gsea';
+
+  // Issue #63's single notion of significance, supplied by the route (#107).
+  const FDR_CUTOFF = {{ fdr_cutoff | default(0.05) | tojson }};
+
+  /**
+   * Is this cell significant at the active cutoff? (#107)
+   *
+   * @param {number|null|undefined} fdr - FDR for the cell, or null/undefined
+   *   when the KE was not tested in that condition.
+   * @returns {boolean} false for an untested cell — absent is not significant.
+   */
+  function isSignificantFdr(fdr) {
+    return fdr !== null && fdr !== undefined && fdr < FDR_CUTOFF;
+  }
+
+  /**
+   * NES matrix with non-significant cells blanked (#107).
+   *
+   * On the diverging NES scale, colour encodes direction. For a cell nowhere
+   * near significance the sign of NES is not a stable quantity: comparing a
+   * harmonised batch run against the same conditions run singly, four of six
+   * KEs for cisplatin 72h flipped sign (KE 1392 +1.16 vs -0.75, KE 149 +0.66
+   * vs -0.61, KE 1825 +1.09 vs -0.81, KE 177 +1.06 vs -0.61), every one with
+   * FDR >= 0.48. That is ordinary background sensitivity, not
+   * non-determinism — but on the heatmap those cells swung from saturated blue
+   * to saturated red between two legitimate ways of running the same
+   * comparison. Blanking them means colour shows direction only where
+   * direction is supported; the numbers stay in the table and in the exports.
+   *
+   * @returns {Array<Array<number|null>>}
+   */
+  function maskedNesMatrix() {
+    const nes = comparisonData.nes_matrix || [];
+    const fdr = comparisonData.fdr_matrix || [];
+    return nes.map(function (row, ke) {
+      return row.map(function (value, col) {
+        const cellFdr = fdr[ke] ? fdr[ke][col] : null;
+        return isSignificantFdr(cellFdr) ? value : null;
+      });
+    });
+  }
 
   /**
    * The matrix the heatmap, delta mode and the trend arrows are driven from.
@@ -542,7 +594,9 @@
       // GSEA (#76): colour on the signed NES with a diverging scale centred at
       // zero, so a coordinated upward shift and a downward one are not both
       // rendered as "significant". Server clamps NES to +/-3; match that here.
-      zData   = comparisonData.nes_matrix;
+      // #107: only cells at or below the FDR cutoff are coloured — see
+      // maskedNesMatrix() for why an unstable sign must not read as direction.
+      zData   = maskedNesMatrix();
       xLabels = comparisonData.condition_labels;
       colorscale = 'RdBu';
       reversescale = true; // red = positive NES (coordinated up-regulation)
@@ -638,7 +692,25 @@
       modeBarButtonsToRemove: ['lasso2d', 'select2d']
     };
 
-    return { trace: trace, layout: layout, config: config };
+    // #107: the significance mask can blank every cell, and a batch where
+    // nothing reaches the cutoff is an ordinary result, not an error. Plotly
+    // infers its axes from the data it is given, so an all-null z produces a
+    // figure with no tick labels at all — a featureless grey box that says
+    // nothing about which Key Events and conditions it covers. A fully
+    // transparent companion trace over the same categories anchors the axes
+    // without drawing anything, so a blank heatmap reads as "nothing
+    // significant here" while every axis behaviour above stays untouched.
+    var axisAnchor = {
+      type: 'heatmap',
+      z: zData.map(function (row) { return row.map(function () { return 0; }); }),
+      x: xLabels,
+      y: comparisonData.ke_titles,
+      opacity: 0,
+      showscale: false,
+      hoverinfo: 'skip'
+    };
+
+    return { trace: trace, axisAnchor: axisAnchor, layout: layout, config: config };
   }
 
   /**
@@ -652,11 +724,11 @@
     var hd = buildHeatmapData(mode, refIndex);
     if (!heatmapInitialised) {
       // Initial render — create the Plotly figure from scratch.
-      Plotly.newPlot('heatmap-div', [hd.trace], hd.layout, hd.config);
+      Plotly.newPlot('heatmap-div', [hd.axisAnchor, hd.trace], hd.layout, hd.config);
       heatmapInitialised = true;
     } else {
       // Subsequent updates — efficiently patch the existing figure without full re-create.
-      Plotly.react('heatmap-div', [hd.trace], hd.layout);
+      Plotly.react('heatmap-div', [hd.axisAnchor, hd.trace], hd.layout);
     }
   }
 
@@ -745,12 +817,19 @@
           } else {
             var fdrText = (fdrVal === null || fdrVal === undefined)
               ? 'n/a' : fdrVal.toExponential(2);
-            displayVal = (nesVal >= 0 ? '+' : '') + nesVal.toFixed(2)
+            isSig = isSignificantFdr(fdrVal);
+            // #107: grey the NES where the heatmap blanks it, so the table and
+            // the heatmap make the same claim about which signs are supported.
+            // The value itself stays readable — de-emphasised, not hidden.
+            var nesText = (nesVal >= 0 ? '+' : '') + nesVal.toFixed(2);
+            displayVal = (isSig ? nesText
+                          : '<span style="color:#999;" title="FDR &ge; '
+                            + FDR_CUTOFF + ' — the sign of NES is not supported here">'
+                            + nesText + '</span>')
               + '<span style="color:#777;font-size:11px;"> q=' + fdrText + '</span>';
             // Sort on NES descending-friendly magnitude; keep raw NES so the
             // column sorts by direction as displayed.
             sortVal = String(nesVal);
-            isSig = (fdrVal !== null && fdrVal !== undefined && fdrVal < 0.05);
           }
         } else if (mode === 'absolute') {
           if (fdrVal === null || fdrVal === undefined) {
