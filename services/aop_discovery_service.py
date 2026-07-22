@@ -17,7 +17,13 @@ Each AOP entry has the shape::
         "title":          "Some title",
         "ke_count":       12,
         "mapped_ke_count": 4,
+        "mapped_ke_by_resource": {"WikiPathways": 4, "GO_BP": 1, "Reactome": 0},
     }
+
+``mapped_ke_count`` is the number of KEs with a gene set in *any* resource —
+the union, not the WikiPathways count (issue #105) — and
+``mapped_ke_by_resource`` breaks that down. Note the union is generally smaller
+than the sum: one KE often carries mappings in several resources.
 
 Mapped AOPs (mapped_ke_count > 0) are sorted first by mapped_ke_count descending;
 unmapped AOPs follow sorted by aop_id.
@@ -32,8 +38,16 @@ from SPARQLWrapper import JSON, SPARQLWrapper
 
 logger = logging.getLogger(__name__)
 
-# Disk-cache key for the full AOP list.
-AOP_LIST_CACHE_KEY = "aop_discovery_list_v1"
+# Disk-cache key for the full AOP list. Bumped to v2 with issue #105: the
+# meaning of mapped_ke_count changed (WikiPathways-only -> union across
+# resources) and the TTL is a week, so a v1 entry would keep serving the old,
+# under-reported counts long after the deploy.
+AOP_LIST_CACHE_KEY = "aop_discovery_list_v2"
+
+# Gene-set resources whose KE mappings count towards a KE being "mapped".
+# Mirrors app.VALID_RESOURCES — the resources an analysis can actually be run
+# with — and is defined here to keep this service free of an app-level import.
+MAPPING_RESOURCES = ("WikiPathways", "GO_BP", "Reactome")
 
 # 1-week TTL in seconds
 AOP_LIST_CACHE_TTL = 7 * 24 * 3600
@@ -206,11 +220,14 @@ WHERE {
 # ---------------------------------------------------------------------------
 
 def fetch_mapped_ke_ids_from_builder(config) -> Set[str]:
-    """Fetch all KE IDs that have Builder API gene-set mappings.
+    """Fetch the KE IDs that have a Builder WikiPathways gene-set mapping.
 
     Uses the existing ``api_service._make_api_session`` and
     ``api_service.fetch_all_ke_wp_mappings`` to retrieve all KE-WP
     mapping records, then extracts and normalises the KE IDs.
+
+    This covers WikiPathways only; :func:`fetch_mapped_ke_ids_by_resource` is
+    the function that answers "which KEs have a gene set at all" (issue #105).
 
     If ``config.BUILDER_API_URL`` is empty, returns an empty set
     (graceful degradation — all AOPs will appear unmapped).
@@ -256,6 +273,61 @@ def fetch_mapped_ke_ids_from_builder(config) -> Set[str]:
     except Exception as exc:
         logger.warning("Builder API fetch for mapped KEs failed: %s", exc)
         return set()
+
+
+def fetch_mapped_ke_ids_by_resource(config) -> Dict[str, Set[str]]:
+    """Fetch mapped KE IDs per gene-set resource (issue #105).
+
+    The picker's coverage figure used to come from
+    :func:`fetch_mapped_ke_ids_from_builder` alone, which is the WikiPathways
+    mapping endpoint. GO Biological Process and Reactome mappings were never
+    consulted, so a Key Event carrying only a GO term counted as unmapped — on
+    AOP:472 that hid KE:1097 (``GO:0097300``) and the picker read "6/9" for an
+    AOP with seven mapped KEs. Worse, an AOP mapped *only* through GO and/or
+    Reactome scored zero and was filtered out of the picker's mapped list
+    entirely, though it would analyse perfectly well.
+
+    GO and Reactome gene sets are resolved Builder-side and served as GMT
+    exports, so their KE IDs are simply the keys of the parsed export — the
+    same call the analysis itself uses (``api_service.fetch_gmt_reference_sets``).
+
+    Each resource is fetched independently and a failure degrades that resource
+    to an empty set: a Reactome outage must not erase WikiPathways coverage.
+
+    Args:
+        config: Application config object (``BUILDER_API_URL``,
+                ``BUILDER_API_TIMEOUT``).
+
+    Returns:
+        ``{resource: {KE IDs}}`` for every resource in ``MAPPING_RESOURCES``,
+        always with all keys present (empty sets where nothing resolved).
+    """
+    by_resource: Dict[str, Set[str]] = {r: set() for r in MAPPING_RESOURCES}
+    by_resource["WikiPathways"] = fetch_mapped_ke_ids_from_builder(config)
+
+    if not config.BUILDER_API_URL:
+        return by_resource
+
+    from services.api_service import fetch_gmt_reference_sets
+
+    for resource in MAPPING_RESOURCES:
+        if resource == "WikiPathways":
+            continue
+        try:
+            by_resource[resource] = set(fetch_gmt_reference_sets(config, resource))
+            logger.info(
+                "Builder GMT export: %d mapped KE IDs for %s",
+                len(by_resource[resource]),
+                resource,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Builder GMT fetch for %s failed (%s); its coverage will read 0",
+                resource,
+                exc,
+            )
+
+    return by_resource
 
 
 def fetch_aops_from_builder(config) -> List[Dict]:
@@ -326,8 +398,8 @@ def build_aop_list(config) -> List[Dict]:
     """Build the complete AOP list with mapping coverage annotations.
 
     Fetches AOPs and KE membership from SPARQL and mapped KE IDs from
-    the Builder API in parallel, then cross-references to compute
-    ``mapped_ke_count`` for each AOP.
+    the Builder (all three gene-set resources) in parallel, then
+    cross-references to compute ``mapped_ke_count`` for each AOP.
 
     Sorting:
         - Mapped AOPs (``mapped_ke_count > 0``) first, sorted by
@@ -339,7 +411,8 @@ def build_aop_list(config) -> List[Dict]:
 
     Returns:
         List of AOP dicts with keys ``aop_id``, ``title``, ``ke_count``,
-        ``mapped_ke_count``.
+        ``mapped_ke_count`` (union across resources) and
+        ``mapped_ke_by_resource``.
 
     Raises:
         Exception: If the SPARQL fetch fails (Builder API failure is
@@ -348,12 +421,12 @@ def build_aop_list(config) -> List[Dict]:
     # Fetch SPARQL data and Builder API data in parallel
     aops: List[Dict] = []
     ke_to_aop: Dict[str, List[str]] = {}
-    mapped_ke_ids: Set[str] = set()
+    mapped_by_resource: Dict[str, Set[str]] = {r: set() for r in MAPPING_RESOURCES}
 
     with ThreadPoolExecutor(max_workers=3) as executor:
         future_aops = executor.submit(fetch_all_aops_from_sparql)
         future_ke_map = executor.submit(_build_ke_to_aop_map)
-        future_builder = executor.submit(fetch_mapped_ke_ids_from_builder, config)
+        future_builder = executor.submit(fetch_mapped_ke_ids_by_resource, config)
 
         for future in as_completed([future_aops, future_ke_map, future_builder]):
             if future is future_aops:
@@ -365,20 +438,34 @@ def build_aop_list(config) -> List[Dict]:
                     logger.warning("KE->AOP map fetch failed: %s", exc)
             else:
                 try:
-                    mapped_ke_ids = future.result()
+                    mapped_by_resource = future.result()
                 except Exception as exc:
                     logger.warning("Builder API fetch failed: %s", exc)
 
-    # Build AOP -> mapped KE count index from the KE->AOP membership map
-    aop_to_mapped_count: Dict[str, int] = {}
-    for ke_id, aop_ids in ke_to_aop.items():
-        if ke_id in mapped_ke_ids:
-            for aop_id in aop_ids:
-                aop_to_mapped_count[aop_id] = aop_to_mapped_count.get(aop_id, 0) + 1
+    # A KE counts as mapped if ANY resource has a gene set for it (#105).
+    mapped_ke_ids: Set[str] = set().union(*mapped_by_resource.values())
 
-    # Annotate each AOP with its mapped KE count
+    # Build AOP -> mapped KE counts from the KE->AOP membership map: the union
+    # count that drives the picker, plus the per-resource breakdown behind it.
+    aop_to_mapped_count: Dict[str, int] = {}
+    aop_to_resource_counts: Dict[str, Dict[str, int]] = {}
+    for ke_id, aop_ids in ke_to_aop.items():
+        for aop_id in aop_ids:
+            if ke_id in mapped_ke_ids:
+                aop_to_mapped_count[aop_id] = aop_to_mapped_count.get(aop_id, 0) + 1
+            counts = aop_to_resource_counts.setdefault(
+                aop_id, {r: 0 for r in MAPPING_RESOURCES}
+            )
+            for resource, ke_ids in mapped_by_resource.items():
+                if ke_id in ke_ids:
+                    counts[resource] += 1
+
+    # Annotate each AOP with its mapped KE counts
     for aop in aops:
         aop["mapped_ke_count"] = aop_to_mapped_count.get(aop["aop_id"], 0)
+        aop["mapped_ke_by_resource"] = aop_to_resource_counts.get(
+            aop["aop_id"], {r: 0 for r in MAPPING_RESOURCES}
+        )
 
     # Merge in configured AOPs from Config that are absent from SPARQL results
     from config import Config  # local import to avoid circular deps
@@ -404,7 +491,9 @@ def build_aop_list(config) -> List[Dict]:
                 "title": entry.get("label", aop_id),
                 "ke_count": ke_count,
                 # Treat configured AOPs as fully mapped so the typeahead shows
-                # them on focus with a meaningful "N/N KEs mapped" badge.
+                # them on focus with a meaningful "N/N" coverage badge. No
+                # per-resource breakdown is claimed for them — the number is a
+                # placeholder, not a measurement, so the tooltip stays absent.
                 "mapped_ke_count": ke_count or 1,
             })
             logger.info("Merged configured AOP %s into discovery list (%d KEs)", aop_id, ke_count)

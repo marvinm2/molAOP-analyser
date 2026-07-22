@@ -701,9 +701,34 @@ document.getElementById('btn-cancel-batch').addEventListener('click', function()
 
     var debounceTimer;
 
+    // Human-readable resource names for the coverage breakdown (#105).
+    var RESOURCE_LABELS = [
+        ['WikiPathways', 'WikiPathways'],
+        ['GO_BP', 'GO BP'],
+        ['Reactome', 'Reactome']
+    ];
+
+    /**
+     * Describe which resources contribute an AOP's KE coverage (#105).
+     * Empty string when the entry carries no breakdown (Builder-only and
+     * configured-AOP tiers), where per-resource numbers would be invented.
+     */
+    function coverageBreakdown(aop) {
+        var counts = aop.mapped_ke_by_resource;
+        if (!counts) return '';
+        return RESOURCE_LABELS
+            .filter(function (pair) { return counts[pair[0]] !== undefined; })
+            .map(function (pair) { return pair[1] + ' ' + counts[pair[0]]; })
+            .join(', ');
+    }
+
+    // #105: the coverage figure counts KEs with a gene set in any resource
+    // (WikiPathways, GO BP, Reactome), not WikiPathways alone — and says
+    // "have gene sets", not "mapped" and not "testable": no dataset has been
+    // uploaded yet, so nothing here knows which of a KE's genes were measured.
     function formatLabel(aop) {
         var mappedInfo = aop.mapped_ke_count > 0
-            ? ' -- ' + aop.mapped_ke_count + '/' + aop.ke_count + ' KEs mapped'
+            ? ' -- ' + aop.mapped_ke_count + '/' + aop.ke_count + ' KEs have gene sets'
             : '';
         return aop.aop_id + ': ' + aop.title + ' (' + aop.ke_count + ' KEs' + mappedInfo + ')';
     }
@@ -735,7 +760,11 @@ document.getElementById('btn-cancel-batch').addEventListener('click', function()
             if (aop.mapped_ke_count > 0) {
                 var info = document.createElement('span');
                 info.className = 'mapped-info';
-                info.textContent = ' -- ' + aop.mapped_ke_count + '/' + aop.ke_count + ' KEs mapped';
+                info.textContent = ' -- ' + aop.mapped_ke_count + '/' + aop.ke_count + ' KEs have gene sets';
+                var breakdown = coverageBreakdown(aop);
+                if (breakdown) {
+                    info.title = 'Key Events with gene sets, by resource: ' + breakdown;
+                }
                 li.appendChild(info);
             }
 

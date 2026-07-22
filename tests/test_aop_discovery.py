@@ -150,6 +150,136 @@ class TestFetchMappedKeIds:
         assert "KE:709" in result
 
 
+class TestFetchMappedKeIdsByResource:
+    """Issue #105: coverage must count GO BP and Reactome, not WikiPathways alone."""
+
+    def _patch_builder(self, wp_ids, gmt_sets):
+        """Patch both Builder fetch paths.
+
+        Args:
+            wp_ids: KE IDs the WikiPathways mapping endpoint reports.
+            gmt_sets: {resource: reference-set dict or Exception to raise}.
+        """
+        import services.api_service as api_svc
+        from services import aop_discovery_service as svc
+
+        def _fake_gmt(config, resource):
+            value = gmt_sets[resource]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        return (
+            patch.object(svc, "fetch_mapped_ke_ids_from_builder", return_value=set(wp_ids)),
+            patch.object(api_svc, "fetch_gmt_reference_sets", side_effect=_fake_gmt),
+        )
+
+    def test_go_and_reactome_ke_ids_are_included(self):
+        """A KE mapped only through GO must appear — the AOP:472 / KE:1097 case."""
+        from services.aop_discovery_service import fetch_mapped_ke_ids_by_resource
+
+        config = _make_config(builder_url="https://builder.example.com")
+        p1, p2 = self._patch_builder(
+            wp_ids={"KE:1194", "KE:177"},
+            gmt_sets={"GO_BP": {"KE:1097": {"TP53"}}, "Reactome": {"KE:177": {"MYC"}}},
+        )
+        with p1, p2:
+            result = fetch_mapped_ke_ids_by_resource(config)
+
+        assert result["WikiPathways"] == {"KE:1194", "KE:177"}
+        assert result["GO_BP"] == {"KE:1097"}
+        assert result["Reactome"] == {"KE:177"}
+
+    def test_one_failing_resource_does_not_erase_the_others(self):
+        """A Reactome outage must not cost WikiPathways its coverage."""
+        from services.aop_discovery_service import fetch_mapped_ke_ids_by_resource
+
+        config = _make_config(builder_url="https://builder.example.com")
+        p1, p2 = self._patch_builder(
+            wp_ids={"KE:55"},
+            gmt_sets={"GO_BP": {"KE:99": {"EGFR"}}, "Reactome": RuntimeError("HTTP 502")},
+        )
+        with p1, p2:
+            result = fetch_mapped_ke_ids_by_resource(config)
+
+        assert result["WikiPathways"] == {"KE:55"}
+        assert result["GO_BP"] == {"KE:99"}
+        assert result["Reactome"] == set()
+
+    def test_empty_url_returns_all_resources_empty(self):
+        """No Builder configured: every resource is present and empty."""
+        from services.aop_discovery_service import (
+            MAPPING_RESOURCES,
+            fetch_mapped_ke_ids_by_resource,
+        )
+
+        result = fetch_mapped_ke_ids_by_resource(_make_config(builder_url=""))
+
+        assert set(result) == set(MAPPING_RESOURCES)
+        assert all(v == set() for v in result.values())
+
+
+class TestBuildAopListCoverage:
+    """Issue #105: mapped_ke_count is the union across resources."""
+
+    def _build(self, mapped_by_resource):
+        """Run build_aop_list over a fixed two-AOP world."""
+        from services import aop_discovery_service as svc
+
+        aops = [
+            {"aop_id": "AOP:472", "title": "DNA adducts", "ke_count": 3},
+            {"aop_id": "AOP:900", "title": "GO-only AOP", "ke_count": 1},
+        ]
+        ke_to_aop = {
+            "KE:1194": ["AOP:472"],
+            "KE:1097": ["AOP:472"],
+            "KE:999": ["AOP:472"],
+            "KE:777": ["AOP:900"],
+        }
+        with patch.object(svc, "fetch_all_aops_from_sparql", return_value=aops), \
+             patch.object(svc, "_build_ke_to_aop_map", return_value=ke_to_aop), \
+             patch.object(svc, "fetch_mapped_ke_ids_by_resource",
+                          return_value=mapped_by_resource):
+            built = svc.build_aop_list(_make_config(builder_url="https://b.example"))
+        return {a["aop_id"]: a for a in built}
+
+    def test_union_counts_a_go_only_ke(self):
+        """KE:1097 carries only a GO term but still counts as covered."""
+        by_id = self._build({
+            "WikiPathways": {"KE:1194"},
+            "GO_BP": {"KE:1097"},
+            "Reactome": set(),
+        })
+
+        assert by_id["AOP:472"]["mapped_ke_count"] == 2
+        assert by_id["AOP:472"]["mapped_ke_by_resource"] == {
+            "WikiPathways": 1, "GO_BP": 1, "Reactome": 0
+        }
+
+    def test_ke_mapped_in_several_resources_counts_once(self):
+        """The headline number is a union, not a sum."""
+        by_id = self._build({
+            "WikiPathways": {"KE:1194"},
+            "GO_BP": {"KE:1194"},
+            "Reactome": {"KE:1194"},
+        })
+
+        assert by_id["AOP:472"]["mapped_ke_count"] == 1
+        assert by_id["AOP:472"]["mapped_ke_by_resource"] == {
+            "WikiPathways": 1, "GO_BP": 1, "Reactome": 1
+        }
+
+    def test_go_only_aop_is_not_treated_as_unmapped(self):
+        """An AOP mapped only via GO used to score 0 and be filtered out of the picker."""
+        by_id = self._build({
+            "WikiPathways": set(),
+            "GO_BP": {"KE:777"},
+            "Reactome": set(),
+        })
+
+        assert by_id["AOP:900"]["mapped_ke_count"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Integration: three-tier fallback
 # ---------------------------------------------------------------------------
