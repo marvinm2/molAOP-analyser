@@ -43,15 +43,42 @@ _KE_TYPE_COLORS = {
 }
 
 
+def batch_method(batch) -> str:
+    """Return the enrichment method a batch was run with ('ora' or 'gsea').
+
+    Issue #76. Reads ``BatchRecord.effective_method()`` where available so a
+    batch created before the method column existed reads as ORA, and tolerates
+    plain stand-in objects that only carry a ``method`` attribute.
+
+    Args:
+        batch: BatchRecord (or any object exposing ``effective_method`` or
+            ``method``).
+
+    Returns:
+        str: 'gsea' when the batch was run with GSEA, otherwise 'ora'.
+    """
+    getter = getattr(batch, 'effective_method', None)
+    if callable(getter):
+        try:
+            return getter() or 'ora'
+        except Exception:  # pragma: no cover — provenance must never break a report
+            pass
+    return (getattr(batch, 'method', None) or 'ora')
+
+
 def render_heatmap_png(comparison_data: dict) -> Optional[bytes]:
     """Render the cross-condition comparison heatmap as PNG bytes.
 
-    Uses the -log10(FDR) matrix with the same yellow→red colourscale as the
-    interactive compare page. Returns None on any failure (missing data,
-    plotly/kaleido unavailable).
+    Mirrors the interactive compare page: the -log10(FDR) matrix on a
+    yellow→red scale for an ORA batch, and the signed NES on a diverging
+    red/blue scale clamped to ±3 for a GSEA batch (issue #76), so the printed
+    heatmap shows the same quantity the screen does. Returns None on any
+    failure (missing data, plotly/kaleido unavailable).
 
     Args:
-        comparison_data: Dict from build_comparison_matrix.
+        comparison_data: Dict from build_comparison_matrix. Its ``method`` key
+            selects the matrix; a matrix dict written before #76 has no such
+            key and renders as ORA.
 
     Returns:
         PNG bytes, or None if rendering is not possible.
@@ -61,18 +88,32 @@ def render_heatmap_png(comparison_data: dict) -> Optional[bytes]:
     try:
         import plotly.graph_objects as go
 
-        z = comparison_data['neg_log10_matrix']
+        is_gsea = comparison_data.get('method') == 'gsea'
         x = comparison_data['condition_labels']
         y = comparison_data['ke_titles']
 
+        if is_gsea:
+            z = comparison_data.get('nes_matrix') or comparison_data['neg_log10_matrix']
+            heatmap_kwargs = dict(
+                colorscale='RdBu',
+                reversescale=True,  # red = positive NES (coordinated up-shift)
+                zmin=-3, zmax=3, zmid=0,
+                colorbar=dict(title='NES'),
+            )
+        else:
+            z = comparison_data['neg_log10_matrix']
+            heatmap_kwargs = dict(
+                colorscale=[
+                    [0, '#ffffcc'], [0.25, '#feb24c'], [0.5, '#fd8d3c'],
+                    [0.75, '#e31a1c'], [1, '#800026'],
+                ],
+                colorbar=dict(title='-log10(FDR)'),
+            )
+
         fig = go.Figure(data=go.Heatmap(
             z=z, x=x, y=y,
-            colorscale=[
-                [0, '#ffffcc'], [0.25, '#feb24c'], [0.5, '#fd8d3c'],
-                [0.75, '#e31a1c'], [1, '#800026'],
-            ],
-            colorbar=dict(title='-log10(FDR)'),
             hoverongaps=False,
+            **heatmap_kwargs,
         ))
         # Size scales with row/column count, bounded for sane PDFs.
         height = max(300, min(1200, 40 * len(y) + 120))
@@ -230,9 +271,13 @@ def _batch_resource_warnings(batch) -> List[str]:
 def _batch_meta_rows(batch, conditions, comparison_data) -> List[tuple]:
     """Build (label, value) rows describing the batch for the report header."""
     completed = batch.completed_at.strftime('%Y-%m-%d %H:%M') if batch.completed_at else 'N/A'
+    is_gsea = batch_method(batch) == 'gsea'
     return [
         ('AOP', f'{batch.aop_label or ""} ({batch.aop_id or "N/A"})'),
         ('Conditions', str(len(conditions))),
+        # Issue #76: which statistic every number in this report came from.
+        ('Statistical Method',
+         'GSEA (rank-based)' if is_gsea else "Fisher's exact (over-representation)"),
         ('Gene Set Resources (requested)', batch.selected_resources or 'WikiPathways'),
         # Issue #68: what the resources actually resolved to. The requested list
         # cannot show a resource that was skipped or served from bundled files.
@@ -240,8 +285,16 @@ def _batch_meta_rows(batch, conditions, comparison_data) -> List[tuple]:
         # Issue #60: the mapping-confidence threshold the gene sets were built at.
         ('Min. Mapping Confidence',
          MIN_CONFIDENCE_LABELS.get(getattr(batch, 'min_confidence', None) or 'all', 'All mappings')),
-        ('Log2FC Threshold', str(batch.logfc_threshold)),
-        ('P-value Cutoff', str(batch.pval_cutoff)),
+        # Issue #76: under GSEA these thresholds do not enter the enrichment
+        # statistic — they only define the per-condition significant-gene counts
+        # and the driver genes on the comparison page. Say so rather than let
+        # them read as the test's cutoffs.
+        ('Log2FC Threshold',
+         f'{batch.logfc_threshold} (gene counts only; GSEA ranks all genes)'
+         if is_gsea else str(batch.logfc_threshold)),
+        ('P-value Cutoff',
+         f'{batch.pval_cutoff} (gene counts only; GSEA ranks all genes)'
+         if is_gsea else str(batch.pval_cutoff)),
         ('Harmonised Background', f'{batch.harmonised_gene_count or 0:,} genes'),
         ('Owner', batch.owner or 'N/A'),
         ('Completed', completed),
@@ -290,8 +343,16 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
     else:
         heatmap_html = '<p class="note">Heatmap image unavailable.</p>'
 
-    # Comparison matrix table (FDR, top 30 KEs).
-    df = comparison_matrix_to_dataframe(comparison_data, which='fdr')
+    # Comparison matrix table — NES for a GSEA batch, FDR otherwise (#76).
+    is_gsea = batch_method(batch) == 'gsea'
+    comparison_caption = (
+        'Normalised enrichment score (NES, signed) of each Key Event across '
+        'conditions. Red is a coordinated up-shift, blue a down-shift; the table '
+        'below carries the same NES values.'
+        if is_gsea else
+        'Significance (-log10 FDR) of each Key Event across conditions.'
+    )
+    df = comparison_matrix_to_dataframe(comparison_data, which='nes' if is_gsea else 'fdr')
     if not df.empty:
         comp_table_html = df.head(30).to_html(index=False, na_rep='', border=0,
                                               classes='enrichment-table')
@@ -369,7 +430,7 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
         </section>
         <section class="comparison-section">
             <h2>Cross-Condition Comparison</h2>
-            <p class="section-description">Significance (-log10 FDR) of each Key Event across conditions.</p>
+            <p class="section-description">{comparison_caption}</p>
             {heatmap_html}
             <div class="table-container">{comp_table_html}</div>
         </section>
@@ -403,7 +464,10 @@ def _condition_report_data(batch, cond, enrichment: List[Dict]) -> ReportData:
         pval_column=batch.pval_column or '',
         id_type='symbol',
         enrichment_results=enrichment,
-        method='ora',
+        # Issue #76: the per-condition table is rendered from this, and reading
+        # a GSEA row through the ORA columns prints 0 overlap / 0.00 odds ratio
+        # and drops NES and the leading-edge genes.
+        method=batch_method(batch),
         selected_resources=batch.selected_resources or 'WikiPathways',
         min_confidence=getattr(batch, 'min_confidence', None) or 'all',  # Issue #60
     )
@@ -480,7 +544,14 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
     story.append(Spacer(1, 20))
 
     # Comparison heatmap.
+    is_gsea = batch_method(batch) == 'gsea'
     story.append(Paragraph('Cross-Condition Comparison', heading_style))
+    story.append(Paragraph(
+        'Normalised enrichment score (NES, signed) per Key Event across conditions.'
+        if is_gsea else
+        'Significance (-log10 FDR) per Key Event across conditions.',
+        normal_style,
+    ))
     heatmap_png = render_heatmap_png(comparison_data)
     if heatmap_png:
         try:
@@ -498,15 +569,19 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
         story.append(Paragraph('Heatmap image unavailable.', normal_style))
     story.append(Spacer(1, 16))
 
-    # Comparison matrix table (FDR, top 25).
-    df = comparison_matrix_to_dataframe(comparison_data, which='fdr')
+    # Comparison matrix table — NES for a GSEA batch, FDR otherwise (#76).
+    df = comparison_matrix_to_dataframe(comparison_data, which='nes' if is_gsea else 'fdr')
     if not df.empty:
         df = df.head(25)
-        # Format floats compactly; blank for NaN.
+        # Format floats compactly; blank for NaN. NES is a small signed number,
+        # so it is printed with its sign at fixed precision rather than through
+        # the FDR formatter, which would render -1.8 in scientific notation.
         def _fmt(v):
             if v is None or (isinstance(v, float) and v != v):
                 return ''
             if isinstance(v, float):
+                if is_gsea:
+                    return f'{v:+.2f}'
                 return f'{v:.2e}' if v < 0.001 else f'{v:.4f}'
             return str(v)
         header = list(df.columns)
@@ -551,7 +626,11 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
         story.append(Spacer(1, 8))
 
         if enrichment:
-            table = report_generator.build_enrichment_table_flowable(enrichment, is_gsea=False, max_rows=15)
+            # Issue #76: GSEA rows have no odds_ratio / num_overlap / Direction,
+            # so the ORA columns printed zeros and dropped NES and lead genes.
+            table = report_generator.build_enrichment_table_flowable(
+                enrichment, is_gsea=is_gsea, max_rows=15
+            )
             if table is not None:
                 story.append(table)
         else:

@@ -264,6 +264,12 @@ def _run_condition(
     Loads the file, applies the harmonised background filter, runs enrichment
     and network building, stores results on the ConditionRecord, and commits.
 
+    The enrichment backend is chosen by the parent batch's method (issue #76):
+    ``'ora'`` runs Fisher's exact over the thresholded gene list, ``'gsea'``
+    runs the rank-based backend over every measured gene. The choice is
+    batch-level, so every condition is scored the same way and the comparison
+    matrix stays internally consistent.
+
     Args:
         cond: ConditionRecord ORM object to process.
         batch: Parent BatchRecord (provides shared parameters).
@@ -281,10 +287,13 @@ def _run_condition(
     """
     from services.data_service import load_and_validate_data, process_gene_expression
     from services.enrichment_service import (
-        run_enrichment_analysis, build_ke_gene_mapping, get_ke_summary,
+        run_enrichment, build_ke_gene_mapping, get_ke_summary,
         assess_background_overlap,
     )
     from services.network_service import build_cytoscape_network
+
+    # Issue #76: NULL method (batch created before the column existed) is ORA.
+    method = batch.effective_method()
 
     cond.status = 'running'
     cond.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -314,14 +323,20 @@ def _run_condition(
     total_genes = len(df_filtered)
     significant_genes = int(df_filtered['significant'].sum())
 
-    # Run enrichment on the harmonised/filtered data. Issue #81: the reference
-    # sets carry the KE -> unresolvable-pathway map (helpers.ReferenceSets), so
-    # a Key Event whose curated pathway could not be resolved to genes is
-    # reported as that, not as one nobody has mapped. run_batch is handed only
-    # the gene sets, which is precisely why the map travels on them.
+    # Run enrichment on the harmonised/filtered data, dispatching to Fisher
+    # (ORA) or GSEA per the batch-level method (#76). GSEA ranks the whole
+    # filtered table, so the harmonised background still bounds it identically
+    # across conditions — which is what makes the comparison legitimate.
+    #
+    # Issue #81: the reference sets carry the KE -> unresolvable-pathway map
+    # (helpers.ReferenceSets), so a Key Event whose curated pathway could not
+    # be resolved to genes is reported as that, not as one nobody has mapped.
+    # run_batch is handed only the gene sets, which is precisely why the map
+    # travels on them. Both backends accept the hint, so the exclusion
+    # accounting reads identically whichever method the batch used.
     from helpers import unresolved_ke_pathways_for
-    enrichment_results = run_enrichment_analysis(
-        df_filtered, reference_sets, ke_list, ke_title_map,
+    enrichment_results = run_enrichment(
+        method, df_filtered, reference_sets, ke_list, ke_title_map,
         unresolved_ke_pathways=unresolved_ke_pathways_for(reference_sets),
     )
 
@@ -332,6 +347,7 @@ def _run_condition(
     cy_network = build_cytoscape_network(
         ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
         reference_sets=reference_sets,
+        method=method,
         excluded_kes=(ke_summary or {}).get('excluded_reasons'),
         unresolved_ke_pathways=(ke_summary or {}).get('unresolved_pathways_by_ke'),
     )
@@ -451,7 +467,7 @@ def _run_condition(
 
     logger.info(
         f'_run_condition: condition {cond.id} ({cond.condition_label}) complete — '
-        f'{total_genes} genes, {significant_genes} significant'
+        f'{total_genes} genes, {significant_genes} significant, method={method}'
     )
 
 
@@ -495,7 +511,10 @@ def run_batch(batch_id: int, db_url: str, reference_sets: Dict) -> None:
 
         batch.status = 'running'
         db_session.commit()
-        logger.info(f'run_batch: starting batch {batch.uuid} ({len(batch.conditions)} conditions)')
+        logger.info(
+            f'run_batch: starting batch {batch.uuid} ({len(batch.conditions)} conditions, '
+            f'method={batch.effective_method()})'
+        )
 
         # Load harmonised background from the stored JSON
         harmonised_genes: Set[str] = set(

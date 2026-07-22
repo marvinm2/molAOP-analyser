@@ -29,7 +29,17 @@
 <div class="card card--wide">
   <!-- Page title -->
   <h1>Comparison: {{ batch.batch_name or 'Batch Analysis' }}</h1>
-  <p class="compare-subtitle">{{ batch.aop_label }} &mdash; {{ conditions|length }} condition{{ 's' if conditions|length != 1 else '' }}</p>
+  {# Issue #76: say which statistic the page is showing. batch_method is 'ora'
+     for every batch created before the method selector existed. #}
+  <p class="compare-subtitle">
+    {{ batch.aop_label }} &mdash; {{ conditions|length }} condition{{ 's' if conditions|length != 1 else '' }}
+    &mdash;
+    {% if batch_method == 'gsea' %}
+      GSEA (rank-based) &mdash; cells show NES and FDR
+    {% else %}
+      Fisher's exact (over-representation) &mdash; cells show FDR
+    {% endif %}
+  </p>
 
   <!-- Top control bar: mode toggle, reference condition selector, condition colour legend -->
   <div class="compare-controls">
@@ -66,6 +76,10 @@
     <div class="compare-actions__group">
       <label for="matrix-export-select">Export matrix:</label>
       <select id="matrix-export-select">
+        {# Issue #76: a GSEA batch shows NES on screen, so it must be exportable. #}
+        {% if batch_method == 'gsea' %}
+        <option value="nes" selected>NES</option>
+        {% endif %}
         <option value="fdr">FDR</option>
         <option value="neglog10">-log10(FDR)</option>
       </select>
@@ -99,6 +113,17 @@
 
     <!-- Table panel -->
     <div id="tab-table" class="compare-tab-panel" style="display:none">
+      {# Issue #76: name the statistic in the cells so NES and FDR are not confused. #}
+      <p class="compare-genes-note">
+        {% if batch_method == 'gsea' %}
+          Cells show the normalised enrichment score (NES, signed) with the permutation
+          FDR beneath it. Shading marks FDR &lt; 0.05; an unshaded but consistently
+          signed NES across conditions is still a coordinated shift.
+        {% else %}
+          Cells show the Benjamini&ndash;Hochberg FDR from Fisher's exact test.
+          Shading marks FDR &lt; 0.05.
+        {% endif %}
+      </p>
       <div id="comparison-table-wrap"></div>
     </div>
 
@@ -116,6 +141,23 @@
       <!-- Delta mode banner — shows which condition is used as the reference baseline -->
       <div id="delta-mode-banner" class="compare-delta-banner" style="display:none">
         Showing delta vs <strong id="delta-ref-label"></strong>
+        {# Issue #76: the delta slices encode a different quantity per method,
+           so the legend has to say which one. #}
+        {% if batch_method == 'gsea' %}
+        <span>
+          &mdash; slice colour is the change in NES against the reference:
+          <span style="display:inline-block;width:11px;height:11px;background:#d7301f;vertical-align:middle;"></span>
+          higher (more upward),
+          <span style="display:inline-block;width:11px;height:11px;background:#2166ac;vertical-align:middle;"></span>
+          lower (more downward). Deeper shading means a larger shift. This is
+          direction, not significance.
+        </span>
+        {% else %}
+        <span>
+          &mdash; a full slice is a Key Event more significant than in the reference,
+          a muted grey slice one that is less significant.
+        </span>
+        {% endif %}
       </div>
       <div id="cy-compare" style="width:100%;height:600px;border:1px solid #ccc;background:#fafafa;"></div>
     </div>
@@ -170,6 +212,22 @@
   // ---------------------------------------------------------------------------
   const comparisonData = {{ comparison_data_json | safe }};
   const batchUuid = {{ batch.uuid | tojson }};
+
+  // Issue #76: GSEA batches are compared on the signed NES rather than on the
+  // ORA FDR columns. Matrices produced before #76 carry no 'method' key, which
+  // reads as ORA — the behaviour those batches were rendered with.
+  const isGsea = comparisonData && comparisonData.method === 'gsea';
+
+  /**
+   * The matrix the heatmap, delta mode and the trend arrows are driven from.
+   * NES for a GSEA batch, -log10(FDR) otherwise.
+   *
+   * @returns {Array<Array<number|null>>}
+   */
+  function valueMatrix() {
+    if (isGsea && Array.isArray(comparisonData.nes_matrix)) return comparisonData.nes_matrix;
+    return comparisonData.neg_log10_matrix;
+  }
 
   // ---------------------------------------------------------------------------
   // Global state
@@ -245,6 +303,13 @@
 
       var statEl = document.createElement('div');
       statEl.className = 'compare-summary-card__stat';
+      // #76: under GSEA the gene counts come from the log2FC / p-value thresholds
+      // set on the batch form, not from the enrichment statistic. Say so on hover
+      // rather than let them read as GSEA output.
+      statEl.title = isGsea
+        ? 'Significant genes are counted from the batch log2FC and p-value thresholds. '
+          + 'GSEA ranks every gene and does not use them; the significant-KE count is FDR < 0.05.'
+        : 'Significant genes and Key Events at the batch thresholds (KE: FDR < 0.05).';
       var genes = (geneCounts[i] == null) ? '—' : geneCounts[i];
       var sigGenes = (sigGeneCounts[i] == null) ? '—' : sigGeneCounts[i];
       var sigKes = (sigKeCounts[i] == null) ? '—' : sigKeCounts[i];
@@ -321,11 +386,13 @@
   /** Return a trend arrow for a KE row across the ordered conditions, or '' if not orderable. */
   function trendArrow(rowIdx) {
     if (!_trendEnabled) return '';
-    var row = comparisonData.neg_log10_matrix[rowIdx] || [];
+    // #76: follow the quantity the page is comparing on — NES under GSEA.
+    var row = valueMatrix()[rowIdx] || [];
     var vals = row.map(function (v) { return v === null || v === undefined ? 0 : v; });
     if (vals.length < 2) return '';
     var delta = vals[vals.length - 1] - vals[0];
-    var eps = 0.3;  // ~2x FDR change on the -log10 scale
+    // ~2x FDR change on the -log10 scale; a comparable NES step under GSEA.
+    var eps = isGsea ? 0.5 : 0.3;
     if (delta > eps) return '↗';
     if (delta < -eps) return '↘';
     return '↔';
@@ -438,15 +505,16 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * Compute the delta -log10(FDR) matrix relative to a reference condition column.
-   * For each KE row: delta[ke][cond] = neg_log10[ke][cond] - neg_log10[ke][refIndex].
+   * Compute the delta matrix relative to a reference condition column.
+   * For each KE row: delta[ke][cond] = value[ke][cond] - value[ke][refIndex],
+   * where value is NES for a GSEA batch and -log10(FDR) otherwise (#76).
    * If either value is null the delta cell is null.
    *
    * @param {number} refIndex - 0-based column index of the reference condition.
    * @returns {Array<Array<number|null>>} Delta matrix (rows=KEs, cols=conditions).
    */
   function computeDeltaMatrix(refIndex) {
-    return comparisonData.neg_log10_matrix.map(function (row) {
+    return valueMatrix().map(function (row) {
       return row.map(function (val, colIdx) {
         var refVal = row[refIndex];
         if (val === null || refVal === null) return null;
@@ -470,7 +538,19 @@
     var zData, xLabels, colorscale, zmin, zmax, zmid, reversescale, hovertmpl;
     var conditionCount = comparisonData.condition_labels.length;
 
-    if (mode === 'absolute') {
+    if (mode === 'absolute' && isGsea) {
+      // GSEA (#76): colour on the signed NES with a diverging scale centred at
+      // zero, so a coordinated upward shift and a downward one are not both
+      // rendered as "significant". Server clamps NES to +/-3; match that here.
+      zData   = comparisonData.nes_matrix;
+      xLabels = comparisonData.condition_labels;
+      colorscale = 'RdBu';
+      reversescale = true; // red = positive NES (coordinated up-regulation)
+      zmin = -3;
+      zmax = 3;
+      zmid = 0;
+      hovertmpl = '<b>%{y}</b><br>%{x}: NES %{z:+.2f}<extra></extra>';
+    } else if (mode === 'absolute') {
       zData   = comparisonData.neg_log10_matrix;
       xLabels = comparisonData.condition_labels;
       colorscale = [
@@ -507,8 +587,16 @@
       zmin = undefined;
       zmax = undefined;
       zmid = 0;
-      hovertmpl = '<b>%{y}</b><br>%{x}: %{z:+.2f} (delta -log10 FDR)<extra></extra>';
+      hovertmpl = isGsea
+        ? '<b>%{y}</b><br>%{x}: %{z:+.2f} (delta NES)<extra></extra>'
+        : '<b>%{y}</b><br>%{x}: %{z:+.2f} (delta -log10 FDR)<extra></extra>';
     }
+
+    // Colourbar label follows the quantity actually plotted (#76).
+    var absoluteLabel = isGsea ? 'NES' : '-log10(FDR)';
+    var colorbarLabel = (mode === 'delta')
+      ? ('delta ' + absoluteLabel)
+      : absoluteLabel;
 
     var trace = {
       type: 'heatmap',
@@ -519,10 +607,16 @@
       connectgaps: false,
       hovertemplate: hovertmpl,
       showscale: true,
-      colorbar: { title: { text: mode === 'delta' ? 'delta -log10(FDR)' : '-log10(FDR)', font: { size: 12 } } }
+      colorbar: { title: { text: colorbarLabel, font: { size: 12 } } }
     };
 
-    if (mode === 'absolute') {
+    if (mode === 'absolute' && isGsea) {
+      // Diverging NES scale: fixed +/-3 domain centred on zero.
+      trace.zmin = zmin;
+      trace.zmax = zmax;
+      trace.zmid = zmid;
+      trace.reversescale = reversescale;
+    } else if (mode === 'absolute') {
       trace.zmin = zmin;
       trace.zmax = zmax;
     } else {
@@ -622,7 +716,8 @@
     });
     // Trend column (Feature D) — only when conditions form a numeric sequence.
     if (_trendEnabled) {
-      headerCells += '<th title="Trend of -log10(FDR) across conditions in order">Trend</th>';
+      headerCells += '<th title="Trend of ' + (isGsea ? 'NES' : '-log10(FDR)')
+        + ' across conditions in order">Trend</th>';
       subHeaderCells += '<th></th>';
     }
 
@@ -635,9 +730,29 @@
 
         var displayVal, sortVal, isSig, cellStyle = '', cellClass = '';
         var fdrVal = comparisonData.fdr_matrix[ke] ? comparisonData.fdr_matrix[ke][col] : null;
-        var neg10Val = comparisonData.neg_log10_matrix[ke] ? comparisonData.neg_log10_matrix[ke][col] : null;
+        var valRow = valueMatrix()[ke] || [];
+        var neg10Val = valRow[col] === undefined ? null : valRow[col];
+        var nesVal = (isGsea && comparisonData.nes_matrix[ke])
+          ? comparisonData.nes_matrix[ke][col] : null;
 
-        if (mode === 'absolute') {
+        if (mode === 'absolute' && isGsea) {
+          // GSEA (#76): NES carries the direction and magnitude, FDR the
+          // confidence — showing only one of them loses half the result.
+          if (nesVal === null || nesVal === undefined) {
+            displayVal = '&mdash;';
+            sortVal = 'Infinity';
+            isSig = false;
+          } else {
+            var fdrText = (fdrVal === null || fdrVal === undefined)
+              ? 'n/a' : fdrVal.toExponential(2);
+            displayVal = (nesVal >= 0 ? '+' : '') + nesVal.toFixed(2)
+              + '<span style="color:#777;font-size:11px;"> q=' + fdrText + '</span>';
+            // Sort on NES descending-friendly magnitude; keep raw NES so the
+            // column sorts by direction as displayed.
+            sortVal = String(nesVal);
+            isSig = (fdrVal !== null && fdrVal !== undefined && fdrVal < 0.05);
+          }
+        } else if (mode === 'absolute') {
           if (fdrVal === null || fdrVal === undefined) {
             displayVal = '&mdash;';
             sortVal = 'Infinity';
@@ -648,8 +763,8 @@
             isSig = fdrVal < 0.05;
           }
         } else {
-          // Delta mode: delta = neg_log10[ke][col] - neg_log10[ke][refIndex]
-          var refNeg10 = comparisonData.neg_log10_matrix[ke] ? comparisonData.neg_log10_matrix[ke][refIndex] : null;
+          // Delta mode: delta of the active value matrix (NES under GSEA).
+          var refNeg10 = valRow[refIndex] === undefined ? null : valRow[refIndex];
           if (neg10Val === null || neg10Val === undefined || refNeg10 === null || refNeg10 === undefined) {
             displayVal = '&mdash;';
             sortVal = 'Infinity';
@@ -704,11 +819,16 @@
     var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
 
     // Toggle sort direction if same column clicked again.
+    // First click puts the most notable Key Events on top, which is not the same
+    // direction for the two methods (#76): FDR cells sort ascending (lowest FDR
+    // first), NES cells descending (largest positive shift first — ascending
+    // would open with the most negative NES and park the missing cells, which
+    // always sort last, right under the highest scores).
     var ascending;
     if (tableSortState.colIdx === colIdx) {
       ascending = !tableSortState.ascending;
     } else {
-      ascending = true; // default: ascending (most significant first = lowest FDR)
+      ascending = !isGsea;
     }
     tableSortState = { colIdx: colIdx, ascending: ascending };
 
@@ -804,28 +924,61 @@
    */
   var singleConditionIndex = 0;
 
+  /** Divergent colours for the GSEA delta view (up-shift / down-shift vs reference). */
+  var DELTA_NES_UP_COLOR = '#d7301f';
+  var DELTA_NES_DOWN_COLOR = '#2166ac';
+
   /**
-   * Compute pie slice size and opacity data for a single KE node.
-   * Implements binary fill: a slice is either fully visible (FDR < 0.05)
-   * or absent (not significant). In delta mode, negative deltas appear as
-   * muted gray slices (opacity 0.25) to preserve that signal rather than
-   * hiding it entirely. The reference condition slice is forced to size 0
-   * in delta mode because the self-referential delta is meaningless.
+   * Colour a KE slice for a given condition, in the condition's own palette
+   * colour everywhere except the GSEA delta view, where the colour has to carry
+   * the sign of the NES shift instead (#76).
    *
-   * @param {number} rowIdx         - KE row index into fdr_matrix and valueMatrix.
+   * @param {number} condIdx - 0-based condition index.
+   * @returns {string} CSS hex colour.
+   */
+  function conditionColor(condIdx) {
+    return comparisonData.condition_colors[condIdx] || '#ccc';
+  }
+
+  /**
+   * Compute pie slice size, opacity and colour data for a single KE node.
+   *
+   * Absolute mode is a binary fill in the condition's colour: a slice is either
+   * fully visible (FDR < 0.05) or absent.
+   *
+   * Delta mode encodes whatever the batch is compared on (#76), and the two
+   * methods mean different things:
+   *
+   *  - ORA: the delta is a change in -log10(FDR), i.e. in significance. A
+   *    positive delta draws a full coloured slice, a negative one a muted grey
+   *    slice (opacity 0.25) so "less significant than the reference" is kept
+   *    rather than hidden.
+   *  - GSEA: the delta is a change in NES, which is *signed direction*, not
+   *    significance. Muting a negative delta would read as "weaker evidence"
+   *    when it means "shifted downward relative to the reference". So the slice
+   *    is drawn on a divergent scale instead: red for a higher NES than the
+   *    reference, blue for a lower one, with opacity carrying the magnitude of
+   *    the shift (saturating at |delta NES| = 2). Nothing is muted for
+   *    significance, matching the fact that NES is never blanked at the FDR
+   *    cutoff.
+   *
+   * The reference condition slice is forced to size 0 in delta mode because the
+   * self-referential delta is meaningless.
+   *
+   * @param {number} rowIdx         - KE row index into fdr_matrix and the value matrix.
    * @param {string} mode           - 'absolute' or 'delta'.
    * @param {number} refIndex       - 0-based reference condition index (delta mode only).
    * @param {number} conditionCount - Total number of conditions.
-   * @param {Array}  valueMatrix    - neg_log10 matrix (absolute) or delta matrix (delta).
-   * @returns {Object} Object with pie_size_N and pie_opacity_N keys for all N conditions.
+   * @param {Array}  matrix         - Absolute value matrix (absolute mode) or delta matrix.
+   * @returns {Object} Object with pie_size_N, pie_opacity_N and pie_color_N keys.
    */
-  function computeSliceData(rowIdx, mode, refIndex, conditionCount, valueMatrix) {
+  function computeSliceData(rowIdx, mode, refIndex, conditionCount, matrix) {
     var sliceMax = Math.round(100 / conditionCount);
     var result = {};
     for (var i = 0; i < conditionCount; i++) {
       var fdrVal = (comparisonData.fdr_matrix[rowIdx] || [])[i];
       var isSig = fdrVal != null && fdrVal < 0.05;
-      var sliceSize, opacity;
+      var sliceSize, opacity, color = conditionColor(i);
 
       if (mode === 'delta') {
         // Reference condition: force to 0 — self-referential delta is meaningless.
@@ -833,9 +986,18 @@
           sliceSize = 0;
           opacity = 1;
         } else {
-          var val = (valueMatrix[rowIdx] || [])[i];
-          if (!isSig || val == null) {
-            // Not significant or missing: no slice.
+          var val = (matrix[rowIdx] || [])[i];
+          if (val == null) {
+            // No delta computable for this condition: no slice.
+            sliceSize = 0;
+            opacity = 1;
+          } else if (isGsea) {
+            // Signed NES divergence — colour carries direction, opacity magnitude.
+            sliceSize = sliceMax;
+            color = val >= 0 ? DELTA_NES_UP_COLOR : DELTA_NES_DOWN_COLOR;
+            opacity = 0.3 + 0.7 * Math.min(1, Math.abs(val) / 2);
+          } else if (!isSig) {
+            // ORA: a KE that is not significant here has no significance delta worth drawing.
             sliceSize = 0;
             opacity = 1;
           } else if (val < 0) {
@@ -856,6 +1018,7 @@
 
       result['pie_size_' + (i + 1)] = sliceSize;
       result['pie_opacity_' + (i + 1)] = opacity;
+      result['pie_color_' + (i + 1)] = color;
     }
     return result;
   }
@@ -876,13 +1039,10 @@
     var nodes = networkData.nodes || [];
     var edges = networkData.edges || [];
 
-    // Determine values to use for sizing: absolute neg-log10 or delta.
-    var valueMatrix;
-    if (mode === 'delta') {
-      valueMatrix = computeDeltaMatrix(refIndex);
-    } else {
-      valueMatrix = comparisonData.neg_log10_matrix;
-    }
+    // Values to drive the slices with: the delta matrix, or the matrix the page
+    // is comparing on (NES under GSEA). Named activeMatrix, not valueMatrix, so
+    // it does not shadow the valueMatrix() helper defined at the top of this file.
+    var activeMatrix = (mode === 'delta') ? computeDeltaMatrix(refIndex) : valueMatrix();
 
     // Build map of KE ID → row index for fast lookup.
     var keIndexMap = {};
@@ -906,12 +1066,13 @@
 
       if (rowIdx !== undefined) {
         // Use shared helper for binary pie logic and opacity data.
-        pieData = computeSliceData(rowIdx, mode, refIndex, conditionCount, valueMatrix);
+        pieData = computeSliceData(rowIdx, mode, refIndex, conditionCount, activeMatrix);
       } else {
         // KE present in the AOP skeleton but absent from enrichment results — all slices off.
         for (var j = 0; j < conditionCount; j++) {
           pieData['pie_size_' + (j + 1)] = 0;
           pieData['pie_opacity_' + (j + 1)] = 1;
+          pieData['pie_color_' + (j + 1)] = conditionColor(j);
         }
       }
 
@@ -981,9 +1142,12 @@
     // pie-N-background-opacity (up to 16 slices supported).
     // Opacity is driven by data(pie_opacity_N) so that muted gray deltas (opacity 0.25)
     // can be rendered without changing the slice colour.
+    // Colour is driven by data(pie_color_N) rather than pinned to the palette here,
+    // because the GSEA delta view colours the slice by the sign of the NES shift (#76).
+    // computeSliceData falls back to the condition's palette colour everywhere else.
     for (var i = 1; i <= conditionCount; i++) {
       var pieStyle = {};
-      pieStyle['pie-' + i + '-background-color'] = comparisonData.condition_colors[i - 1] || '#ccc';
+      pieStyle['pie-' + i + '-background-color'] = 'data(pie_color_' + i + ')';
       pieStyle['pie-' + i + '-background-size'] = 'data(pie_size_' + i + ')';
       pieStyle['pie-' + i + '-background-opacity'] = 'data(pie_opacity_' + i + ')';
       styles.push({ selector: 'node', style: pieStyle });
@@ -1065,12 +1229,9 @@
     if (!cyInstance || !hasData()) return;
 
     var conditionCount = comparisonData.condition_labels.length;
-    var valueMatrix;
-    if (mode === 'delta') {
-      valueMatrix = computeDeltaMatrix(refIndex);
-    } else {
-      valueMatrix = comparisonData.neg_log10_matrix;
-    }
+    // As in buildComparisonElements: the delta matrix, or the matrix the page
+    // compares on. Named activeMatrix so it does not shadow valueMatrix().
+    var activeMatrix = (mode === 'delta') ? computeDeltaMatrix(refIndex) : valueMatrix();
 
     var keIndexMap = {};
     comparisonData.ke_labels.forEach(function (keId, idx) {
@@ -1083,7 +1244,7 @@
         var rowIdx = keIndexMap[keId];
         if (rowIdx === undefined) return;
         // Use shared helper for binary pie logic and opacity data.
-        var pieData = computeSliceData(rowIdx, mode, refIndex, conditionCount, valueMatrix);
+        var pieData = computeSliceData(rowIdx, mode, refIndex, conditionCount, activeMatrix);
         Object.keys(pieData).forEach(function (key) {
           node.data(key, pieData[key]);
         });
@@ -1235,16 +1396,18 @@
       xValues = (deltaMatrix[rowIdx] || []).map(function (v) {
         return v === null ? 0 : v;
       });
-      xAxisTitle = 'Delta -log10(FDR)';
+      xAxisTitle = isGsea ? 'Delta NES' : 'Delta -log10(FDR)';
       thresholdX = 0;
       thresholdLabel = 'Reference';
     } else {
-      xValues = (comparisonData.neg_log10_matrix[rowIdx] || []).map(function (v) {
+      // #76: under GSEA the bar is the signed NES, so the reference line is
+      // zero (no coordinated shift) rather than the FDR cutoff.
+      xValues = (valueMatrix()[rowIdx] || []).map(function (v) {
         return v === null ? 0 : v;
       });
-      xAxisTitle = '-log10(FDR)';
-      thresholdX = 1.301;   // -log10(0.05)
-      thresholdLabel = 'FDR=0.05';
+      xAxisTitle = isGsea ? 'NES' : '-log10(FDR)';
+      thresholdX = isGsea ? 0 : 1.301;   // -log10(0.05)
+      thresholdLabel = isGsea ? 'NES=0' : 'FDR=0.05';
     }
 
     var condCount = comparisonData.condition_labels.length;
