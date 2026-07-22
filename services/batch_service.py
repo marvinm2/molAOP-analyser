@@ -269,6 +269,10 @@ def _run_condition(
         batch: Parent BatchRecord (provides shared parameters).
         harmonised_genes: Intersection gene set used to filter each file.
         reference_sets: KE-to-gene reference dict from load_cached_reference_sets.
+            Normally a ``helpers.ReferenceSets``, which also carries the
+            KE -> unresolvable-pathway map used for the exclusion accounting
+            (issue #81); a plain dict works unchanged and simply reports no
+            unresolvable mappings.
         ke_list: Set of KE IDs for the selected AOP.
         edges: DataFrame of KE-to-KE edges for the selected AOP.
         ke_type_map: Dict mapping KE IDs to type strings.
@@ -310,9 +314,15 @@ def _run_condition(
     total_genes = len(df_filtered)
     significant_genes = int(df_filtered['significant'].sum())
 
-    # Run enrichment on the harmonised/filtered data
+    # Run enrichment on the harmonised/filtered data. Issue #81: the reference
+    # sets carry the KE -> unresolvable-pathway map (helpers.ReferenceSets), so
+    # a Key Event whose curated pathway could not be resolved to genes is
+    # reported as that, not as one nobody has mapped. run_batch is handed only
+    # the gene sets, which is precisely why the map travels on them.
+    from helpers import unresolved_ke_pathways_for
     enrichment_results = run_enrichment_analysis(
-        df_filtered, reference_sets, ke_list, ke_title_map
+        df_filtered, reference_sets, ke_list, ke_title_map,
+        unresolved_ke_pathways=unresolved_ke_pathways_for(reference_sets),
     )
 
     # Build Cytoscape network. The tested/excluded KE accounting (issue #65)
@@ -323,6 +333,7 @@ def _run_condition(
         ke_list, edges, enrichment_results, ke_title_map, ke_type_map,
         reference_sets=reference_sets,
         excluded_kes=(ke_summary or {}).get('excluded_reasons'),
+        unresolved_ke_pathways=(ke_summary or {}).get('unresolved_pathways_by_ke'),
     )
 
     # Build KE gene membership maps for the drawer / results page

@@ -43,6 +43,78 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   page now carries both the requested selection (#55) and the per-resource resolution and
   warnings (#68), and the template no longer substitutes a real resource name for an absent
   one — an unrecorded selection reads as *"Not recorded"*.
+- **"No gene set mapped" no longer covers Key Events that are mapped** (#81). The
+  per-condition accounting had two exclusion counters, and one of them was answering three
+  different questions at once. A Key Event with no curated mapping, a Key Event whose
+  mapping exists but could not be resolved to genes (#79), and a Key Event whose gene set is
+  known but went unmeasured in the uploaded dataset were all reported as *"excluded (no gene
+  set mapped)"*. They call for opposite responses: the first is a curation gap to fill in the
+  molAOP Builder, the second is stale reference data in this tool and should be reported as a
+  bug, the third is a fact about the experiment's coverage and about nobody's curation. The
+  case that exposed it was KE 1115 on AOP:472, listed among the unmapped while carrying a
+  live, high-confidence mapping to `WP5477` — a data-pipeline failure presented as missing
+  curation. (#79 has since made `WP5477` resolvable, so that particular Key Event is now
+  tested; the reporting bug it exposed outlived it.)
+
+  Exclusions are now counted under three separate reasons — no curated mapping, mapped but
+  unresolvable, and fewer than `MIN_KE_GENES` measured genes (zero measured genes included,
+  since that is a coverage number, not a curation one) — and the mapped-but-unresolvable
+  clause **names the pathway IDs** so the claim can be checked against the Builder. The
+  wording still comes from the single authority `format_ke_summary()`, so the results page,
+  the single report and the batch report say the same thing; the network styles the new
+  reason apart from an uncurated Key Event, and both the results page and the shared-link
+  view carry that style and legend entry. Summaries and networks stored before the split
+  carry only the old reasons and render exactly as they did.
+
+  Telling the two apart needs one piece of information that used to be thrown away: which
+  Key Event each unresolvable pathway belongs to. The KE→pathway mappings are merged with
+  pathway membership on an inner join, so a Key Event whose only pathway is unresolvable
+  never reaches the reference sets at all and is indistinguishable, downstream, from one
+  nobody has mapped. `load_reference_sets()` now builds that map *before* the merge and
+  carries it on the returned gene sets, which is what lets both the single-analysis route
+  and the batch runner hand it to the enrichment backend, and what puts the pathway IDs on
+  the network nodes so a batch report or shared link rebuilt from stored network JSON still
+  names them. A Key Event in that position now reads *"1 excluded (mapped, but no genes
+  could be resolved: WP4010)"* rather than being counted among the uncurated.
+
+- **Rows without a gene symbol no longer enter the background as a gene called `NAN`**
+  (#80). The loader expanded multi-symbol rows with `str(row[id_col]).split('///')`, and
+  `str()` on a missing value yields `'nan'` — uppercased into a literal identifier. Every
+  symbol-less row in an upload therefore collapsed into one pseudo-gene. On a DESeq2 table
+  of 13814 rows, 12939 of which carry a GeneSymbol and 12914 of which are distinct, the
+  tool reported a background of 12915: the extra entry stood in for 875 discarded rows.
+  Two things followed. The reported background was not the number of measured genes, so it
+  could not honestly be quoted in a methods section; and if the symbol-less row passed the
+  significance threshold, `NAN` counted as a significant gene that can never overlap a Key
+  Event gene set, biasing every Fisher test very slightly toward the null.
+
+  Rows whose identifier is null, empty or a missing-value placeholder are now dropped
+  before expansion, so the pseudo-gene is gone and the reported background is the true
+  count of measured genes. A `A///NA` row keeps its real symbol. The placeholder
+  vocabulary is pandas' own `STR_NA_VALUES` plus the punctuation forms (`-`, `--`, `.`,
+  `?`, …) that R, Excel and array-annotation pipelines write for "no symbol". The number
+  of discarded rows is counted, but is **not yet shown anywhere in the interface** —
+  reporting it next to the background size is still open under #80.
+
+  A file in which *no* row yields a usable identifier — most often a wrong ID column —
+  now fails with a validation error naming that column, instead of the generic
+  "unexpected error" page it produced once the pseudo-gene stopped standing in for those
+  rows.
+
+- **The driver-gene export comes out in a deterministic order** (#82). `build_gene_tracking`
+  appended its records in dict-iteration order over each condition's stored KE→gene map, so
+  the row order of `genes_export.csv` was an artefact of how that JSON happened to be
+  written; two runs over identical result data produced files that were equal only once
+  sorted, while `compare_export.csv` was already byte-stable. That made the gene export
+  unusable for diff-based reproducibility checks and generated spurious churn when exports
+  were version-controlled. Records are now ordered at the source, and the export re-applies
+  the same order: Key Event numerically (so `KE:10` follows `KE:9`), then gene symbol, then
+  condition **in upload order** — sorting condition labels as text would put `10uM` before
+  `2uM` and break a dose series. The summary view keeps its shared-first ordering (a gene
+  driving three conditions stays above one driving a single condition).
+
+  The export was the only affected artefact: the Genes tab payload was already sorted, and
+  the batch report does not use these records.
 
 - **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
   KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was

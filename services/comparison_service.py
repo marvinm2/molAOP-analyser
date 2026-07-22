@@ -270,7 +270,14 @@ def build_gene_tracking(conditions: list) -> dict[str, Any]:
             condition_labels — condition labels in upload-position order
             records          — tidy list, one dict per (KE, gene, condition)
                                driver event: KE_ID, KE_Title, Gene_Symbol,
-                               Condition, log2FC, significant
+                               Condition, log2FC, significant. Ordered by KE
+                               (numerically, so KE:10 follows KE:9), then gene
+                               symbol, then condition upload position (issue
+                               #82) — the stored ``ke_gene_json`` is a JSON
+                               object whose key order is an artefact of how it
+                               was written, so an unordered list made both the
+                               Genes tab payload and the batch report vary
+                               between runs over identical data.
             gene_ke_summary  — derived list, one dict per (KE, gene) that is a
                                driver somewhere: KE_ID, KE_Title, Gene_Symbol,
                                n_conditions_driver, conditions_driver (list),
@@ -293,7 +300,24 @@ def build_gene_tracking(conditions: list) -> dict[str, Any]:
         except (json.JSONDecodeError, TypeError):
             continue
 
-    records: list[dict] = []
+    def _ke_sort_key(value: Any) -> tuple:
+        """Order KE IDs by their trailing integer, so KE:10 follows KE:9.
+
+        Kept local (rather than shared with the export route) so the ordering
+        contract of this function is readable in one place; IDs with no numeric
+        suffix sort before numbered ones within the same prefix.
+        """
+        text = str(value)
+        cut = len(text)
+        while cut > 0 and text[cut - 1].isdigit():
+            cut -= 1
+        if cut < len(text):
+            return (text[:cut], int(text[cut:]))
+        return (text, -1)
+
+    # (sort key, record) pairs; the trailing counter makes the key total so the
+    # sort never falls back to comparing dicts and never depends on input order.
+    indexed_records: list[tuple[tuple, dict]] = []
     # summary keyed by (KE, gene) -> aggregation dict
     summary: dict[tuple, dict] = {}
 
@@ -320,14 +344,17 @@ def build_gene_tracking(conditions: list) -> dict[str, Any]:
                 log2fc = entry.get('log2FC')
                 title = ke_title_map.get(ke, ke)
 
-                records.append({
-                    'KE_ID': ke,
-                    'KE_Title': title,
-                    'Gene_Symbol': gene,
-                    'Condition': cond.condition_label,
-                    'log2FC': log2fc,
-                    'significant': True,
-                })
+                indexed_records.append((
+                    (_ke_sort_key(ke), str(gene), col_idx, len(indexed_records)),
+                    {
+                        'KE_ID': ke,
+                        'KE_Title': title,
+                        'Gene_Symbol': gene,
+                        'Condition': cond.condition_label,
+                        'log2FC': log2fc,
+                        'significant': True,
+                    },
+                ))
 
                 key = (ke, gene)
                 agg = summary.get(key)
@@ -356,10 +383,14 @@ def build_gene_tracking(conditions: list) -> dict[str, Any]:
             'log2FC_by_condition': agg['log2FC_by_condition'],
         })
 
-    # Stable, useful ordering: KE, then shared-first, then gene.
+    # Stable, useful ordering: KE (numerically), then shared-first, then gene.
     gene_ke_summary.sort(
-        key=lambda r: (r['KE_ID'], -r['n_conditions_driver'], r['Gene_Symbol'])
+        key=lambda r: (
+            _ke_sort_key(r['KE_ID']), -r['n_conditions_driver'], str(r['Gene_Symbol'])
+        )
     )
+
+    records = [record for _, record in sorted(indexed_records, key=lambda pair: pair[0])]
 
     return {
         'condition_labels': condition_labels,
