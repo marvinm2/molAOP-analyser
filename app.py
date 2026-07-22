@@ -2435,6 +2435,15 @@ def batch_condition_results(batch_uuid_str, position):
         ke_type_map = json.loads(cond.ke_type_map_json) if cond.ke_type_map_json else {}
         ke_title_map = json.loads(cond.ke_title_map_json) if cond.ke_title_map_json else {}
 
+        # Issue #74: the gene-set resources are a property of the batch, and
+        # every condition in it was analysed against the same selection. Without
+        # them the header fell back to naming WikiPathways, so a three-resource
+        # run reported a one-resource provenance — a claim that would travel
+        # into a figure legend or a methods section. Carry both the requested
+        # selection (#55) and what those resources actually resolved to (#68),
+        # exactly as the batch summary page does.
+        resolution = _parse_resource_resolution(batch.resource_resolution)
+
         # Build metadata dict compatible with results.html template variables
         metadata = {
             'dataset_id': cond.condition_label,
@@ -2446,6 +2455,11 @@ def batch_condition_results(batch_uuid_str, position):
             'significant_genes': cond.significant_genes,
             'analysis_date': cond.completed_at.strftime('%Y-%m-%d %H:%M') if cond.completed_at else '',
             'data_source': 'batch',
+            'selected_resources': batch.selected_resources or '',
+            'resource_resolution': resolution,
+            'resource_warnings': resource_resolution_warnings(
+                resolution, batch.min_confidence or DEFAULT_MIN_CONFIDENCE
+            ),
             # Pass batch context so results.html renders the "Back to batch summary" breadcrumb
             'batch_uuid': batch_uuid_str,
             'batch_name': batch.batch_name,

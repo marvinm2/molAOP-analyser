@@ -32,6 +32,18 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **Batch condition pages state the gene-set resources the batch actually used** (#74).
+  `/batch/<uuid>/condition/<n>` re-renders the results page from stored condition data, but
+  never carried the batch's resource selection into that context — and the template
+  defaulted the missing value to `WikiPathways`. A batch run over all three resources
+  therefore reported a single-resource provenance, confidently and wrongly, while the batch
+  summary for the same run reported all three. Which resources contributed gene sets decides
+  which Key Events were testable at all, so the header was misstating the analysis it sat on
+  top of, in the one place a reader would copy from into a methods section. The condition
+  page now carries both the requested selection (#55) and the per-resource resolution and
+  warnings (#68), and the template no longer substitutes a real resource name for an absent
+  one — an unrecorded selection reads as *"Not recorded"*.
+
 - **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
   KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was
   resolved against `data/edges_wpid_to_gene.csv` — a snapshot topping out at `WP5452`. Any

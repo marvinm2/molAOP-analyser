@@ -64,8 +64,11 @@
             <div class="metadata-summary__item">
                 <span class="metadata-summary__label">Gene Set Resources</span>
                 {# Issue #68: this is the REQUESTED selection; what actually
-                   loaded is on the provenance line below the table. #}
-                <span class="metadata-summary__value">{{ metadata.get('selected_resources', 'WikiPathways') }}</span>
+                   loaded is on the provenance line below the table.
+                   Issue #74: no resource default. A route that fails to pass
+                   the selection must not make the page name a real resource —
+                   an unrecorded selection has to read as unrecorded. #}
+                <span class="metadata-summary__value">{{ metadata.get('selected_resources') or 'Not recorded' }}</span>
             </div>
             {# Issue #60: the mapping-confidence threshold the gene sets were built at. #}
             <div class="metadata-summary__item">
