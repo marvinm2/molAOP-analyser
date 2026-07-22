@@ -463,12 +463,15 @@ class TestKeAccountingSummary:
         assert summary['total_kes'] == 4
         assert summary['tested'] == 1
         assert summary['tested'] == len(result)  # BH denominator == rows returned
-        assert summary['excluded_too_few_genes'] == 1
-        assert summary['excluded_no_mapping'] == 2  # KE:MISS + KE:NOSET
+        # Issue #81: KE:MISS is mapped and its gene set is known — none of it
+        # was measured here, which is a coverage fact about the upload, not the
+        # curation gap that 'no gene set mapped' claims.
+        assert summary['excluded_too_few_genes'] == 2  # KE:SMALL + KE:MISS
+        assert summary['excluded_no_mapping'] == 1  # KE:NOSET only
         assert summary['excluded_error'] == 0
         assert summary['min_ke_genes'] == 5
         assert summary['excluded_reasons']['KE:SMALL'] == 'too_few_genes'
-        assert summary['excluded_reasons']['KE:MISS'] == 'no_mapping'
+        assert summary['excluded_reasons']['KE:MISS'] == 'too_few_genes'
         assert summary['excluded_reasons']['KE:NOSET'] == 'no_mapping'
         assert 'KE:OK' not in summary['excluded_reasons']
         # Accounting must be exhaustive: nothing vanishes silently.
