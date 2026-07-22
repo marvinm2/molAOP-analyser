@@ -81,6 +81,35 @@
 .genes-table th:first-child, .genes-table td:first-child { text-align: left; white-space: nowrap; }
 .genes-table tr:nth-child(even) { background-color: #f9f9f9; }
 
+/* Issue #117 — a cell whose NES could not be normalised because the Key Event
+   beat every permutation. It must not look like the em-dash of an untested
+   cell, and it must not look like an ordinary NES either, because there is no
+   magnitude behind it. Boxed and monospaced: a label, not a number. */
+.compare-cell--beyond {
+  display: inline-block;
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border: 1px dashed #111;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    45deg, #f2f2f2, #f2f2f2 4px, #e2e2e2 4px, #e2e2e2 8px
+  );
+  color: #111;
+  cursor: help;
+}
+
+/* Issue #117 — a cell whose numbers are coarse (short same-signed tail) or
+   unchecked (null not readable). A marker, not a restyle: the value is still
+   gseapy's own and still readable. */
+.compare-cell--flag {
+  margin-left: 3px;
+  font-size: 11px;
+  color: #b25a00;
+  cursor: help;
+}
+
 /* Table trend column (Feature D) */
 .compare-table__trend { font-size: 15px; }
 

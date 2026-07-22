@@ -25,9 +25,13 @@ from services.report_service import (
     get_software_versions,
     REPORTLAB_AVAILABLE,
 )
-from services.comparison_service import comparison_matrix_to_dataframe
+from services.comparison_service import (
+    comparison_matrix_to_dataframe,
+    comparison_nes_display_dataframe,
+)
 from services.image_render import render_figure_png
 from services.enrichment_service import format_ke_summary
+from services.gsea_service import NES_BEYOND_RESOLUTION
 from services.network_service import ke_accounting_from_network
 from config import Config
 from helpers import MIN_CONFIDENCE_LABELS
@@ -101,6 +105,33 @@ def _mask_nes_by_significance(nes_matrix, fdr_matrix):
             for col_idx, value in enumerate(row)
         ])
     return masked
+
+
+def _beyond_resolution_cells(comparison_data: dict):
+    """Locate the cells whose NES could not be normalised (#117).
+
+    Args:
+        comparison_data: Dict from ``build_comparison_matrix``. Matrices stored
+            before #117 carry no ``nes_status_matrix``, which yields no cells —
+            those runs did not know, and marking nothing is the honest result.
+
+    Returns:
+        tuple: aligned ``(condition labels, KE titles)`` lists, one entry per
+        beyond-resolution cell, ready for a Plotly scatter overlay.
+    """
+    status = (comparison_data or {}).get('nes_status_matrix') or []
+    x_labels = (comparison_data or {}).get('condition_labels') or []
+    y_labels = (comparison_data or {}).get('ke_titles') or []
+    xs, ys = [], []
+    for row_idx, row in enumerate(status):
+        if row_idx >= len(y_labels) or not row:
+            continue
+        for col_idx, value in enumerate(row):
+            if value != NES_BEYOND_RESOLUTION or col_idx >= len(x_labels):
+                continue
+            xs.append(x_labels[col_idx])
+            ys.append(y_labels[row_idx])
+    return xs, ys
 
 
 def _dropped_rows_note(cond) -> str:
@@ -181,10 +212,27 @@ def render_heatmap_png(comparison_data: dict) -> Optional[bytes]:
             z=[[0] * len(x) for _ in y], x=x, y=y,
             opacity=0, showscale=False, hoverinfo='skip',
         )
-        fig = go.Figure(data=[
+        traces = [
             axis_anchor,
             go.Heatmap(z=z, x=x, y=y, hoverongaps=False, **heatmap_kwargs),
-        ])
+        ]
+        # Issue #117: a Key Event that beat every permutation carries no NES, so
+        # the mask above cannot colour it and it would print as a blank cell —
+        # visually identical to a Key Event that was never tested, which is the
+        # inverse of the result. Ring it instead of colouring it: there is no
+        # magnitude to put on the scale, only a direction, and that is in the
+        # legend entry rather than in a colour that would imply one.
+        beyond_x, beyond_y = _beyond_resolution_cells(comparison_data)
+        if is_gsea and beyond_x:
+            traces.append(go.Scatter(
+                x=beyond_x, y=beyond_y, mode='markers',
+                marker=dict(symbol='circle-open', size=12,
+                            line=dict(width=3, color='#111111'),
+                            color='#111111'),
+                name='beyond permutation resolution',
+                showlegend=True, hoverinfo='skip',
+            ))
+        fig = go.Figure(data=traces)
         # Size scales with row/column count, bounded for sane PDFs.
         height = max(300, min(1200, 40 * len(y) + 120))
         width = max(500, min(1400, 120 * len(x) + 260))
@@ -423,11 +471,25 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
         'heatmap colours only Key Events reaching FDR &lt; '
         f'{Config.SIGNIFICANCE_FDR_CUTOFF} — above that cutoff the sign of NES '
         'is not stable, so colouring it would show noise as direction (#107). '
-        'The table below carries every NES value, significant or not.'
+        # Issue #117 — the previous wording ("every NES value, significant or
+        # not") was false: a Key Event that beat every permutation has no NES to
+        # carry, and those are the strongest cells in the grid, not the weakest.
+        'Not every cell has a NES: where no permutation reached the observed '
+        'enrichment score there is nothing to normalise against, and the table '
+        'marks those cells &#9650;/&#9660; beyond res. with the direction of '
+        'the raw enrichment score (their FDR is its limit of zero). A trailing '
+        '! marks a cell normalised against fewer than ten same-signed '
+        'permutations — gseapy computes the nominal p-value on that same short '
+        'tail, so neither its magnitude nor its p-value is fine-grained enough '
+        'to rank on. A trailing ? marks a cell whose permutation null could not '
+        'be inspected at all (#117).'
         if is_gsea else
         'Significance (-log10 FDR) of each Key Event across conditions.'
     )
-    df = comparison_matrix_to_dataframe(comparison_data, which='nes' if is_gsea else 'fdr')
+    df = (
+        comparison_nes_display_dataframe(comparison_data) if is_gsea
+        else comparison_matrix_to_dataframe(comparison_data, which='fdr')
+    )
     if not df.empty:
         comp_table_html = df.head(30).to_html(index=False, na_rep='', border=0,
                                               classes='enrichment-table')
@@ -630,8 +692,15 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
         'Normalised enrichment score (NES, signed) per Key Event across '
         'conditions. The heatmap colours only Key Events reaching FDR &lt; '
         f'{Config.SIGNIFICANCE_FDR_CUTOFF}; above that cutoff the sign of NES is '
-        'not stable, so colouring it would show noise as direction (#107). The '
-        'table below carries every NES value, significant or not.'
+        'not stable, so colouring it would show noise as direction (#107). '
+        # Issue #117 — see the HTML caption; the same false claim stood here.
+        'Not every cell has a NES: where no permutation reached the observed '
+        'enrichment score there is nothing to normalise against, and the table '
+        'marks those cells "beyond res." with the direction of the raw '
+        'enrichment score. A trailing ! marks a cell normalised against fewer '
+        'than ten same-signed permutations, whose magnitude and nominal '
+        'p-value are both computed on that short tail; a trailing ? marks a '
+        'cell whose permutation null could not be inspected (#117).'
         if is_gsea else
         'Significance (-log10 FDR) per Key Event across conditions.',
         normal_style,
@@ -654,7 +723,13 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
     story.append(Spacer(1, 16))
 
     # Comparison matrix table — NES for a GSEA batch, FDR otherwise (#76).
-    df = comparison_matrix_to_dataframe(comparison_data, which='nes' if is_gsea else 'fdr')
+    # Under GSEA the cells are pre-rendered text so a Key Event with no NES is
+    # marked rather than blank (#117); _fmt below passes strings through.
+    df = (
+        comparison_nes_display_dataframe(comparison_data, ascii_only=True)
+        if is_gsea
+        else comparison_matrix_to_dataframe(comparison_data, which='fdr')
+    )
     if not df.empty:
         df = df.head(25)
         # Format floats compactly; blank for NaN. NES is a small signed number,

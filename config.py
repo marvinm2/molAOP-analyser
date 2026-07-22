@@ -94,6 +94,17 @@ class Config:
     # of genes has too little power for the result to be interpretable.
     MIN_KE_GENES = 5
 
+    # GSEA_MAX_KE_GENES is the *upper* bound, and applies to the GSEA path
+    # only — Fisher's exact test has no equivalent. gseapy discards a gene set
+    # larger than this before computing anything, so a Key Event above the
+    # ceiling produces no row at all (issue #120). The Broad/gseapy convention
+    # is 500; 1000 is used here because AOP 472 already has Key Events carrying
+    # 743 and 817 measured genes after curation, and losing them would cost
+    # more than the loss of resolution a broad set costs. It is a named
+    # constant rather than a literal because it has to be reportable: a run has
+    # to be able to say which Key Events it could not test and why.
+    GSEA_MAX_KE_GENES = 1000
+
 
     # Required data files
     REQUIRED_DATA_FILES = [

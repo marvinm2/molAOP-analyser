@@ -73,6 +73,13 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
                                (non-significant)
             nes_matrix       — 2-D list of NES floats (GSEA batches only; all
                                None for ORA batches, which carry no NES)
+            nes_status_matrix— 2-D list of ``nes_status`` strings (#117), None
+                               where the condition carries no status. A None
+                               NES with status
+                               ``beyond_permutation_resolution`` is a Key Event
+                               that beat every permutation, not an untested one
+            es_matrix        — 2-D list of raw enrichment scores, the only
+                               surviving direction for those cells
             condition_colors — list of hex colour strings from CONDITION_PALETTE
 
         Returns an empty dict ``{}`` if no enrichment rows are found.
@@ -100,12 +107,21 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
             if ke is None or fdr is None:
                 continue
             nes = entry.get('NES')
+            es = entry.get('ES')
             rows.append({
                 'condition': cond.condition_label,
                 'KE': ke,
                 'Title': title,
                 'FDR': float(fdr),
                 'NES': float(nes) if nes is not None else None,
+                # Issue #117 — a missing NES is not one thing. It is absent on
+                # an untested Key Event and it is absent on a Key Event that
+                # beat every permutation, and those are opposite results. The
+                # status says which; the ES is the only surviving statement of
+                # direction in the second case, and the cross-condition view is
+                # the one place a reader looks for direction.
+                'nes_status': entry.get('nes_status'),
+                'ES': float(es) if es is not None else None,
             })
             # Keep first-seen title per KE
             if ke not in ke_title_map:
@@ -115,7 +131,10 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
         logger.info('build_comparison_matrix: no enrichment rows found — returning empty dict')
         return {}
 
-    df = pd.DataFrame(rows, columns=['condition', 'KE', 'Title', 'FDR', 'NES'])
+    df = pd.DataFrame(
+        rows,
+        columns=['condition', 'KE', 'Title', 'FDR', 'NES', 'nes_status', 'ES'],
+    )
 
     # H-1: a well-formed enrichment table has unique KEs per condition. If a
     # condition's blob contains duplicate (condition, KE) pairs, pivot_table's
@@ -155,8 +174,23 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
         # Reindex rows too: a KE whose NES was NaN in every condition is dropped
         # by pivot_table, and the matrix must stay aligned with `pivot`.
         nes_pivot = nes_pivot.reindex(index=pivot.index)
+        # Issue #117 — carried alongside, not folded in. A NES of None on a
+        # beyond-resolution cell used to reach compare.html as an em-dash with
+        # isSig false, i.e. the same rendering as a Key Event that was never
+        # tested, which is the inverse of what happened. pivot_table drops
+        # non-numeric columns, so the status goes through pivot() on the
+        # de-duplicated frame instead.
+        status_source = df.drop_duplicates(['condition', 'KE'])
+        nes_status_pivot = status_source.pivot(
+            index='KE', columns='condition', values='nes_status'
+        ).reindex(columns=condition_labels).reindex(index=pivot.index)
+        es_pivot = df.pivot_table(
+            index='KE', columns='condition', values='ES', aggfunc='first'
+        ).reindex(columns=condition_labels).reindex(index=pivot.index)
     else:
         nes_pivot = None
+        nes_status_pivot = None
+        es_pivot = None
 
     # Sort KE rows by mean -log10(FDR) significance descending (most significant first).
     # Fill NaN with 0 for sorting purposes only.
@@ -166,6 +200,8 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
     neg_log10_pivot = neg_log10_pivot.loc[sort_order]
     if nes_pivot is not None:
         nes_pivot = nes_pivot.loc[sort_order]
+        nes_status_pivot = nes_status_pivot.loc[sort_order]
+        es_pivot = es_pivot.loc[sort_order]
 
     ke_labels = list(pivot.index)
     ke_titles = [ke_title_map.get(ke, ke) for ke in ke_labels]
@@ -184,6 +220,14 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
     neg_log10_matrix = _to_list(neg_log10_pivot)
     nes_matrix = (
         _to_list(nes_pivot) if nes_pivot is not None
+        else [[None] * len(condition_labels) for _ in ke_labels]
+    )
+    nes_status_matrix = (
+        _to_list(nes_status_pivot) if nes_status_pivot is not None
+        else [[None] * len(condition_labels) for _ in ke_labels]
+    )
+    es_matrix = (
+        _to_list(es_pivot) if es_pivot is not None
         else [[None] * len(condition_labels) for _ in ke_labels]
     )
 
@@ -211,6 +255,10 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
         'fdr_matrix': fdr_matrix,
         'neg_log10_matrix': neg_log10_matrix,
         'nes_matrix': nes_matrix,  # #76 — all None for ORA batches
+        # #117 — all None for ORA batches and for GSEA batches stored before the
+        # diagnostics existed, which the frontend reads as "no claim made".
+        'nes_status_matrix': nes_status_matrix,
+        'es_matrix': es_matrix,
         'condition_colors': condition_colors,
         'condition_gene_counts': condition_gene_counts,
         'condition_sig_gene_counts': condition_sig_gene_counts,
@@ -261,6 +309,10 @@ def comparison_matrix_to_dataframe(
                        matching the heatmap's null semantics)
       - ``'nes'``      normalised enrichment score (#76; blank throughout for
                        an ORA batch, which produces no NES)
+      - ``'nes_status'`` the per-cell NES regime (#117), so a blank in the NES
+                       export can be told apart from an untested Key Event
+      - ``'es'``       raw enrichment score, which carries direction even where
+                       the NES could not be normalised (#117)
 
     The NES export is deliberately **not** masked at the significance cutoff the
     way the heatmap is (#107). A download is the raw record — the FDR matrix is
@@ -286,10 +338,13 @@ def comparison_matrix_to_dataframe(
         'fdr': 'fdr_matrix',
         'neglog10': 'neg_log10_matrix',
         'nes': 'nes_matrix',
+        'nes_status': 'nes_status_matrix',
+        'es': 'es_matrix',
     }
     if which not in matrix_keys:
         raise ValueError(
-            f"Unknown matrix selector: {which!r} (expected 'fdr', 'neglog10' or 'nes')"
+            f"Unknown matrix selector: {which!r} (expected one of "
+            f"{', '.join(sorted(matrix_keys))})"
         )
 
     # nes_matrix is absent from matrices built before #76; treat it as all-blank.
@@ -309,6 +364,87 @@ def comparison_matrix_to_dataframe(
         # None cells become NaN -> render as empty string in CSV / empty in Excel.
         data[cond_label] = [row[col_idx] for row in matrix]
 
+    return pd.DataFrame(data)
+
+
+#: Issue #117 — how a beyond-resolution cell reads in a report table. It has no
+#: NES, so the cell carries the direction from the ES and says why there is no
+#: number. Blank would be indistinguishable from an untested Key Event, which is
+#: the opposite result.
+BEYOND_RESOLUTION_UP = '▲ beyond res.'
+BEYOND_RESOLUTION_DOWN = '▼ beyond res.'
+BEYOND_RESOLUTION_UNKNOWN = '? beyond res.'
+#: ASCII forms for ReportLab, whose Helvetica has no arrow glyphs and would
+#: print a black box where the direction should be.
+BEYOND_RESOLUTION_UP_ASCII = '+ beyond res.'
+BEYOND_RESOLUTION_DOWN_ASCII = '- beyond res.'
+
+
+def comparison_nes_display_dataframe(
+    matrix_dict: dict, ascii_only: bool = False
+) -> pd.DataFrame:
+    """Shape the NES comparison matrix into report-ready **text** (#117).
+
+    The numeric NES export (``which='nes'``) is the machine-readable record and
+    stays numeric, so a beyond-resolution cell is blank in it — indistinguishable
+    from a Key Event that was never tested. A report is read by a person, and
+    both batch reports used to caption that table "every NES value, significant
+    or not", which was false in exactly the direction that hides the strongest
+    calls in the grid.
+
+    This renders the same matrix as strings: a formatted NES where one exists, a
+    direction-carrying marker where it does not, and a trailing marker on cells
+    whose same-signed permutation tail was too short for either the magnitude or
+    the nominal p-value to be fine-grained.
+
+    Args:
+        matrix_dict: The dict returned by :func:`build_comparison_matrix`.
+        ascii_only: Use ``+``/``-`` instead of ``▲``/``▼`` for the direction
+            marker. ReportLab's default Helvetica has no arrow glyphs and
+            renders them as black boxes, so the PDF report passes True.
+
+    Returns:
+        A DataFrame with ``Key Event ID``, ``Key Event Title`` and one text
+        column per condition. Empty if ``matrix_dict`` is empty.
+    """
+    if not matrix_dict or not matrix_dict.get('ke_labels'):
+        return pd.DataFrame()
+
+    ke_labels = matrix_dict['ke_labels']
+    ke_titles = matrix_dict['ke_titles']
+    condition_labels = matrix_dict['condition_labels']
+    blank = [[None] * len(condition_labels) for _ in ke_labels]
+    nes = matrix_dict.get('nes_matrix') or blank
+    status = matrix_dict.get('nes_status_matrix') or blank
+    es = matrix_dict.get('es_matrix') or blank
+
+    def _cell(row: int, col: int) -> str:
+        cell_status = status[row][col] if status[row] else None
+        if cell_status == 'beyond_permutation_resolution':
+            es_val = es[row][col] if es[row] else None
+            if es_val is None:
+                return BEYOND_RESOLUTION_UNKNOWN
+            if es_val >= 0:
+                return (BEYOND_RESOLUTION_UP_ASCII if ascii_only
+                        else BEYOND_RESOLUTION_UP)
+            return (BEYOND_RESOLUTION_DOWN_ASCII if ascii_only
+                    else BEYOND_RESOLUTION_DOWN)
+        value = nes[row][col] if nes[row] else None
+        if value is None or (isinstance(value, float) and value != value):
+            return ''
+        text = f'{float(value):+.2f}'
+        if cell_status == 'unstable_normalisation':
+            return f'{text} !'
+        if cell_status == 'undiagnosed':
+            return f'{text} ?'
+        return text
+
+    data = {
+        'Key Event ID': [csv_guard(k) for k in ke_labels],
+        'Key Event Title': [csv_guard(t) for t in ke_titles],
+    }
+    for col_idx, cond_label in enumerate(condition_labels):
+        data[cond_label] = [_cell(row, col_idx) for row in range(len(ke_labels))]
     return pd.DataFrame(data)
 
 

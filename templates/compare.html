@@ -110,13 +110,20 @@
     <div id="tab-heatmap" class="compare-tab-panel compare-tab-panel--active">
       <div id="heatmap-div" style="width:100%;min-height:400px;"></div>
       {# Issue #107: the NES heatmap colours only significant cells, so say so —
-         a blank cell means "direction not supported here", not "no result". #}
+         a blank cell means "direction not supported here", not "no result".
+         Issue #117: and correct the claim that used to follow it. Not every
+         cell has a NES value: where the Key Event beat every permutation the
+         quantity does not exist, so that cell is marked rather than coloured
+         and the exports carry its ES and status instead of a number. #}
       {% if batch_method == 'gsea' %}
       <p class="compare-genes-note">
         Colour shows the normalised enrichment score (NES) for Key Events reaching
         FDR &lt; {{ fdr_cutoff }}. Cells above that cutoff are left blank: their NES sign is
-        not stable, so colouring them would show noise as direction. Every value,
-        significant or not, is in the Table tab and in the exports.
+        not stable, so colouring them would show noise as direction. Cells ringed in
+        black have no NES at all &mdash; no permutation reached the observed enrichment
+        score, so there is nothing to normalise against; hover for the enrichment score
+        that carries their direction. Every NES that exists, significant or not, is in
+        the Table tab and in the exports, alongside the status of the cells that have none.
       </p>
       {% endif %}
     </div>
@@ -129,7 +136,13 @@
           Cells show the normalised enrichment score (NES, signed) with the permutation
           FDR beneath it. Shading marks FDR &lt; {{ fdr_cutoff }}; an unshaded but consistently
           signed NES across conditions is still a coordinated shift, which is why the
-          value is greyed rather than hidden (#107).
+          value is greyed rather than hidden (#107). A boxed
+          <span class="compare-cell--beyond">&#9650;&nbsp;beyond res.</span> cell has no
+          NES: no permutation reached its enrichment score, so the arrow gives the
+          direction and the FDR is its limit of zero. A &#9888; marks a cell normalised
+          against fewer than ten same-signed permutations &mdash; gseapy computes the
+          nominal p-value on that same short tail, so neither the magnitude nor the
+          p-value there is fine-grained enough to rank on (#117).
         {% else %}
           Cells show the Benjamini&ndash;Hochberg FDR from Fisher's exact test.
           Shading marks FDR &lt; 0.05.
@@ -268,6 +281,59 @@
         return isSignificantFdr(cellFdr) ? value : null;
       });
     });
+  }
+
+  /** Issue #117 — the cell beat every permutation; its NES is not normalisable. */
+  const NES_BEYOND_RESOLUTION = 'beyond_permutation_resolution';
+  /** Issue #117 — the permutation null could not be inspected for this cell. */
+  const NES_UNDIAGNOSED = 'undiagnosed';
+
+  /**
+   * The nes_status of one cell, or null when the batch carries none (#117).
+   *
+   * @param {number} ke  - Row index.
+   * @param {number} col - Column index.
+   * @returns {string|null}
+   */
+  function nesStatusAt(ke, col) {
+    const m = comparisonData.nes_status_matrix;
+    if (!Array.isArray(m) || !m[ke]) return null;
+    const v = m[ke][col];
+    return v === undefined ? null : v;
+  }
+
+  /**
+   * The raw enrichment score of one cell, or null (#117).
+   *
+   * Beyond permutation resolution the ES is the only surviving statement of
+   * direction, so the comparison view reads direction from here rather than
+   * from the NES, which does not exist for those cells.
+   *
+   * @param {number} ke  - Row index.
+   * @param {number} col - Column index.
+   * @returns {number|null}
+   */
+  function esAt(ke, col) {
+    const m = comparisonData.es_matrix;
+    if (!Array.isArray(m) || !m[ke]) return null;
+    const v = m[ke][col];
+    return (v === undefined || v === null) ? null : v;
+  }
+
+  /**
+   * Is this cell a Key Event that beat every permutation? (#117)
+   *
+   * The whole point of the distinction: such a cell has NES null and FDR 0, and
+   * before #117 was propagated here it rendered exactly like a Key Event that
+   * was never tested — an em-dash, unshaded, sorted last, blank on the heatmap.
+   * That is the inverse of the result.
+   *
+   * @param {number} ke  - Row index.
+   * @param {number} col - Column index.
+   * @returns {boolean}
+   */
+  function isBeyondResolution(ke, col) {
+    return nesStatusAt(ke, col) === NES_BEYOND_RESOLUTION;
   }
 
   /**
@@ -710,7 +776,67 @@
       hoverinfo: 'skip'
     };
 
-    return { trace: trace, axisAnchor: axisAnchor, layout: layout, config: config };
+    // #117: cells whose NES could not be normalised carry no z value, so the
+    // diverging scale has nothing to colour them with and maskedNesMatrix()
+    // blanks them like any missing cell. They are the opposite of missing — the
+    // observed score beat every permutation — so they get their own mark rather
+    // than a colour: a ring at the cell, annotated with the ES direction. A
+    // colour would have to claim a magnitude the run cannot supply.
+    var beyondMarks = beyondResolutionMarks(mode, xLabels);
+
+    return {
+      trace: trace, axisAnchor: axisAnchor, beyondMarks: beyondMarks,
+      layout: layout, config: config
+    };
+  }
+
+  /**
+   * Scatter overlay marking the beyond-permutation-resolution cells (#117).
+   *
+   * Only meaningful in absolute GSEA mode: in delta mode the quantity plotted
+   * is a difference of NES values, and a cell with no NES has no difference
+   * either, so it stays out rather than being marked on a scale it is not on.
+   *
+   * @param {string} mode     - 'absolute' or 'delta'.
+   * @param {Array<string>} xLabels - The condition labels actually plotted.
+   * @returns {Object} A Plotly scatter trace (empty when there is nothing to mark).
+   */
+  function beyondResolutionMarks(mode, xLabels) {
+    var xs = [], ys = [], texts = [];
+    if (isGsea && mode === 'absolute') {
+      for (var ke = 0; ke < comparisonData.ke_labels.length; ke++) {
+        for (var col = 0; col < comparisonData.condition_labels.length; col++) {
+          if (!isBeyondResolution(ke, col)) continue;
+          var label = comparisonData.condition_labels[col];
+          if (xLabels.indexOf(label) === -1) continue;
+          var es = esAt(ke, col);
+          var dir = (es === null) ? 'direction unknown'
+            : (es >= 0 ? 'enriched at the top of the ranking'
+                       : 'enriched at the bottom of the ranking');
+          xs.push(label);
+          ys.push(comparisonData.ke_titles[ke]);
+          texts.push('Beyond permutation resolution: no permutation reached the '
+            + 'observed score, so the NES cannot be normalised. ES '
+            + (es === null ? 'n/a' : es.toFixed(3)) + ' — ' + dir + '.');
+        }
+      }
+    }
+    return {
+      type: 'scatter',
+      mode: 'markers',
+      x: xs,
+      y: ys,
+      marker: {
+        symbol: 'circle-open',
+        size: 14,
+        line: { width: 3, color: '#111111' },
+        color: '#111111'
+      },
+      name: 'beyond permutation resolution',
+      showlegend: xs.length > 0,
+      hovertemplate: '<b>%{y}</b><br>%{x}<br>%{text}<extra></extra>',
+      text: texts
+    };
   }
 
   /**
@@ -722,13 +848,14 @@
    */
   function updateHeatmap(mode, refIndex) {
     var hd = buildHeatmapData(mode, refIndex);
+    var traces = [hd.axisAnchor, hd.trace, hd.beyondMarks];
     if (!heatmapInitialised) {
       // Initial render — create the Plotly figure from scratch.
-      Plotly.newPlot('heatmap-div', [hd.axisAnchor, hd.trace], hd.layout, hd.config);
+      Plotly.newPlot('heatmap-div', traces, hd.layout, hd.config);
       heatmapInitialised = true;
     } else {
       // Subsequent updates — efficiently patch the existing figure without full re-create.
-      Plotly.react('heatmap-div', [hd.axisAnchor, hd.trace], hd.layout);
+      Plotly.react('heatmap-div', traces, hd.layout);
     }
   }
 
@@ -810,7 +937,31 @@
         if (mode === 'absolute' && isGsea) {
           // GSEA (#76): NES carries the direction and magnitude, FDR the
           // confidence — showing only one of them loses half the result.
-          if (nesVal === null || nesVal === undefined) {
+          if (isBeyondResolution(ke, col)) {
+            // #117: NES null because the Key Event beat every permutation, not
+            // because it was never tested. Rendering it as an em-dash lost the
+            // strongest cells in the grid and dropped the FDR that every other
+            // cell carries. Direction comes from the ES, which is the only
+            // place it survives; magnitude is deliberately not claimed.
+            var esVal = esAt(ke, col);
+            var arrow = (esVal === null) ? '?' : (esVal >= 0 ? '▲' : '▼');
+            var esText = (esVal === null) ? 'n/a'
+              : ((esVal >= 0 ? '+' : '') + esVal.toFixed(3));
+            var brFdrText = (fdrVal === null || fdrVal === undefined)
+              ? 'n/a' : fdrVal.toExponential(2);
+            isSig = isSignificantFdr(fdrVal);
+            displayVal =
+              '<span class="compare-cell--beyond" title="Beyond permutation '
+              + 'resolution: no permutation reached the observed enrichment '
+              + 'score, so the NES has no value to report. ES ' + esText
+              + ' carries the direction; the p-value is bounded by '
+              + '1/permutations.">' + arrow + '&nbsp;beyond res.</span>'
+              + '<span style="color:#777;font-size:11px;"> q=' + brFdrText + '</span>';
+            // Sort to the extreme of its own direction: the cell is the most
+            // enriched the run can distinguish, so sorting it last (which
+            // 'Infinity' did) put the strongest results at the bottom.
+            sortVal = String((esVal !== null && esVal < 0) ? -1e9 : 1e9);
+          } else if (nesVal === null || nesVal === undefined) {
             displayVal = '&mdash;';
             sortVal = 'Infinity';
             isSig = false;
@@ -827,6 +978,22 @@
                             + FDR_CUTOFF + ' — the sign of NES is not supported here">'
                             + nesText + '</span>')
               + '<span style="color:#777;font-size:11px;"> q=' + fdrText + '</span>';
+            // #117: a short same-signed tail makes both numbers coarse —
+            // gseapy computes the nominal p on the very tail it normalises
+            // against — and a cell that could not be diagnosed makes no claim
+            // either way. Both get a mark rather than being read as ordinary.
+            var cellStatus = nesStatusAt(ke, col);
+            if (cellStatus === 'unstable_normalisation') {
+              displayVal += '<span class="compare-cell--flag" title="Fewer than '
+                + '10 permutations fell on the observed side of zero. Both the '
+                + 'NES magnitude and the nominal p-value are computed against '
+                + 'that handful of values, so neither should be ranked or '
+                + 'thresholded on.">&#9888;</span>';
+            } else if (cellStatus === NES_UNDIAGNOSED) {
+              displayVal += '<span class="compare-cell--flag" title="The '
+                + 'permutation null could not be inspected for this cell, so '
+                + 'these numbers are unchecked.">?</span>';
+            }
             // Sort on NES descending-friendly magnitude; keep raw NES so the
             // column sorts by direction as displayed.
             sortVal = String(nesVal);
