@@ -130,7 +130,10 @@ pytest==8.4.2
     # via
     #   -r requirements-dev.in
     #   pytest-cov
+    #   pytest-timeout
 pytest-cov==7.1.0
+    # via -r requirements-dev.in
+pytest-timeout==2.4.0
     # via -r requirements-dev.in
 python-dateutil==2.9.0.post0
     # via

@@ -17,6 +17,7 @@ import pandas as pd
 import pytest
 
 import app
+from tests.conftest import uploaded_file_exists
 from helpers import (
     ReferenceSets,
     load_reference_sets,
@@ -257,7 +258,7 @@ class TestAnalyseRouteClassifiesTheKeyEvent:
              )), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True):
 
             response = authenticated_client.post('/analyze', data={

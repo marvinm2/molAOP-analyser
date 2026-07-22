@@ -24,6 +24,83 @@ from services.column_detector import ColumnDetector
 from services.gene_id_validator import GeneIDValidator
 
 
+# ---------------------------------------------------------------------------
+# Issue #104 — keeping the suite off the filesystem and off Chromium
+# ---------------------------------------------------------------------------
+
+# The real os.path.exists, captured before any test can patch it over.
+_REAL_PATH_EXISTS = os.path.exists
+
+# Extensions of the upload/demo files the route tests pretend are on disk.
+_UPLOAD_SUFFIXES = ('.tsv', '.csv', '.txt', '.xlsx')
+
+
+def uploaded_file_exists(path):
+    """os.path.exists replacement that only lies about uploaded data files.
+
+    Route tests need ``/analyze`` to believe the uploaded dataset is on disk,
+    and the usual way to arrange that was ``patch('os.path.exists',
+    return_value=True)``. That patch is process-wide: matplotlib's search for
+    ``matplotlibrc``, kaleido's probe for its Chromium binary and every other
+    library's existence check are all told "yes" for the duration of the test.
+    ``test_full_workflow_integration`` fails outright when run alone for that
+    reason (matplotlib opens the ``matplotlibrc`` it was told exists), and only
+    passes in a full run because an earlier test imported matplotlib first —
+    exactly the kind of order-dependence behind the intermittent hang in #104.
+
+    This narrows the lie to what the tests actually need: a data file. Anything
+    else falls through to the real check.
+
+    Args:
+        path: path being probed (str, bytes or os.PathLike).
+
+    Returns:
+        bool: True for data-file paths, otherwise the real answer.
+    """
+    try:
+        text = os.fspath(path)
+        if isinstance(text, bytes):
+            text = text.decode('utf-8', 'replace')
+    except TypeError:  # file descriptor or something exotic — defer
+        return _REAL_PATH_EXISTS(path)
+    return text.lower().endswith(_UPLOAD_SUFFIXES) or _REAL_PATH_EXISTS(path)
+
+
+@pytest.fixture(autouse=True)
+def stub_plotly_image_export(request):
+    """Stop any test from spawning kaleido's headless Chromium (#104).
+
+    ``Figure.to_image()`` launches a browser subprocess that can outlive the
+    call; when it wedges, pytest sits in a blocking read with no deadline and
+    the run stalls for as long as the harness allows. Nothing in the suite
+    depends on the *content* of a rendered PNG, so the render is stubbed by
+    default and the assertions are about whether a figure was produced at all.
+
+    Opt out with ``@pytest.mark.real_image_render`` for a test that genuinely
+    needs kaleido; it then runs against the production timeout in
+    ``services.image_render``.
+    """
+    if 'real_image_render' in request.keywords:
+        yield None
+        return
+
+    try:
+        import plotly.graph_objects as go
+    except ImportError:  # pragma: no cover — plotly is a hard dependency
+        yield None
+        return
+
+    # Smallest valid PNG: a 1x1 transparent pixel. Callers only embed the bytes.
+    png_stub = (
+        b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+        b'\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01'
+        b'\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+    )
+    with patch.object(go.Figure, 'to_image', autospec=True,
+                      return_value=png_stub) as mock_to_image:
+        yield mock_to_image
+
+
 @pytest.fixture(scope='session')
 def test_data_dir():
     """Fixture providing path to test data directory."""

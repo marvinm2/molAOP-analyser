@@ -58,6 +58,7 @@ except ImportError:
     SVG_SUPPORT = False
 
 from config import Config, ExperimentMetadata
+from services.image_render import render_figure_png
 from helpers import MIN_CONFIDENCE_LABELS  # Issue #60: confidence threshold labels
 from services.enrichment_service import REPRESENTATION_LABELS  # Issue #70
 
@@ -725,8 +726,13 @@ class ReportGenerator:
             fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
             fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgray')
             
-            # Export as PNG image bytes
-            img_bytes = fig.to_image(format="png", width=600, height=400, scale=2)
+            # Export as PNG image bytes. Issue #104: the render goes through
+            # render_figure_png so a wedged kaleido subprocess raises instead of
+            # blocking the request forever; the caller already treats a failed
+            # volcano render as "image unavailable".
+            img_bytes = render_figure_png(
+                fig, format="png", width=600, height=400, scale=2
+            )
             return img_bytes
             
         except Exception as e:

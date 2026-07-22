@@ -306,6 +306,13 @@ class Config:
     # a shared mount tolerates exactly one writer.
     DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///molAOP_analyser.db')
 
+    # Server-side image rendering (issue #104). plotly's to_image() drives a
+    # headless Chromium via kaleido, and that subprocess can wedge with no
+    # deadline of its own — a stuck render otherwise hangs the request (and hung
+    # the test suite) indefinitely. Renders past this many seconds are abandoned
+    # and the report falls back to "image unavailable".
+    IMAGE_RENDER_TIMEOUT = float(os.environ.get('IMAGE_RENDER_TIMEOUT', '30'))
+
     # Batch analysis settings
     BATCH_MAX_FILES = 10
     BATCH_MAX_TOTAL_SIZE = 100 * 1024 * 1024  # 100 MB total batch limit

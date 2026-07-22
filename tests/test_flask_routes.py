@@ -8,6 +8,8 @@ import json
 import re
 from unittest.mock import patch, MagicMock
 
+from tests.conftest import uploaded_file_exists
+
 
 @pytest.mark.integration
 @pytest.mark.web
@@ -44,7 +46,7 @@ class TestFlaskRoutes:
     
     def test_preview_route_with_demo_file(self, flask_client):
         """Test preview route with demo file selection."""
-        with patch('os.path.exists', return_value=True), \
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('pandas.read_csv') as mock_read_csv:
             
             # Mock DataFrame
@@ -148,7 +150,7 @@ class TestFlaskRoutes:
              patch('app.build_ke_gene_mapping', return_value={}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True):
 
             response = authenticated_client.post('/analyze', data={
@@ -210,7 +212,7 @@ class TestFlaskRoutes:
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=raw_upload_df), \
              patch('app.load_cached_reference_sets', return_value=({'KE:115': {'BRCA1', 'EGFR'}}, 'cache', [])):
@@ -291,7 +293,7 @@ class TestFlaskRoutes:
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=raw_upload_df), \
              patch('app.load_cached_reference_sets',
@@ -386,7 +388,7 @@ class TestFlaskRoutes:
              patch('app.build_cytoscape_network', return_value={'nodes': [], 'edges': []}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=raw_upload_df), \
              patch('app.load_cached_reference_sets',
@@ -520,7 +522,7 @@ class TestFlaskRoutes:
     
     def test_metadata_storage_in_session(self, flask_client):
         """Test that metadata is stored in session during preview."""
-        with patch('os.path.exists', return_value=True), \
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('pandas.read_csv') as mock_read_csv, \
              flask_client.session_transaction() as sess:
             
@@ -581,7 +583,7 @@ class TestFlaskRoutes:
         })
         edges_df = pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID'])
 
-        with patch('os.path.exists', return_value=True), \
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('pandas.read_csv', return_value=preview_df), \
              patch('app.load_and_validate_data', return_value=processed_df), \
              patch('app.process_gene_expression', return_value=(processed_df, {'total_genes': 5})), \
@@ -676,7 +678,7 @@ class TestDemosPage:
     def test_preview_accepts_recommended_aops(self, flask_client):
         """POST /preview with recommended_aops propagates the list to the template."""
         from unittest.mock import patch, MagicMock
-        with patch('os.path.exists', return_value=True), \
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('pandas.read_csv') as mock_read_csv:
             mock_df = MagicMock()
             mock_df.head.return_value.to_dict.return_value = [
@@ -715,7 +717,7 @@ class TestDemosPage:
             'log2FoldChange': [2.5, -1.2, 0.8],
             'padj': [0.001, 0.05, 0.3],
         })
-        with patch('os.path.exists', return_value=True), \
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('pandas.read_csv', return_value=mock_df):
 
             response = flask_client.post('/preview', data={
@@ -743,7 +745,7 @@ class TestDemosPage:
             'log2FoldChange': [2.5, -1.2, 0.8],
             'padj': [0.001, 0.05, 0.3],
         })
-        with patch('os.path.exists', return_value=True), \
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('pandas.read_csv', return_value=mock_df):
 
             # No recommended_aops in form data — simulates upload-your-own-data path.
@@ -838,7 +840,7 @@ class TestTourRoutes:
              patch('app.build_ke_gene_mapping', return_value={}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True):
             return client.post('/analyze', data=form)
 
@@ -974,7 +976,7 @@ class TestHubPanel:
              patch('app.compute_hub_genes', return_value=hub_list), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True):
             return client.post('/analyze', data=form)
 
@@ -1490,7 +1492,7 @@ class TestPathwayView:
              patch('app.build_wp_picker_data', return_value=wp_picker_data), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True):
             return client.post('/analyze', data=form)
 
@@ -1670,7 +1672,7 @@ class TestMinConfidenceControl:
         })
         with patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=preview_df), \
-             patch('os.path.exists', return_value=True):
+             patch('os.path.exists', side_effect=uploaded_file_exists):
             response = flask_client.post('/preview', data={
                 'filename': 'test.csv',
                 'id_column': 'Gene_Symbol',
@@ -1693,7 +1695,7 @@ class TestMinConfidenceControl:
         })
         with patch('app.validate_file_path', return_value=True), \
              patch('pandas.read_csv', return_value=preview_df), \
-             patch('os.path.exists', return_value=True):
+             patch('os.path.exists', side_effect=uploaded_file_exists):
             response = flask_client.post('/preview', data={
                 'filename': 'test.csv',
                 'id_column': 'Gene_Symbol',
@@ -1788,7 +1790,7 @@ class TestRepresentationColumnRendered:
              patch('app.build_ke_gene_mapping', return_value={}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True):
             return client.post('/analyze', data={
                 'filename': 'test.csv',
@@ -1850,7 +1852,7 @@ class TestResourceProvenanceOnResultsPage:
              patch('app.build_ke_gene_mapping', return_value={}), \
              patch('app.guess_id_type', return_value='HGNC'), \
              patch('app.cleanup_file'), \
-             patch('os.path.exists', return_value=True), \
+             patch('os.path.exists', side_effect=uploaded_file_exists), \
              patch('app.validate_file_path', return_value=True):
             return client.post('/analyze', data={
                 'filename': 'test.csv',
