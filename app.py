@@ -835,6 +835,11 @@ def analyze():
         current_reference_sets, data_source, resource_resolution = load_cached_reference_sets(
             resources, min_confidence=min_confidence
         )
+        # Issue #108: the resolution above covers the whole reference universe.
+        # Narrow its unresolved-pathway accounting to this AOP's Key Events
+        # before it is stored or rendered, or the run reports lost coverage that
+        # belongs to some other AOP.
+        resource_resolution = scope_resolution_to_aop(resource_resolution, ke_list)
 
         # Issue #81: a KE whose only pathway could not be resolved to genes is
         # absent from the reference sets exactly like an uncurated one. This
@@ -1889,6 +1894,58 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
     )
 
 
+def scope_resolution_to_aop(resolution, ke_ids):
+    """Restrict the unresolved-pathway accounting to one AOP's Key Events (#108).
+
+    ``load_cached_reference_sets()`` resolves the whole reference universe, so
+    its ``unresolved_pathways`` / ``unresolved_ke_pathways`` entries name every
+    mapped pathway no source could resolve — across every AOP, not the one being
+    analysed. Rendered unscoped, the #79/#81 warning fires on every run
+    regardless of whether the selected AOP lost anything, telling an author that
+    their coverage is understated when it is not. That is the inverse of the
+    failure #79/#81 fixed and worse: a warning that fires unconditionally is
+    also one users learn to ignore on the runs where it is true.
+
+    Scoping happens here, where the run is created and its AOP is known, so the
+    stored resolution is already correct and every downstream reader (results
+    page, report, batch summary, condition pages, shared links) inherits it
+    without repeating the AOP lookup.
+
+    Args:
+        resolution: list produced by ``load_cached_reference_sets``.
+        ke_ids: the KE IDs belonging to this run's AOP. Falsy means the AOP's
+            Key Events could not be established, in which case the resolution is
+            returned unchanged — an over-broad warning is a lesser failure than
+            one silently suppressed.
+
+    Returns:
+        list: a new resolution list with copied entries, so a resolution shared
+        with another caller is never narrowed in place.
+    """
+    if not ke_ids:
+        return resolution
+
+    in_scope = {str(ke) for ke in ke_ids}
+    scoped = []
+    for entry in resolution:
+        entry = dict(entry)
+        by_ke = {
+            ke: list(pathways)
+            for ke, pathways in (entry.get('unresolved_ke_pathways') or {}).items()
+            if str(ke) in in_scope
+        }
+        entry['unresolved_ke_pathways'] = by_ke
+        # Derive the flat list from the surviving map rather than filtering it
+        # separately. Both are built from the same KE-pathway mappings, so
+        # deriving one from the other keeps the warning's pathway count and its
+        # Key Event count describing the same set by construction.
+        entry['unresolved_pathways'] = sorted({
+            wp for pathways in by_ke.values() for wp in pathways
+        })
+        scoped.append(entry)
+    return scoped
+
+
 def describe_resource_resolution(resolution):
     """One-line summary of how each requested resource actually resolved (#68).
 
@@ -2290,6 +2347,20 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
     current_reference_sets, _, resource_resolution = load_cached_reference_sets(
         resources, min_confidence=min_confidence
     )
+    # Issue #108: scope the unresolved-pathway accounting to the batch's AOP
+    # before storing it — every condition page and the batch report read this
+    # one record, so an unscoped copy misreports lost coverage on all of them.
+    # run_batch() loads the same topology moments later; the lookup is cached,
+    # and a failure here only costs the scoping, never the batch.
+    try:
+        batch_ke_list, _edges, _types, _titles = load_aop_data(aop_id)
+    except Exception as exc:
+        logger.warning(
+            'Could not load AOP %s to scope the resource resolution (%s); '
+            'storing it unscoped', aop_id, exc
+        )
+        batch_ke_list = None
+    resource_resolution = scope_resolution_to_aop(resource_resolution, batch_ke_list)
     # Issue #68: record what the batch actually loaded, not what it requested —
     # every condition in the batch shares this resolution.
     _store_batch_resource_resolution(batch_id, resource_resolution)

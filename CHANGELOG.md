@@ -76,6 +76,28 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **The unresolved-pathway warning describes the AOP being analysed** (#108). The warning
+  added with #79/#81 — *"N mapped pathway(s) could not be resolved to genes … their coverage
+  is understated here"* — was computed over the whole reference universe rather than the
+  selected AOP, so it fired on every run whether or not that run had lost anything. On
+  AOP:472 it named `WP1234`, `WP3980` and `WP4010`, none of which is mapped to any of its Key
+  Events; every one of its fourteen pathways resolved and no Key Event lost a single gene.
+  This is the inverse of the failure #79 and #81 were about, and worse: rather than hiding a
+  real gap it asserts one that does not exist, on the same page the numbers are read from. An
+  author writing up that result would reasonably add a caveat that their coverage was
+  understated, and the caveat would be false. A warning that fires unconditionally is also
+  one readers learn to ignore — including on the runs where it is true.
+
+  `scope_resolution_to_aop()` now narrows the resolution's `unresolved_pathways` and
+  `unresolved_ke_pathways` to the run's own Key Events, and the block is suppressed entirely
+  when nothing survives. Scoping happens where the run is created — the single-analysis route
+  and `_persist_and_launch_batch()`, both of which already know the AOP — so the stored
+  resolution is correct and the results page, the report, the batch summary, the condition
+  pages and shared links all inherit it without repeating the lookup. An AOP whose topology
+  cannot be loaded leaves the resolution unscoped rather than emptied: an over-broad warning
+  is recoverable, a silently suppressed one is not. Runs stored before this change keep the
+  unscoped accounting they were saved with.
+
 - **Batch condition pages state the gene-set resources the batch actually used** (#74).
   `/batch/<uuid>/condition/<n>` re-renders the results page from stored condition data, but
   never carried the batch's resource selection into that context — and the template
