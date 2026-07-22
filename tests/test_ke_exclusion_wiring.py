@@ -130,7 +130,8 @@ class TestReferenceSetsCarryTheMap:
 def _fake_reference_cache(monkeypatch):
     store = {}
     fake = MagicMock()
-    fake.get.side_effect = lambda key: store.get(key)
+    fake.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), None) if expire_time else store.get(key))
     fake.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
     monkeypatch.setattr(app, '_reference_cache', fake)
     return store

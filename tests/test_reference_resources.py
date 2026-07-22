@@ -191,7 +191,8 @@ class TestGmtResourcesUnaffectedByConfidence:
     def test_gmt_sets_identical_at_every_threshold(self, threshold, monkeypatch):
         store = {}
         fake_cache = MagicMock()
-        fake_cache.get.side_effect = lambda key: store.get(key)
+        fake_cache.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), None) if expire_time else store.get(key))
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
 
@@ -250,7 +251,8 @@ class TestConfidenceScopedCacheKeys:
         """An 'all' entry in the disk cache must not satisfy a 'high' request."""
         store = {app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all"): ({"KE:1": {"A", "B"}}, "api")}
         fake_cache = MagicMock()
-        fake_cache.get.side_effect = lambda key: store.get(key)
+        fake_cache.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), None) if expire_time else store.get(key))
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
 
@@ -270,7 +272,8 @@ class TestConfidenceScopedCacheKeys:
         """And the reverse: a 'high' entry must not satisfy an 'all' request."""
         store = {app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "high"): ({"KE:1": {"A"}}, "api")}
         fake_cache = MagicMock()
-        fake_cache.get.side_effect = lambda key: store.get(key)
+        fake_cache.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), None) if expire_time else store.get(key))
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
 
@@ -281,7 +284,8 @@ class TestConfidenceScopedCacheKeys:
     def test_gmt_loader_caches_per_threshold(self, monkeypatch):
         store = {}
         fake_cache = MagicMock()
-        fake_cache.get.side_effect = lambda key: store.get(key)
+        fake_cache.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), None) if expire_time else store.get(key))
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
 
@@ -300,7 +304,8 @@ class TestCachePreservesOriginalSource:
     @staticmethod
     def _fake_cache(monkeypatch, store):
         fake_cache = MagicMock()
-        fake_cache.get.side_effect = lambda key: store.get(key)
+        fake_cache.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), None) if expire_time else store.get(key))
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
         return fake_cache
@@ -550,7 +555,8 @@ class TestCacheFormatUpgrade:
 
     def _cache(self, monkeypatch, store):
         fake = MagicMock()
-        fake.get.side_effect = lambda key: store.get(key)
+        fake.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), None) if expire_time else store.get(key))
         fake.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake)
 
@@ -572,3 +578,109 @@ class TestCacheFormatUpgrade:
 
         assert unresolved == ["WP5477"]
         assert source == "cache(api)"
+
+
+class TestCacheAgeIsReported:
+    """Issue #106: "cached" without an age cannot support a reproducibility claim."""
+
+    TTL = 3600
+
+    @staticmethod
+    def _cache_with_expiry(monkeypatch, store, expiry_by_key):
+        """A cache double that answers expire_time, as diskcache does."""
+        fake = MagicMock()
+        fake.get.side_effect = lambda key, expire_time=False: (
+            (store.get(key), expiry_by_key.get(key)) if expire_time else store.get(key))
+        fake.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
+        monkeypatch.setattr(app, "_reference_cache", fake)
+
+    @pytest.fixture(autouse=True)
+    def _clear_recorded_times(self):
+        """The fill-time record is module state; keep tests independent."""
+        app._CACHE_FILL_TIMES.clear()
+        yield
+        app._CACHE_FILL_TIMES.clear()
+
+    def test_cache_hit_records_the_fill_time(self, monkeypatch):
+        """Fill time is the entry's expiry less the TTL it was written with."""
+        import datetime as dt
+
+        filled = dt.datetime(2026, 7, 22, 9, 14, tzinfo=dt.timezone.utc)
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._cache_with_expiry(
+            monkeypatch,
+            {key: ({"KE:1": {"A"}}, "api")},
+            {key: filled.timestamp() + app.Config.CACHE_TTL},
+        )
+
+        app._load_wikipathways_reference_sets("all")
+
+        assert app._cache_fill_time("WikiPathways", "all") == "2026-07-22 09:14 UTC"
+
+    def test_provenance_line_states_the_age(self, monkeypatch):
+        """The line a methods section quotes must carry the vintage."""
+        import datetime as dt
+
+        filled = dt.datetime(2026, 7, 22, 9, 14, tzinfo=dt.timezone.utc)
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._cache_with_expiry(
+            monkeypatch,
+            {key: ({"KE:1": {"A"}}, "api")},
+            {key: filled.timestamp() + app.Config.CACHE_TTL},
+        )
+
+        _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
+
+        assert resolution[0]["cached_at"] == "2026-07-22 09:14 UTC"
+        assert app.describe_resource_resolution(resolution) == (
+            "WikiPathways (Builder API, cached 2026-07-22 09:14 UTC)"
+        )
+
+    def test_a_live_load_claims_no_cache_age(self):
+        """Nothing was cached, so there is nothing to date."""
+        wp = {"KE:1": {"A"}}
+        with patch.object(app, "_load_wikipathways_reference_sets",
+                          return_value=(wp, "api", [], {})):
+            _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
+
+        assert resolution[0]["cached_at"] is None
+        assert app.describe_resource_resolution(resolution) == (
+            "WikiPathways (Builder API, live)"
+        )
+
+    def test_unknown_age_keeps_the_bare_wording(self, monkeypatch):
+        """An entry written without an expiry dates to nothing — don't invent one."""
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._cache_with_expiry(monkeypatch, {key: ({"KE:1": {"A"}}, "csv")}, {})
+
+        _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
+
+        assert resolution[0]["cached_at"] is None
+        assert app.describe_resource_resolution(resolution) == (
+            "WikiPathways (bundled reference files, cached)"
+        )
+
+    def test_gmt_resources_report_their_own_age(self, monkeypatch):
+        """GO BP and Reactome are cached separately, so each dates separately."""
+        import datetime as dt
+
+        filled = dt.datetime(2026, 7, 20, 6, 0, tzinfo=dt.timezone.utc)
+        key = app._confidence_cache_key(app._GMT_RESOURCE_CACHE_KEYS["GO_BP"], "all")
+        self._cache_with_expiry(
+            monkeypatch,
+            {key: ({"KE:1097": {"TP53"}}, "api")},
+            {key: filled.timestamp() + app.Config.CACHE_TTL},
+        )
+
+        _, _, resolution = app.load_cached_reference_sets(["GO_BP"])
+
+        assert resolution[0]["cached_at"] == "2026-07-20 06:00 UTC"
+
+    def test_a_skipped_resource_carries_the_key_but_no_age(self):
+        """Every entry has the field, so consumers need no special-casing."""
+        with patch.object(app, "_load_gmt_resource_reference_sets",
+                          side_effect=RuntimeError("HTTP 502")):
+            _, _, resolution = app.load_cached_reference_sets(["Reactome"])
+
+        assert resolution[0]["status"] == "skipped"
+        assert resolution[0]["cached_at"] is None

@@ -1500,6 +1500,56 @@ def _confidence_cache_key(base_key, min_confidence):
     return f"{base_key}:minconf={min_confidence}"
 
 
+# Issue #106: when each reference-set cache entry was filled, recorded by the
+# loader at the moment it reads that entry and keyed by the same cache key.
+# Keeping it here rather than deriving it later means the age reported always
+# belongs to the gene sets actually loaded, and it costs no change to the
+# cached payload shapes (already carrying compatibility history from #79/#81).
+_CACHE_FILL_TIMES = {}
+
+
+def _record_cache_fill_time(cache_key, expire_at):
+    """Note when a cache entry was written, from its expiry (#106).
+
+    diskcache stores an expiry per entry and every reference-set entry is
+    written with the same ``Config.CACHE_TTL``, so the fill time is the expiry
+    minus that TTL. The one assumption: change CACHE_TTL while an entry is warm
+    and that entry's reported age is off by the difference until it expires — a
+    timestamp stale by that much still beats the "no age at all" it replaces.
+
+    Args:
+        cache_key: the threshold-scoped key the entry was read from.
+        expire_at: epoch seconds from ``cache.get(..., expire_time=True)``, or
+            None for an entry written without an expiry.
+    """
+    if not expire_at:
+        _CACHE_FILL_TIMES.pop(cache_key, None)
+        return
+    filled_at = datetime.datetime.fromtimestamp(
+        expire_at - Config.CACHE_TTL, tz=datetime.timezone.utc
+    )
+    _CACHE_FILL_TIMES[cache_key] = filled_at.strftime('%Y-%m-%d %H:%M UTC')
+
+
+def _cache_fill_time(resource, min_confidence):
+    """Report when this resource's loaded gene sets were cached (#106).
+
+    Args:
+        resource: resource key from VALID_RESOURCES.
+        min_confidence: the threshold the entry was keyed by.
+
+    Returns:
+        str: UTC timestamp to the minute, or None when the load did not come
+        from the cache or its age could not be established. A caller must
+        render None as "age unknown", never as a guess.
+    """
+    base_key = (REFERENCE_CACHE_KEY if resource == "WikiPathways"
+                else _GMT_RESOURCE_CACHE_KEYS.get(resource))
+    if not base_key:
+        return None
+    return _CACHE_FILL_TIMES.get(_confidence_cache_key(base_key, min_confidence))
+
+
 def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Load WikiPathways KE->gene sets (disk cache -> Builder API -> local CSV).
 
@@ -1525,8 +1575,11 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
         ``.unresolved_ke_pathways`` (see ``helpers.ReferenceSets``).
     """
     cache_key = _confidence_cache_key(REFERENCE_CACHE_KEY, min_confidence)
-    cached = _reference_cache.get(cache_key)
+    # Issue #106: read the expiry alongside the value so the provenance line can
+    # say how old the cached gene sets are, not merely that they were cached.
+    cached, expire_at = _reference_cache.get(cache_key, expire_time=True)
     if cached is not None:
+        _record_cache_fill_time(cache_key, expire_at)
         # Entries written before #79 are 2-tuples and before #81 3-tuples;
         # treat them as "nothing known to be unresolved" rather than
         # invalidating a warm cache on deploy.
@@ -1614,8 +1667,10 @@ def _load_gmt_resource_reference_sets(resource, min_confidence=DEFAULT_MIN_CONFI
         is still reported (issue #68).
     """
     cache_key = _confidence_cache_key(_GMT_RESOURCE_CACHE_KEYS[resource], min_confidence)
-    cached = _reference_cache.get(cache_key)
+    # Issue #106: the expiry gives the cache fill time for the provenance line.
+    cached, expire_at = _reference_cache.get(cache_key, expire_time=True)
     if cached is not None:
+        _record_cache_fill_time(cache_key, expire_at)
         reference_sets, original_source = cached
         logger.info(
             f"Loaded {len(reference_sets)} {resource} KE sets from disk cache"
@@ -1726,7 +1781,14 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
              'confidence_applied': False,   # issue #67
              'unresolved_pathways': ['WP5477'],          # issue #79
              'unresolved_ke_pathways': {'KE:1115': ['WP5477']},  # issue #81
+             'cached_at': '2026-07-22 09:14 UTC',        # issue #106
              'error': 'HTTP 502' or None}
+
+        ``cached_at`` is set only when the sets came from the disk cache, and
+        says when that cache was filled — "cached" with no age cannot tell a
+        set fetched minutes ago from one fetched weeks ago, which is precisely
+        what a reproducibility claim needs. None means live, or an age that
+        could not be established.
 
         Recording resolution rather than selection is the point: a run where
         Reactome was skipped, or where WikiPathways fell back to the bundled
@@ -1770,6 +1832,7 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
                 'confidence_applied': False,
                 'unresolved_pathways': [],
                 'unresolved_ke_pathways': {},
+                'cached_at': None,
                 'error': str(exc),
             })
             continue
@@ -1795,6 +1858,14 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
             # Issue #81: the same pathways attributed to their Key Events, so a
             # stored resolution can say which KE was misreported as unmapped.
             'unresolved_ke_pathways': unresolved_ke,
+            # Issue #106: when the sets came from the cache, when that cache was
+            # filled. "cached" alone carries no age, so two runs minutes apart
+            # could be served gene sets of different vintages with nothing in
+            # either output distinguishing them — and the provenance line is
+            # exactly what a methods section cites to say which gene sets
+            # produced a result. None for a live load or an unknowable age.
+            'cached_at': _cache_fill_time(resource, min_confidence) if str(
+                source).startswith('cache(') else None,
             'error': None,
         })
 
@@ -1825,9 +1896,16 @@ def describe_resource_resolution(resolution):
         resolution: list produced by ``load_cached_reference_sets``.
 
     Returns:
-        str: e.g. ``"WikiPathways (Builder API, cached); Reactome — unavailable,
-        skipped"``. Empty string when there is nothing to describe (legacy
-        records that predate the resolution table).
+        str: e.g. ``"WikiPathways (Builder API, cached 2026-07-22 09:14 UTC);
+        Reactome — unavailable, skipped"``. Empty string when there is nothing
+        to describe (legacy records that predate the resolution table).
+
+        Issue #106: a cached entry states when the cache was filled, because
+        "cached" on its own cannot distinguish gene sets fetched minutes ago
+        from ones fetched weeks ago — and this line is what a methods section
+        quotes to say which gene sets produced a result. An entry whose age is
+        unknown (stored before the timestamp existed, or a cache that could not
+        be read) keeps the bare wording rather than inventing a time.
     """
     if not resolution:
         return ''
@@ -1838,6 +1916,9 @@ def describe_resource_resolution(resolution):
             parts.append(f"{name} — unavailable, skipped")
             continue
         label = RESOURCE_SOURCE_LABELS.get(entry.get('source'), entry.get('source') or '?')
+        cached_at = entry.get('cached_at')
+        if cached_at:
+            label = f"{label} {cached_at}"
         parts.append(f"{name} ({label})")
     return '; '.join(parts)
 
