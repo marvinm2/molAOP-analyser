@@ -42,7 +42,16 @@ def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, 
     upward shift in one condition and a downward shift in another are
     distinguishable, which a p-value-derived matrix cannot show. Unlike
     ``neg_log10_matrix`` it is *not* blanked at the significance cutoff: a
-    consistent sub-threshold NES across a dose series is itself the signal.
+    consistent sub-threshold NES across a dose series is itself the signal, and
+    this matrix is the record the table and the exports read.
+
+    Issue #107 qualifies that for *colour* specifically. The sign of a
+    sub-threshold NES is not a stable quantity — the same conditions run
+    against a harmonised and a per-file background returned opposite signs for
+    four of six KEs in the weakest condition, all with FDR >= 0.48 — so both
+    heatmap renderers mask this matrix at the cutoff before colouring it. The
+    masking lives with the rendering, not here: what is unsuitable for a
+    diverging colour scale is still a legitimate number to read and to export.
 
     Args:
         conditions: List of ConditionRecord ORM objects ordered by position.
@@ -252,6 +261,12 @@ def comparison_matrix_to_dataframe(
                        matching the heatmap's null semantics)
       - ``'nes'``      normalised enrichment score (#76; blank throughout for
                        an ORA batch, which produces no NES)
+
+    The NES export is deliberately **not** masked at the significance cutoff the
+    way the heatmap is (#107). A download is the raw record — the FDR matrix is
+    downloadable alongside it, so a reader can apply any cutoff they like —
+    whereas the heatmap has to choose a colour per cell and must not encode a
+    direction the data cannot support.
 
     Key Event titles are passed through :func:`csv_guard` so a title beginning
     with a formula character cannot be interpreted as a formula on open.

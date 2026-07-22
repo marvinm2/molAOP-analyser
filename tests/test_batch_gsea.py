@@ -712,3 +712,123 @@ class TestBatchFormThresholdsUnderGsea:
         # while the run kept using it for the significant-gene counts.
         assert "thresholds.style.display = isGsea ? 'none' : ''" not in body
         assert 'batch-threshold-gsea-note' in body
+
+
+class TestNesHeatmapMasking:
+    """Issue #107: colour must encode direction only where direction is supported."""
+
+    def _matrix(self):
+        """A GSEA matrix mixing significant and far-from-significant cells.
+
+        The non-significant values are the ones from the issue: cisplatin 72h
+        KEs whose NES flipped sign between two legitimate ways of running the
+        same comparison, all at FDR >= 0.48.
+        """
+        return {
+            'method': 'gsea',
+            'ke_labels': ['KE:1392', 'KE:115'],
+            'ke_titles': ['Unstable', 'Real'],
+            'condition_labels': ['C1', 'C2'],
+            'fdr_matrix': [[0.48, 0.62], [0.001, None]],
+            'neg_log10_matrix': [[None, None], [3.0, None]],
+            'nes_matrix': [[1.16, -0.75], [2.4, 1.9]],
+        }
+
+    def test_non_significant_cells_are_blanked(self):
+        from services.batch_report_service import _mask_nes_by_significance
+
+        m = self._matrix()
+        masked = _mask_nes_by_significance(m['nes_matrix'], m['fdr_matrix'])
+
+        assert masked[0] == [None, None], 'FDR >= 0.48 must not be coloured'
+
+    def test_significant_cells_keep_their_signed_nes(self):
+        from services.batch_report_service import _mask_nes_by_significance
+
+        m = self._matrix()
+        masked = _mask_nes_by_significance(m['nes_matrix'], m['fdr_matrix'])
+
+        assert masked[1][0] == 2.4
+
+    def test_untested_cell_is_blank_not_coloured(self):
+        """A KE absent from a condition has no FDR — absent is not significant."""
+        from services.batch_report_service import _mask_nes_by_significance
+
+        m = self._matrix()
+        masked = _mask_nes_by_significance(m['nes_matrix'], m['fdr_matrix'])
+
+        assert masked[1][1] is None
+
+    def test_input_matrix_is_not_mutated(self):
+        """The unmasked NES is the record the table and exports read."""
+        from services.batch_report_service import _mask_nes_by_significance
+
+        m = self._matrix()
+        _mask_nes_by_significance(m['nes_matrix'], m['fdr_matrix'])
+
+        assert m['nes_matrix'] == [[1.16, -0.75], [2.4, 1.9]]
+
+    def test_missing_fdr_matrix_leaves_nes_untouched(self):
+        """Nothing can be assessed without FDR — do not blank the whole figure."""
+        from services.batch_report_service import _mask_nes_by_significance
+
+        assert _mask_nes_by_significance([[1.0]], None) == [[1.0]]
+
+    def test_report_heatmap_uses_the_masked_matrix(self):
+        """The PDF and the screen must not disagree about which signs count."""
+        from unittest.mock import patch
+
+        from services import batch_report_service as brs
+
+        with patch.object(brs, 'render_figure_png', return_value=b'PNG'), \
+             patch('plotly.graph_objects.Heatmap') as heatmap:
+            brs.render_heatmap_png(self._matrix())
+
+        z = heatmap.call_args.kwargs['z']
+        assert z[0] == [None, None]
+        assert z[1][0] == 2.4
+
+    def test_export_keeps_every_nes(self):
+        """The download is the raw record — masking belongs to the rendering."""
+        df = comparison_matrix_to_dataframe(self._matrix(), which='nes')
+
+        assert list(df['C1']) == [1.16, 2.4]
+        assert list(df['C2'])[0] == -0.75
+
+
+class TestBlankHeatmapStaysLegible:
+    """Issue #107: a heatmap with nothing significant must still say what it covers."""
+
+    def test_axis_anchor_trace_accompanies_the_heatmap(self):
+        """Plotly infers its axes from the data; an all-null z draws no labels.
+
+        The transparent companion trace carries the same categories so the
+        figure keeps its Key Event and condition labels when every cell is
+        masked — which is the common case for a batch where nothing reaches
+        the cutoff, and an ordinary result rather than an error.
+        """
+        from unittest.mock import patch
+
+        from services import batch_report_service as brs
+
+        matrix = {
+            'method': 'gsea',
+            'ke_labels': ['KE:1'],
+            'ke_titles': ['Alpha'],
+            'condition_labels': ['C1', 'C2'],
+            'fdr_matrix': [[0.9, 0.8]],
+            'neg_log10_matrix': [[None, None]],
+            'nes_matrix': [[1.1, -0.9]],
+        }
+
+        with patch.object(brs, 'render_figure_png', return_value=b'PNG'), \
+             patch('plotly.graph_objects.Heatmap') as heatmap:
+            brs.render_heatmap_png(matrix)
+
+        assert heatmap.call_count == 2, 'expected an axis anchor plus the data trace'
+        anchor = heatmap.call_args_list[0].kwargs
+        assert anchor['opacity'] == 0
+        assert anchor['showscale'] is False
+        assert anchor['x'] == ['C1', 'C2']
+        assert anchor['y'] == ['Alpha']
+        assert anchor['z'] == [[0, 0]], 'anchor must be drawable, not null'
