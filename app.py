@@ -2074,7 +2074,8 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
                               timepoints, id_col, fc_col, pval_col, aop_id,
                               logfc_threshold, pval_threshold, resources,
                               harmonised_genes, batch_name, owner, description,
-                              min_confidence=DEFAULT_MIN_CONFIDENCE):
+                              min_confidence=DEFAULT_MIN_CONFIDENCE,
+                              method='ora'):
     """Create the BatchRecord + ConditionRecords and launch run_batch in a thread.
 
     Shared by the interactive batch wizard (/batch/analyze) and the one-click
@@ -2092,6 +2093,8 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
         batch_name/owner/description: batch metadata.
         min_confidence: issue #60 minimum KE-mapping confidence ('all',
             'medium' or 'high'); applied to every condition in the batch.
+        method: issue #76 enrichment method ('ora' or 'gsea'); applied to
+            every condition so the comparison matrix stays comparable.
 
     Returns:
         The new BatchRecord primary key.
@@ -2118,6 +2121,7 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
             status='pending',
             aop_id=aop_id,
             aop_label=aop_label,
+            method=method,  # Issue #76
             logfc_threshold=logfc_threshold,
             pval_cutoff=pval_threshold,
             selected_resources=", ".join(resources),
@@ -2152,7 +2156,10 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
 
         session_db.commit()
         batch_id = batch.id
-        logger.info(f'_persist_and_launch_batch: BatchRecord {batch_id} created ({len(filenames)} conditions)')
+        logger.info(
+            f'_persist_and_launch_batch: BatchRecord {batch_id} created '
+            f'({len(filenames)} conditions, method={method})'
+        )
     except Exception:
         session_db.rollback()
         raise
@@ -2207,6 +2214,15 @@ def batch_analyze():
     pval_col = request.form.get('pval_col', '').strip()
     if not (id_col and fc_col and pval_col):
         return jsonify({'error': 'Column mapping (id_col, fc_col, pval_col) is required'}), 400
+
+    # Issue #76: enrichment method, applied to every condition in the batch.
+    # Whitelisted here exactly as /analyze does (T-14-01); a blank field is the
+    # pre-#76 behaviour, ORA.
+    method = (request.form.get('method') or 'ora').strip().lower()
+    if method not in ('ora', 'gsea'):
+        return jsonify({
+            'error': "Invalid method. Choose Fisher's exact or GSEA on the batch form."
+        }), 400
 
     try:
         logfc_threshold = float(request.form.get('logfc_threshold', '0.0'))
@@ -2306,6 +2322,7 @@ def batch_analyze():
             fc_col=fc_col,
             pval_col=pval_col,
             aop_id=aop_id,
+            method=method,  # Issue #76
             logfc_threshold=logfc_threshold,
             pval_threshold=pval_threshold,
             resources=resources,
@@ -2611,7 +2628,10 @@ def batch_compare(batch_uuid_str):
         )
 
         # Build comparison matrix while session is still open (conditions bound to session).
-        comparison_data = build_comparison_matrix(conditions)
+        # Issue #76: a GSEA batch is compared on NES, not on the ORA columns.
+        # effective_method() reads NULL (pre-#76 batches) as 'ora'.
+        batch_method = batch.effective_method()
+        comparison_data = build_comparison_matrix(conditions, method=batch_method)
         comparison_data_json = json.dumps(comparison_data)
 
         # Extract the first complete condition's network_json for the comparison network.
@@ -2631,6 +2651,7 @@ def batch_compare(batch_uuid_str):
             'compare.html',
             batch=batch,
             conditions=conditions,
+            batch_method=batch_method,
             comparison_data_json=comparison_data_json,
             network_json=json.dumps(first_network) if first_network else 'null',
         )
@@ -2677,7 +2698,9 @@ def batch_compare_export(batch_uuid_str):
 
     Query params:
         fmt:    'csv' (default) or 'xlsx'.
-        matrix: 'fdr' (default, raw FDR) or 'neglog10' (-log10(FDR)).
+        matrix: 'fdr' (default, raw FDR), 'neglog10' (-log10(FDR)) or 'nes'
+                (normalised enrichment score; a GSEA batch only — an ORA batch
+                produces no NES and exports blank cells).
 
     The download is the wide KE x condition table shown on the comparison page.
     """
@@ -2686,8 +2709,8 @@ def batch_compare_export(batch_uuid_str):
     which = request.args.get('matrix', 'fdr').lower()
     if fmt not in ('csv', 'xlsx'):
         abort(400, description="Invalid format (expected csv or xlsx)")
-    if which not in ('fdr', 'neglog10'):
-        abort(400, description="Invalid matrix (expected fdr or neglog10)")
+    if which not in ('fdr', 'neglog10', 'nes'):
+        abort(400, description="Invalid matrix (expected fdr, neglog10 or nes)")
 
     session_db = db_manager.get_session()
     try:
@@ -2695,7 +2718,11 @@ def batch_compare_export(batch_uuid_str):
         if conditions is None:
             return batch  # error response tuple
 
-        matrix_dict = build_comparison_matrix(conditions)
+        # Issue #76: build for the batch's own method, otherwise the NES matrix
+        # is never populated and matrix=nes exports an empty table.
+        matrix_dict = build_comparison_matrix(
+            conditions, method=batch.effective_method()
+        )
         df = comparison_matrix_to_dataframe(matrix_dict, which=which)
 
         stem = f"molAOP_{_safe_filename_part(batch.aop_id)}_{_safe_filename_part(batch.batch_name)}_comparison_{which}"
@@ -2893,7 +2920,12 @@ def batch_report(batch_uuid_str):
 
         # Only include conditions that actually produced results.
         complete_conditions = [c for c in conditions if c.status == 'complete' and c.enrichment_json]
-        comparison_data = build_comparison_matrix(complete_conditions)
+        # Issue #76: the report must be built for the method the batch was run
+        # with. Without this a GSEA batch was tabulated with the Fisher columns,
+        # printing zeros for overlap and odds ratio and dropping NES entirely.
+        comparison_data = build_comparison_matrix(
+            complete_conditions, method=batch.effective_method()
+        )
 
         stem = f"molAOP_{_safe_filename_part(batch.batch_name)}_batch_report"
 

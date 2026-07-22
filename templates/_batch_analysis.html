@@ -161,7 +161,41 @@
             <ul id="aop-suggestions" class="typeahead-dropdown" hidden></ul>
         </div>
 
+        <!-- Statistical method (#76) — mirrors the single-analysis selector -->
+        <h3>Statistical Method</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Applied equally to all conditions, so the comparison stays like-for-like.
+            Fisher's exact tests the genes that pass the thresholds below. GSEA ranks
+            every gene instead and reports a signed NES &mdash; which is what makes a
+            coordinated shift visible across a dose or timepoint series &mdash; but the
+            thresholds still define the per-condition significant-gene counts and the
+            driver genes shown on the comparison page.
+        </p>
+        <div class="settings-subgroup" role="group" aria-labelledby="batch-method-group-label"
+             style="margin-bottom: 24px;">
+            <span class="settings-subgroup__label" id="batch-method-group-label">Statistical method</span>
+            <div class="settings-options">
+                <label>
+                    <input type="radio" name="batch_method" value="ora" checked>
+                    Fisher's exact (over-representation)
+                </label>
+                <label>
+                    <input type="radio" name="batch_method" value="gsea">
+                    GSEA (rank-based)
+                </label>
+            </div>
+        </div>
+
         <!-- Threshold controls -->
+        <div id="batch-threshold-inputs">
+        <p id="batch-threshold-gsea-note" style="display:none; font-size:14px; color:#29235C;
+                  background:#f0f4ff; border-left:3px solid #307BBF; padding:8px 12px;
+                  margin-bottom:16px;">
+            GSEA ranks every gene, so these thresholds do not affect the enrichment
+            statistic. They still decide which genes are counted as significant per
+            condition &mdash; the &ldquo;sig genes&rdquo; figures and the driver genes
+            on the comparison page &mdash; so set them to something you would defend.
+        </p>
         <h3>Log2FC Threshold</h3>
         <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
             Minimum absolute log2 fold change for a gene to be considered significant.
@@ -185,8 +219,9 @@
 
         <h3>P-value Threshold</h3>
         <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
-            Genes with a raw p-value below this threshold are flagged as significant for
-            Fisher's exact test. Applied equally to all conditions. Default 0.05.
+            Genes with a raw p-value below this threshold are flagged as significant.
+            Fisher's exact tests on that flag; under GSEA it only drives the reported
+            gene counts. Applied equally to all conditions. Default 0.05.
         </p>
         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 24px;">
             <label for="pval-threshold" style="font-weight: 600; color: #29235C; font-size: 14px;">
@@ -197,6 +232,7 @@
                    title="Genes with raw p-value below this threshold are flagged as significant for Fisher's exact. Default 0.05."
                    style="width: 80px; display: inline-block; margin: 0; padding: 6px 8px;">
         </div>
+        </div><!-- /#batch-threshold-inputs -->
 
         <h3>Gene Set Resources</h3>
         <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
@@ -261,3 +297,39 @@
         </div>
     </div>
 </div>
+
+<script>
+// Issue #76 — batch statistical-method selector.
+//
+// The thresholds stay on screen under GSEA. They do not enter the GSEA
+// statistic, but a batch run still applies them to every condition to decide
+// which genes count as significant, and those counts are what the comparison
+// page reports ("N / M sig genes") and what the driver-gene tab is built from.
+// Hiding the inputs would mean reporting numbers derived from thresholds the
+// user was never shown; instead the note below says exactly what they still do.
+//
+// The method itself is appended to the POST /batch/analyze payload at the call
+// site in _batch_analysis_scripts.html.
+(function () {
+    'use strict';
+
+    var radios = document.querySelectorAll('input[name="batch_method"]');
+    var note = document.getElementById('batch-threshold-gsea-note');
+    if (!radios.length) return;
+
+    /** Return the currently selected batch method ('ora' or 'gsea'). */
+    function selectedMethod() {
+        var checked = document.querySelector('input[name="batch_method"]:checked');
+        return checked ? checked.value : 'ora';
+    }
+
+    /** Show the GSEA caveat on the threshold inputs when GSEA is selected. */
+    function applyMethod() {
+        if (!note) return;
+        note.style.display = (selectedMethod() === 'gsea') ? '' : 'none';
+    }
+
+    radios.forEach(function (r) { r.addEventListener('change', applyMethod); });
+    applyMethod();
+})();
+</script>

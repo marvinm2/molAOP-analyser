@@ -28,7 +28,7 @@ CONDITION_PALETTE = [
 ]
 
 
-def build_comparison_matrix(conditions: list) -> dict[str, Any]:
+def build_comparison_matrix(conditions: list, method: str = 'ora') -> dict[str, Any]:
     """Build a comparison matrix from a list of ConditionRecord objects.
 
     Pivots enrichment results for all conditions into a KE × condition matrix
@@ -36,25 +36,39 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
     mean significance (most significant first).  Columns are kept in upload-
     position order (not alphabetical) by explicit reindexing after pivot.
 
+    For a GSEA batch (``method='gsea'``, issue #76) an additional ``nes_matrix``
+    is produced from each condition's normalised enrichment score. NES is the
+    quantity worth comparing across conditions — it is signed, so a coordinated
+    upward shift in one condition and a downward shift in another are
+    distinguishable, which a p-value-derived matrix cannot show. Unlike
+    ``neg_log10_matrix`` it is *not* blanked at the significance cutoff: a
+    consistent sub-threshold NES across a dose series is itself the signal.
+
     Args:
         conditions: List of ConditionRecord ORM objects ordered by position.
                     Each must expose ``condition_label`` and ``enrichment_json``
                     (a JSON-serialised list of enrichment result dicts).
+        method: Enrichment method the batch was run with — ``'ora'`` (default,
+                the value a pre-#76 batch reads back as) or ``'gsea'``.
 
     Returns:
         A dict with keys:
             ke_labels        — list of KE ID strings in row order
             ke_titles        — list of human-readable KE titles
             condition_labels — list of condition label strings in upload order
+            method           — the method string this matrix was built for
             fdr_matrix       — 2-D list (rows=KEs, cols=conditions) of raw FDR
                                floats, None where data is absent
             neg_log10_matrix — 2-D list of -log10(FDR) floats, None where FDR
                                is absent or above Config.SIGNIFICANCE_FDR_CUTOFF
                                (non-significant)
+            nes_matrix       — 2-D list of NES floats (GSEA batches only; all
+                               None for ORA batches, which carry no NES)
             condition_colors — list of hex colour strings from CONDITION_PALETTE
 
         Returns an empty dict ``{}`` if no enrichment rows are found.
     """
+    is_gsea = method == 'gsea'
     rows = []
     ke_title_map: dict[str, str] = {}
 
@@ -76,11 +90,13 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
             title = entry.get('Title', '')
             if ke is None or fdr is None:
                 continue
+            nes = entry.get('NES')
             rows.append({
                 'condition': cond.condition_label,
                 'KE': ke,
                 'Title': title,
                 'FDR': float(fdr),
+                'NES': float(nes) if nes is not None else None,
             })
             # Keep first-seen title per KE
             if ke not in ke_title_map:
@@ -90,7 +106,7 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
         logger.info('build_comparison_matrix: no enrichment rows found — returning empty dict')
         return {}
 
-    df = pd.DataFrame(rows, columns=['condition', 'KE', 'Title', 'FDR'])
+    df = pd.DataFrame(rows, columns=['condition', 'KE', 'Title', 'FDR', 'NES'])
 
     # H-1: a well-formed enrichment table has unique KEs per condition. If a
     # condition's blob contains duplicate (condition, KE) pairs, pivot_table's
@@ -121,12 +137,26 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
 
     neg_log10_pivot = pivot.map(_neg_log10)
 
+    # NES pivot (#76). Built only for GSEA batches — an ORA enrichment table has
+    # no NES column, so the pivot would be all-NaN and only add noise.
+    if is_gsea:
+        nes_pivot = df.pivot_table(
+            index='KE', columns='condition', values='NES', aggfunc='first'
+        ).reindex(columns=condition_labels)
+        # Reindex rows too: a KE whose NES was NaN in every condition is dropped
+        # by pivot_table, and the matrix must stay aligned with `pivot`.
+        nes_pivot = nes_pivot.reindex(index=pivot.index)
+    else:
+        nes_pivot = None
+
     # Sort KE rows by mean -log10(FDR) significance descending (most significant first).
     # Fill NaN with 0 for sorting purposes only.
     mean_sig = neg_log10_pivot.fillna(0).mean(axis=1)
     sort_order = mean_sig.sort_values(ascending=False).index
     pivot = pivot.loc[sort_order]
     neg_log10_pivot = neg_log10_pivot.loc[sort_order]
+    if nes_pivot is not None:
+        nes_pivot = nes_pivot.loc[sort_order]
 
     ke_labels = list(pivot.index)
     ke_titles = [ke_title_map.get(ke, ke) for ke in ke_labels]
@@ -143,6 +173,10 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
 
     fdr_matrix = _to_list(pivot)
     neg_log10_matrix = _to_list(neg_log10_pivot)
+    nes_matrix = (
+        _to_list(nes_pivot) if nes_pivot is not None
+        else [[None] * len(condition_labels) for _ in ke_labels]
+    )
 
     # Assign colours from palette in upload-position order.
     condition_colors = CONDITION_PALETTE[:len(conditions)]
@@ -164,8 +198,10 @@ def build_comparison_matrix(conditions: list) -> dict[str, Any]:
         'ke_labels': ke_labels,
         'ke_titles': ke_titles,
         'condition_labels': condition_labels,
+        'method': 'gsea' if is_gsea else 'ora',  # #76
         'fdr_matrix': fdr_matrix,
         'neg_log10_matrix': neg_log10_matrix,
+        'nes_matrix': nes_matrix,  # #76 — all None for ORA batches
         'condition_colors': condition_colors,
         'condition_gene_counts': condition_gene_counts,
         'condition_sig_gene_counts': condition_sig_gene_counts,
@@ -214,13 +250,15 @@ def comparison_matrix_to_dataframe(
       - ``'fdr'``      raw FDR floats (blank where the KE is absent in a condition)
       - ``'neglog10'`` -log10(FDR) (blank where non-significant or absent,
                        matching the heatmap's null semantics)
+      - ``'nes'``      normalised enrichment score (#76; blank throughout for
+                       an ORA batch, which produces no NES)
 
     Key Event titles are passed through :func:`csv_guard` so a title beginning
     with a formula character cannot be interpreted as a formula on open.
 
     Args:
         matrix_dict: The dict returned by :func:`build_comparison_matrix`.
-        which: ``'fdr'`` or ``'neglog10'``.
+        which: ``'fdr'``, ``'neglog10'`` or ``'nes'``.
 
     Returns:
         A pandas DataFrame with columns ``Key Event ID``, ``Key Event Title``,
@@ -229,10 +267,21 @@ def comparison_matrix_to_dataframe(
     if not matrix_dict or not matrix_dict.get('ke_labels'):
         return pd.DataFrame()
 
-    if which not in ('fdr', 'neglog10'):
-        raise ValueError(f"Unknown matrix selector: {which!r} (expected 'fdr' or 'neglog10')")
+    matrix_keys = {
+        'fdr': 'fdr_matrix',
+        'neglog10': 'neg_log10_matrix',
+        'nes': 'nes_matrix',
+    }
+    if which not in matrix_keys:
+        raise ValueError(
+            f"Unknown matrix selector: {which!r} (expected 'fdr', 'neglog10' or 'nes')"
+        )
 
-    matrix = matrix_dict['fdr_matrix'] if which == 'fdr' else matrix_dict['neg_log10_matrix']
+    # nes_matrix is absent from matrices built before #76; treat it as all-blank.
+    matrix = matrix_dict.get(matrix_keys[which])
+    if matrix is None:
+        matrix = [[None] * len(matrix_dict['condition_labels'])
+                  for _ in matrix_dict['ke_labels']]
     ke_labels = matrix_dict['ke_labels']
     ke_titles = matrix_dict['ke_titles']
     condition_labels = matrix_dict['condition_labels']

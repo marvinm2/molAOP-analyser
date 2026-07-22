@@ -149,6 +149,34 @@ class TestBackgroundOverlap:
         assert assess_background_overlap({'TP53'}, {})['is_suspect'] is False
 
 
+AOP472_KES = ['KE:1115', 'KE:1194', 'KE:1392', 'KE:149', 'KE:177',
+              'KE:1825', 'KE:373', 'KE:1097', 'KE:759']
+
+
+@pytest.fixture
+def offline_aop(monkeypatch):
+    """Serve AOP:472's topology locally instead of querying AOP-Wiki.
+
+    Without this the two /analyze tests below reach the live SPARQL endpoint —
+    Config.SPARQL_TIMEOUT is 30s and fetch_aop_ke_data issues two queries — so
+    on a machine with no route to it the suite stalls for minutes before those
+    tests fail. Nothing here is about SPARQL: the route only needs a KE list and
+    an edge table to run the enrichment against.
+    """
+    def _fake_fetch(aop_ids, *args, **kwargs):
+        ke_set = set(AOP472_KES)
+        edges = pd.DataFrame(columns=['AOP_ID', 'Source_KE', 'Target_KE', 'KER_ID'])
+        ke_type_map = {ke: 'intermediate' for ke in ke_set}
+        ke_type_map['KE:1115'] = 'MIE'
+        ke_type_map['KE:759'] = 'AO'
+        ke_title_map = {ke: f'Event {ke.split(":")[1]}' for ke in ke_set}
+        return ke_set, edges, ke_type_map, ke_title_map
+
+    monkeypatch.setattr(
+        'services.sparql_service.fetch_aop_ke_data_cached', _fake_fetch
+    )
+
+
 @pytest.mark.unit
 class TestAnalyzeRouteBehaviour:
     """The two ways a wrong ID column reaches the user (issue #69)."""
@@ -173,7 +201,7 @@ class TestAnalyzeRouteBehaviour:
             'min_confidence': 'all',
         })
 
-    def test_total_mismatch_gives_an_actionable_error(self, flask_client):
+    def test_total_mismatch_gives_an_actionable_error(self, flask_client, offline_aop):
         """Was 'Analysis error: please check your input data and parameters'."""
         response = self._post(flask_client, [f'ENSG{i:011d}' for i in range(300)])
         assert response.status_code == 400
@@ -181,14 +209,12 @@ class TestAnalyzeRouteBehaviour:
         assert 'matched the reference gene sets' in body
         assert 'HGNC gene symbols' in body
 
-    def test_partial_mismatch_warns_on_the_results_page(self, flask_client):
+    def test_partial_mismatch_warns_on_the_results_page(self, flask_client, offline_aop):
         """Enough overlap to produce results, too little for them to mean anything."""
         from app import load_cached_reference_sets
         reference_sets, _, _ = load_cached_reference_sets(
             ['WikiPathways', 'GO_BP', 'Reactome'], min_confidence='all')
-        aop_kes = ['KE:1115', 'KE:1194', 'KE:1392', 'KE:149', 'KE:177',
-                   'KE:1825', 'KE:373', 'KE:1097', 'KE:759']
-        symbols = sorted({g for k in aop_kes for g in reference_sets.get(k, set())})
+        symbols = sorted({g for k in AOP472_KES for g in reference_sets.get(k, set())})
         if len(symbols) < 20:
             pytest.skip('reference sets unavailable in this environment')
 
