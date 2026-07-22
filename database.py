@@ -294,6 +294,11 @@ class ConditionRecord(Base):
     gene_count = Column(Integer)
     significant_genes = Column(Integer)
 
+    # Issue #103: rows in this condition's file that carried no usable gene
+    # identifier and were discarded during loading. NULL on rows written before
+    # the count was persisted — which must render as nothing, not as zero.
+    dropped_unidentified_rows = Column(Integer, nullable=True)
+
     # Issue #69: fraction of this condition's identifiers that matched the
     # reference gene universe. NULL on rows written before the check existed.
     # A low value means the gene ID column was probably not gene symbols and
@@ -455,6 +460,35 @@ def _ensure_id_match_fraction_column(engine) -> None:
             )
 
 
+def _ensure_dropped_rows_column(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for 'dropped_unidentified_rows' (#103).
+
+    Adds ``dropped_unidentified_rows INTEGER`` to ``batch_conditions`` when
+    absent. Existing rows keep NULL, which the summary reads as "not recorded"
+    and renders as nothing — a run from before the count was persisted must not
+    claim that no rows were discarded.
+
+    Security note: table and column names are module-internal constants — no
+    user input is interpolated into the SQL.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    with engine.connect() as conn:
+        result = conn.execute(text("PRAGMA table_info(batch_conditions)"))
+        existing_cols = {row[1] for row in result}
+        if 'dropped_unidentified_rows' not in existing_cols:
+            conn.execute(
+                text("ALTER TABLE batch_conditions "
+                     "ADD COLUMN dropped_unidentified_rows INTEGER")
+            )
+            conn.commit()
+            logger.info(
+                "Added 'dropped_unidentified_rows' column to 'batch_conditions' "
+                "table (#103 migration)"
+            )
+
+
 def _ensure_resource_resolution_column(engine) -> None:
     """Idempotent PRAGMA-then-ALTER migration for 'resource_resolution' (#68).
 
@@ -540,6 +574,10 @@ class DatabaseManager:
             # Idempotent additive migration: add 'resource_resolution' to
             # experiments and batches (#68). No-op on fresh databases.
             _ensure_resource_resolution_column(self.engine)
+
+            # Idempotent additive migration: add 'dropped_unidentified_rows' to
+            # batch_conditions (#103). No-op on fresh databases.
+            _ensure_dropped_rows_column(self.engine)
 
             # Create session factory
             self.SessionLocal = sessionmaker(

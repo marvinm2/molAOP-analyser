@@ -278,3 +278,61 @@ class TestMinConfidencePersistence:
             assert stored.min_confidence == 'medium'
         finally:
             session.close()
+
+class TestDroppedRowsColumn:
+    """Issue #103: the discarded symbol-less row count is persisted per condition."""
+
+    def test_migration_adds_the_column_to_a_legacy_table(self, tmp_path):
+        """PRAGMA-then-ALTER, additive and idempotent, as with #68/#69."""
+        from sqlalchemy import create_engine, text
+        from database import _ensure_dropped_rows_column
+
+        db_path = tmp_path / 'legacy.db'
+        engine = create_engine(f'sqlite:///{db_path}')
+        with engine.connect() as conn:
+            conn.execute(text('CREATE TABLE batch_conditions (id INTEGER PRIMARY KEY)'))
+            conn.commit()
+
+        _ensure_dropped_rows_column(engine)
+        _ensure_dropped_rows_column(engine)  # second run must be a no-op
+
+        with engine.connect() as conn:
+            cols = [row[1] for row in conn.execute(text('PRAGMA table_info(batch_conditions)'))]
+        assert cols.count('dropped_unidentified_rows') == 1
+
+    def test_condition_defaults_to_null_not_zero(self, temp_database):
+        """A condition run before the count existed must read as unrecorded.
+
+        NULL and 0 are different claims: 0 says every row carried an identifier,
+        NULL says nobody looked. The summary renders the former and not the
+        latter, so the distinction has to survive storage.
+        """
+        from datetime import datetime, timedelta, timezone
+        from database import BatchRecord, ConditionRecord
+
+        session = temp_database.get_session()
+        try:
+            batch = BatchRecord(
+                uuid='dropped-rows-batch',
+                aop_id='AOP:1',
+                expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
+            )
+            session.add(batch)
+            session.commit()
+
+            legacy = ConditionRecord(
+                batch_id=batch.id, position=0, condition_label='legacy',
+            )
+            counted = ConditionRecord(
+                batch_id=batch.id, position=1, condition_label='counted',
+                dropped_unidentified_rows=875,
+            )
+            session.add_all([legacy, counted])
+            session.commit()
+
+            stored = {c.condition_label: c.dropped_unidentified_rows
+                      for c in session.query(ConditionRecord).all()}
+            assert stored['legacy'] is None
+            assert stored['counted'] == 875
+        finally:
+            session.close()

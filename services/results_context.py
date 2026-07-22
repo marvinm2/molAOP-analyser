@@ -60,6 +60,7 @@ def build_results_context(
     wp_picker_data: Any = None,
     ke_summary: Optional[Dict[str, Any]] = None,
     background_overlap: Any = None,
+    dropped_rows: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Assemble the full template context for ``results.html``.
 
@@ -84,6 +85,10 @@ def build_results_context(
         ke_summary: Issue #65 tested/excluded accounting. ``None`` omits the
             accounting line rather than failing.
         background_overlap: Issue #69 ID-column sanity-check result.
+        dropped_rows: Issue #103 count of upload rows discarded for carrying no
+            usable gene identifier. ``None`` means "not recorded" — a stored run
+            that predates the counter — and renders nothing, which is distinct
+            from a recorded zero.
 
     Returns:
         Keyword arguments for ``render_template('results.html', **context)``.
@@ -113,4 +118,5 @@ def build_results_context(
         "fdr_cutoff": Config.SIGNIFICANCE_FDR_CUTOFF,
         "fdr_choices": Config.SIGNIFICANCE_FDR_CHOICES,
         "background_overlap": background_overlap,
+        "dropped_rows": dropped_rows,
     }

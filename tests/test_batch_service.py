@@ -207,3 +207,74 @@ class TestBatchMinConfidencePersistence:
             assert batch.min_confidence == 'all'
         finally:
             session.close()
+
+
+class TestConditionDroppedRows:
+    """Issue #103: each condition records the rows its file lost to a missing symbol."""
+
+    def _write_file(self, path, symbol_less=2):
+        """Write a small TSV where `symbol_less` rows carry no gene identifier."""
+        rows = [{'Gene': f'G{i}', 'logFC': 2.0, 'pval': 0.001} for i in range(1, 6)]
+        for _ in range(symbol_less):
+            rows.append({'Gene': None, 'logFC': 1.0, 'pval': 0.01})
+        pd.DataFrame(rows).to_csv(path, sep='\t', index=False)
+
+    def _run(self, tmp_path, monkeypatch, temp_database, symbol_less):
+        """Run one condition end-to-end and return its stored ConditionRecord."""
+        import json
+        from datetime import datetime, timedelta, timezone
+
+        from config import Config
+        from database import BatchRecord, ConditionRecord
+        from services import batch_service
+
+        upload_root = tmp_path / 'uploads'
+        (upload_root / 'batch-103').mkdir(parents=True)
+        monkeypatch.setattr(Config, 'UPLOAD_FOLDER', str(upload_root))
+        self._write_file(upload_root / 'batch-103' / 'cond.tsv', symbol_less)
+
+        session = temp_database.get_session()
+        try:
+            batch = BatchRecord(
+                uuid='batch-103', status='running', aop_id='AOP:1',
+                logfc_threshold=1.0, pval_cutoff=0.05,
+                id_column='Gene', fc_column='logFC', pval_column='pval',
+                expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
+            )
+            session.add(batch)
+            session.flush()
+            cond = ConditionRecord(
+                batch_id=batch.id, position=0, filename='cond.tsv',
+                condition_label='Cond', status='pending',
+            )
+            session.add(cond)
+            session.commit()
+
+            batch_service._run_condition(
+                cond, batch,
+                harmonised_genes={f'G{i}' for i in range(1, 6)},
+                reference_sets={'KE:115': {f'G{i}' for i in range(1, 6)}},
+                ke_list={'KE:115'},
+                edges=pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID']),
+                ke_type_map={'KE:115': 'MIE'},
+                ke_title_map={'KE:115': 'Event 115'},
+                db_session=session,
+            )
+            session.refresh(cond)
+            return cond.status, cond.dropped_unidentified_rows
+        finally:
+            session.close()
+
+    def test_discarded_rows_are_persisted(self, tmp_path, monkeypatch, temp_database):
+        """The loader's count reaches the record, so the summary can show it."""
+        status, dropped = self._run(tmp_path, monkeypatch, temp_database, symbol_less=2)
+
+        assert status == 'complete'
+        assert dropped == 2
+
+    def test_clean_file_records_zero(self, tmp_path, monkeypatch, temp_database):
+        """A recorded zero is a real claim — every row had an identifier."""
+        status, dropped = self._run(tmp_path, monkeypatch, temp_database, symbol_less=0)
+
+        assert status == 'complete'
+        assert dropped == 0

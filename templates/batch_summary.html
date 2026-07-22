@@ -62,6 +62,15 @@
         {% if cond.timepoint %}<p><strong>Timepoint:</strong> {{ cond.timepoint }}</p>{% endif %}
         {% if cond.status == 'complete' %}
         <p><strong>Genes:</strong> {{ cond.gene_count }} ({{ cond.significant_genes }} significant)</p>
+        {# Issue #103: rows this file lost for carrying no gene symbol. NULL
+           means the run predates the count — render nothing rather than claim
+           none were dropped. #}
+        {% if cond.dropped_unidentified_rows %}
+        <p style="font-size: 13px; color: #555;">
+          {{ cond.dropped_unidentified_rows }} row{{ '' if cond.dropped_unidentified_rows == 1 else 's' }}
+          in this file had no gene symbol and {{ 'was' if cond.dropped_unidentified_rows == 1 else 'were' }} excluded.
+        </p>
+        {% endif %}
         {# Issue #69: a condition whose identifiers did not match the gene sets
            completes normally and looks fine — say so here, or it is invisible
            across a nine-condition batch. NULL means the run predates the check. #}
