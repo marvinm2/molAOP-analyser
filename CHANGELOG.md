@@ -15,24 +15,44 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   that is worst suited to that job: over-representation asks whether a thresholded gene list
   is unusually full of a Key Event's genes, and answers per condition in isolation. GSEA asks
   whether a Key Event's genes shift coherently in the ranking, which is exactly the quantity
-  worth reading down a dose series. On a nine-condition platinum/AOP-472 dataset the two
-  disagree informatively: KE 1194 (DNA damage) reaches significance in 2 of 9 conditions by
-  ORA and 7 of 9 by GSEA, and KE 177 (mitochondrial dysfunction) is called *depleted* by ORA
-  while GSEA shows coordinated positive enrichment — small per-gene effects with a consistent
-  upward bias, which a threshold discards by construction. Getting that table before meant
+  worth reading down a dose series, and it keeps the small per-gene effects with a consistent
+  direction that a threshold discards by construction. Getting that table before meant
   running every condition as a separate single analysis and assembling NES and FDR by hand,
   which also threw away the harmonised background that makes batch results comparable at all.
 
-  The batch form gains the same method selector as the single-analysis form (selecting GSEA
-  hides the thresholds, which it ignores), the method is stored on the batch rather than per
-  condition so every condition is scored identically, and the comparison view switches to
-  NES + FDR: the heatmap colours on the signed NES over a diverging scale centred at zero, so
-  a coordinated up-shift and a down-shift are no longer both rendered as "significant", and
-  the matrix keeps a sub-threshold NES rather than blanking it, because a consistent weak
-  signal across a dose series is itself the observation. `batches.method` is added by the
-  established idempotent PRAGMA-then-ALTER migration, and a NULL — every batch created before
-  this change — reads back as `ora`, so existing batches still open, run, export and compare
-  exactly as they did.
+  The batch form gains the same method selector as the single-analysis form, and the method
+  is stored on the batch rather than per condition so every condition is scored identically.
+  The log2FC and p-value thresholds stay on screen under GSEA: they do not enter the GSEA
+  statistic, but the run still uses them to decide which genes count as significant, and
+  those counts are what the comparison page's per-condition strip and the driver-gene tab
+  are built from — so the form now says that instead of hiding controls whose numbers you
+  are then shown.
+
+  Everything downstream follows the batch's method rather than assuming Fisher:
+
+  - **Comparison view** — heatmap and table switch to NES + FDR. The heatmap colours on the
+    signed NES over a diverging scale centred at zero, so a coordinated up-shift and a
+    down-shift are no longer both rendered as "significant", and the matrix keeps a
+    sub-threshold NES rather than blanking it, because a consistent weak signal across a
+    dose series is itself the observation. Clicking a condition header sorts the largest
+    NES to the top (for FDR it still sorts the smallest to the top).
+  - **Comparison network, delta mode** — the delta slices now show the *change in NES*
+    against the reference condition on a red/blue divergent scale with the shift size in
+    the shading, and the legend says so. Previously a downward shift was drawn the same way
+    a loss of significance is drawn (muted grey), which read as weaker evidence when it
+    meant the opposite direction.
+  - **Matrix export** — NES joins FDR and -log10(FDR) in the export dropdown and in
+    `GET /batch/<uuid>/compare/export?matrix=nes`, so what is on screen can be downloaded.
+  - **Batch report (PDF and HTML)** — the per-condition tables print NES, the permutation
+    FDR and the leading-edge genes, the comparison heatmap and matrix carry NES, and the
+    header states the method. Before this, a GSEA batch's report was rendered through the
+    Fisher columns and printed `0` overlap and `0.00` odds ratio for every Key Event while
+    silently dropping NES and the leading-edge genes.
+
+  `batches.method` is added by the established idempotent PRAGMA-then-ALTER migration.
+  SQLite backfills existing rows with `ora`, and a NULL from any other path is read as `ora`
+  too, so every batch created before this change still opens, runs, exports and compares
+  exactly as it did.
 
 - **The AOP picker can now be populated from the molAOP Builder** (#3). The Builder gained
   `GET /api/v1/aops` (builder #207), which returns whole AOPs — title, KE count, and mapping

@@ -344,9 +344,13 @@ def _ensure_method_column(engine) -> None:
     on databases that already have the column (D-04, D-06, #76).
 
     ``batches`` joined the list with issue #76, which gave batch runs a
-    method selector. Existing rows keep NULL, read back as ``'ora'`` by
-    :meth:`BatchRecord.effective_method`, so a batch created before the
-    change still opens, runs, exports and compares as ORA.
+    method selector. SQLite's ``ADD COLUMN … DEFAULT 'ora'`` backfills every
+    existing row with ``'ora'`` rather than leaving it NULL, so a batch created
+    before the change reads back as ORA directly — which is what it was. NULL is
+    still handled (a row written by another path, or an older migration that
+    added the column without a default) and
+    :meth:`BatchRecord.effective_method` coerces it to ``'ora'`` at every read
+    site, so either way such a batch opens, runs, exports and compares as ORA.
 
     Security note: both table names and the column literal are module-internal
     constants — no user-supplied input is interpolated into the SQL statements.

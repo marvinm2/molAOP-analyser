@@ -589,6 +589,12 @@ document.getElementById('btn-analyze').addEventListener('click', function() {
     payload.append('aop_selection', aopId);
     payload.append('logfc_threshold', document.getElementById('logfc-threshold').value);
     payload.append('pval_threshold', document.getElementById('pval-threshold').value);
+    // Issue #76: the statistical method, applied to every condition in the batch.
+    // Sent from here rather than through a window.fetch wrapper, so changing how
+    // this request is made cannot silently drop the user's selection and leave
+    // the server to default it to 'ora'.
+    const batchMethodEl = document.querySelector('input[name="batch_method"]:checked');
+    payload.append('method', batchMethodEl ? batchMethodEl.value : 'ora');
     document.querySelectorAll('.batch-resource:checked').forEach(function(cb) {
         payload.append('resources', cb.value);
     });

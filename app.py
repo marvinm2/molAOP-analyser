@@ -2698,7 +2698,9 @@ def batch_compare_export(batch_uuid_str):
 
     Query params:
         fmt:    'csv' (default) or 'xlsx'.
-        matrix: 'fdr' (default, raw FDR) or 'neglog10' (-log10(FDR)).
+        matrix: 'fdr' (default, raw FDR), 'neglog10' (-log10(FDR)) or 'nes'
+                (normalised enrichment score; a GSEA batch only — an ORA batch
+                produces no NES and exports blank cells).
 
     The download is the wide KE x condition table shown on the comparison page.
     """
@@ -2707,8 +2709,8 @@ def batch_compare_export(batch_uuid_str):
     which = request.args.get('matrix', 'fdr').lower()
     if fmt not in ('csv', 'xlsx'):
         abort(400, description="Invalid format (expected csv or xlsx)")
-    if which not in ('fdr', 'neglog10'):
-        abort(400, description="Invalid matrix (expected fdr or neglog10)")
+    if which not in ('fdr', 'neglog10', 'nes'):
+        abort(400, description="Invalid matrix (expected fdr, neglog10 or nes)")
 
     session_db = db_manager.get_session()
     try:
@@ -2716,7 +2718,11 @@ def batch_compare_export(batch_uuid_str):
         if conditions is None:
             return batch  # error response tuple
 
-        matrix_dict = build_comparison_matrix(conditions)
+        # Issue #76: build for the batch's own method, otherwise the NES matrix
+        # is never populated and matrix=nes exports an empty table.
+        matrix_dict = build_comparison_matrix(
+            conditions, method=batch.effective_method()
+        )
         df = comparison_matrix_to_dataframe(matrix_dict, which=which)
 
         stem = f"molAOP_{_safe_filename_part(batch.aop_id)}_{_safe_filename_part(batch.batch_name)}_comparison_{which}"
@@ -2914,7 +2920,12 @@ def batch_report(batch_uuid_str):
 
         # Only include conditions that actually produced results.
         complete_conditions = [c for c in conditions if c.status == 'complete' and c.enrichment_json]
-        comparison_data = build_comparison_matrix(complete_conditions)
+        # Issue #76: the report must be built for the method the batch was run
+        # with. Without this a GSEA batch was tabulated with the Fisher columns,
+        # printing zeros for overlap and odds ratio and dropping NES entirely.
+        comparison_data = build_comparison_matrix(
+            complete_conditions, method=batch.effective_method()
+        )
 
         stem = f"molAOP_{_safe_filename_part(batch.batch_name)}_batch_report"
 

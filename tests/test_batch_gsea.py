@@ -149,9 +149,11 @@ class TestBatchMethodColumn:
                 row = c.execute(
                     text("SELECT method FROM batches WHERE uuid = 'legacy-uuid'")
                 ).fetchone()
-            # The pre-existing row survives; its method is the column default.
+            # The pre-existing row survives, and SQLite backfills it with the
+            # column default rather than leaving it NULL — pin that, because
+            # 'either NULL or ora' would pass whatever the migration did.
             assert row is not None
-            assert (row[0] or 'ora') == 'ora'
+            assert row[0] == 'ora'
 
             # Second call is a no-op rather than an error.
             _ensure_method_column(manager.engine)
@@ -410,7 +412,12 @@ class TestBatchAnalyzeMethodWhitelist:
         assert b'Invalid method' in resp.data
 
     def test_valid_methods_pass_the_whitelist(self, flask_client):
-        """'ora'/'gsea' get past the method check (and fail later, on files)."""
+        """'ora'/'gsea'/blank clear the method check and stop at the next one.
+
+        Asserting the *next* error rather than the absence of a string: 'Invalid
+        method' is missing from any 400 or 500, so its absence alone would pass
+        even if the request had blown up for an unrelated reason.
+        """
         for method in ('ora', 'gsea', ''):
             resp = flask_client.post('/batch/analyze', data={
                 'batch_uuid': 'abc',
@@ -418,4 +425,290 @@ class TestBatchAnalyzeMethodWhitelist:
                 'id_col': 'gene', 'fc_col': 'logFC', 'pval_col': 'pval',
                 'method': method,
             })
-            assert b'Invalid method' not in resp.data
+            # No files were specified, which is the check immediately after the
+            # method whitelist — reaching it proves the method was accepted.
+            assert resp.status_code == 400
+            assert resp.get_json() == {'error': 'No files specified'}
+
+
+class TestBatchAnalyzeMethodPersistence:
+    """The selected method survives the whole submit path onto the BatchRecord.
+
+    The whitelist test above only proves the route does not reject a method; it
+    says nothing about the field arriving at all. The batch form used to attach
+    it from a window.fetch wrapper, so any change to how the request was made
+    would have dropped it silently and downgraded the run to ORA.
+    """
+
+    @pytest.fixture
+    def submit_client(self, flask_client, temp_database, upload_root, monkeypatch):
+        """Flask client wired to a temp DB with the background run stubbed out."""
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        monkeypatch.setattr(app_module, 'run_batch', lambda *a, **k: None)
+        monkeypatch.setattr(
+            app_module, 'load_cached_reference_sets',
+            lambda *a, **k: (REFERENCE_SETS, 'mock', []),
+        )
+        return flask_client
+
+    def _submit(self, client, upload_root, method):
+        import uuid as _uuid
+        batch_uuid = str(_uuid.uuid4())
+        batch_dir = os.path.join(upload_root, batch_uuid)
+        os.makedirs(batch_dir, exist_ok=True)
+        _write_dataset(os.path.join(batch_dir, 'cond0.tsv'))
+        _write_dataset(os.path.join(batch_dir, 'cond1.tsv'))
+        data = {
+            'batch_uuid': batch_uuid,
+            'aop_selection': 'AOP:1',
+            'id_col': 'gene', 'fc_col': 'logFC', 'pval_col': 'pval',
+            'logfc_threshold': '1.0', 'pval_threshold': '0.05',
+            'filenames[]': ['cond0.tsv', 'cond1.tsv'],
+            'condition_labels[]': ['Low', 'High'],
+            'batch_name': 'Submit Test',
+        }
+        if method is not None:
+            data['method'] = method
+        resp = client.post('/batch/analyze', data=data)
+        return batch_uuid, resp
+
+    def _stored_method(self, db_manager, batch_uuid):
+        session = db_manager.get_session()
+        try:
+            batch = session.query(BatchRecord).filter_by(uuid=batch_uuid).first()
+            assert batch is not None
+            return batch.method
+        finally:
+            session.close()
+
+    def test_gsea_selection_reaches_the_batch_record(
+        self, submit_client, temp_database, upload_root
+    ):
+        batch_uuid, resp = self._submit(submit_client, upload_root, 'gsea')
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert self._stored_method(temp_database, batch_uuid) == 'gsea'
+
+    def test_ora_selection_reaches_the_batch_record(
+        self, submit_client, temp_database, upload_root
+    ):
+        batch_uuid, resp = self._submit(submit_client, upload_root, 'ora')
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert self._stored_method(temp_database, batch_uuid) == 'ora'
+
+    def test_omitted_method_stores_ora(self, submit_client, temp_database, upload_root):
+        """A client that sends no method at all still produces a runnable ORA batch."""
+        batch_uuid, resp = self._submit(submit_client, upload_root, None)
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert self._stored_method(temp_database, batch_uuid) == 'ora'
+
+    def test_batch_form_sends_the_method_from_the_request_builder(self, flask_client):
+        """The field is appended where the payload is built, not via a fetch hook.
+
+        A window.fetch monkeypatch is invisible to any other way of issuing the
+        request (XHR, htmx, a Request object, URLSearchParams), so the method
+        has to be on the payload itself.
+        """
+        body = flask_client.get('/').get_data(as_text=True)
+
+        assert "payload.append('method'" in body
+        assert 'window.fetch =' not in body
+
+
+class TestBatchReportMethod:
+    """The batch report renders the statistic the batch was actually run with."""
+
+    def test_gsea_report_html_uses_gsea_columns(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        uuid = _seed_complete_batch(
+            temp_database, 'gsea', '44444444-4444-4444-4444-444444444444')
+
+        resp = flask_client.get(f'/batch/{uuid}/report?format=html')
+
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        # GSEA columns and values, not the Fisher ones.
+        assert 'GSEA (rank-based)' in body
+        assert 'NES' in body
+        assert 'Lead' in body            # leading-edge gene column
+        assert 'TP53' in body            # the leading-edge genes themselves
+        assert '2.10' in body            # the NES value
+        assert 'Odds Ratio' not in body
+        assert '# Overlap' not in body
+
+    def test_ora_report_html_keeps_the_fisher_columns(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        uuid = _seed_complete_batch(
+            temp_database, 'ora', '55555555-5555-5555-5555-555555555555')
+
+        resp = flask_client.get(f'/batch/{uuid}/report?format=html')
+
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        assert "Fisher's exact (over-representation)" in body
+        assert 'Odds Ratio' in body
+        assert 'Lead Edge Genes' not in body
+
+    def test_gsea_pdf_report_still_renders(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        uuid = _seed_complete_batch(
+            temp_database, 'gsea', '66666666-6666-6666-6666-666666666666')
+
+        resp = flask_client.get(f'/batch/{uuid}/report?format=pdf')
+
+        assert resp.status_code == 200
+        assert resp.data[:4] == b'%PDF'
+
+    def test_condition_report_data_carries_the_batch_method(self):
+        """The per-condition section is built for the batch's method, not 'ora'."""
+        from services.batch_report_service import _condition_report_data
+
+        batch = BatchRecord(method='gsea', aop_id='AOP:1', logfc_threshold=1.0,
+                            pval_cutoff=0.05)
+        cond = SimpleNamespace(condition_label='C0', filename='c0.tsv',
+                               gene_count=20, significant_genes=6)
+
+        rd = _condition_report_data(batch, cond, [{'KE': 'KE:1', 'NES': 2.0}])
+
+        assert rd.method == 'gsea'
+
+
+class TestCompareExportNesRoute:
+    """GET /batch/<uuid>/compare/export?matrix=nes (#76)."""
+
+    def test_nes_export_is_served_for_a_gsea_batch(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        uuid = _seed_complete_batch(
+            temp_database, 'gsea', '77777777-7777-7777-7777-777777777777')
+
+        resp = flask_client.get(f'/batch/{uuid}/compare/export?fmt=csv&matrix=nes')
+
+        assert resp.status_code == 200
+        text = resp.get_data(as_text=True)
+        assert 'Key Event ID' in text
+        assert '2.1' in text  # the stored NES, not the FDR
+
+    def test_nes_option_offered_on_a_gsea_compare_page(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        uuid = _seed_complete_batch(
+            temp_database, 'gsea', '88888888-8888-8888-8888-888888888888')
+
+        body = flask_client.get(f'/batch/{uuid}/compare').data.decode()
+
+        assert 'value="nes"' in body
+
+    def test_nes_option_absent_on_an_ora_compare_page(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        uuid = _seed_complete_batch(
+            temp_database, 'ora', '99999999-9999-9999-9999-999999999999')
+
+        body = flask_client.get(f'/batch/{uuid}/compare').data.decode()
+
+        assert 'value="nes"' not in body
+
+    def test_unknown_matrix_still_rejected(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        uuid = _seed_complete_batch(
+            temp_database, 'gsea', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')
+
+        resp = flask_client.get(f'/batch/{uuid}/compare/export?fmt=csv&matrix=bogus')
+
+        assert resp.status_code == 400
+
+
+class TestCompareDeltaNetworkSemantics:
+    """The delta network must not read a NES shift as a drop in significance.
+
+    These assert on the rendered compare.html script, which is where the pie
+    slices are computed. The delta branch used to mute any negative delta to
+    opacity 0.25 and label it "less significant than reference" — under GSEA a
+    negative delta is a downward coordinated shift, not weaker evidence.
+    """
+
+    def _body(self, flask_client, temp_database, monkeypatch, method, uuid):
+        import app as app_module
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        _seed_complete_batch(temp_database, method, uuid)
+        return flask_client.get(f'/batch/{uuid}/compare').data.decode()
+
+    def test_gsea_delta_uses_a_signed_divergent_scale(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        body = self._body(flask_client, temp_database, monkeypatch, 'gsea',
+                          'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb')
+
+        # Divergent colours exist and are chosen by the sign of the delta.
+        assert 'DELTA_NES_UP_COLOR' in body
+        assert 'DELTA_NES_DOWN_COLOR' in body
+        assert 'val >= 0 ? DELTA_NES_UP_COLOR : DELTA_NES_DOWN_COLOR' in body
+        # Slice colour is per-node data, not pinned to the condition palette,
+        # so the divergent colours can actually reach the canvas.
+        assert "'data(pie_color_' + i + ')'" in body
+        # The legend states direction, not significance.
+        assert 'This is' in body and 'direction, not significance' in body
+
+    def test_gsea_delta_does_not_mute_by_significance(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        body = self._body(flask_client, temp_database, monkeypatch, 'gsea',
+                          'cccccccc-cccc-cccc-cccc-cccccccccccc')
+
+        # The muting branch is still there for ORA, but it is now reached only
+        # when the batch is not GSEA.
+        assert '} else if (isGsea) {' in body
+        assert '} else if (!isSig) {' in body
+
+    def test_ora_delta_keeps_the_significance_legend(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        body = self._body(flask_client, temp_database, monkeypatch, 'ora',
+                          'dddddddd-dddd-dddd-dddd-dddddddddddd')
+
+        assert 'a muted grey slice one that is less significant' in body
+        assert 'direction, not significance' not in body
+
+    def test_gsea_table_sorts_the_useful_way_round(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        """First click sorts descending under GSEA (largest NES first)."""
+        body = self._body(flask_client, temp_database, monkeypatch, 'gsea',
+                          'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')
+
+        assert 'ascending = !isGsea;' in body
+        assert 'ascending = true; // default' not in body
+
+
+class TestBatchFormThresholdsUnderGsea:
+    """Thresholds that still shape reported numbers stay on screen (#76)."""
+
+    def test_threshold_inputs_are_not_hidden_for_gsea(self, flask_client):
+        body = flask_client.get('/').get_data(as_text=True)
+
+        # The old behaviour hid the whole threshold block when GSEA was picked,
+        # while the run kept using it for the significant-gene counts.
+        assert "thresholds.style.display = isGsea ? 'none' : ''" not in body
+        assert 'batch-threshold-gsea-note' in body
