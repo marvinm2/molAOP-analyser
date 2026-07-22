@@ -209,7 +209,7 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   Known residual, not addressed here: gseapy computes the FDR for the *unaffected* terms from
   a pooled null that still contains the degenerate terms' substituted `NES = 1.0`. Correcting
   that means recomputing the FDR outside gseapy, which is a larger change than this one and is
-  tracked separately.
+  tracked as #122.
 
 - **A Key Event above the GSEA size ceiling is no longer reported as under-measured** (#120).
   `gseapy.prerank` discards a gene set larger than `max_size` before computing anything, and
