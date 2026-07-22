@@ -94,7 +94,8 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   the warning banner that the stricter threshold had raised. And a report exported from a
   condition page reported no column mapping and a p-value cutoff of `0.05` whatever the batch
   had actually been run at. All of these now come from the batch record, as does the
-  enrichment method, which the page had hardcoded to over-representation.
+  enrichment method: the page had hardcoded over-representation, so with batch GSEA (#76) it
+  would have shown a GSEA run the ORA colour scale and exported it as ORA.
 
   **A report exported from a condition page reported the wrong resources too**, which is the
   form the claim is most likely to be quoted in. The report form posted no resource list at

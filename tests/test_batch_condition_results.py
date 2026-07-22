@@ -58,7 +58,8 @@ def _gene(symbol, log2fc, significant, pvalue_adj=None):
 
 
 def _seed(db_manager, *, selected_resources='WikiPathways, GO_BP, Reactome',
-          resolution=_RESOLUTION, min_confidence='all', pval_cutoff=0.05):
+          resolution=_RESOLUTION, min_confidence='all', pval_cutoff=0.05,
+          method='ora'):
     """Create one complete batch with a single complete condition."""
     session = db_manager.get_session()
     try:
@@ -67,7 +68,7 @@ def _seed(db_manager, *, selected_resources='WikiPathways, GO_BP, Reactome',
             aop_id='AOP:1', aop_label='Test AOP', logfc_threshold=1.0,
             pval_cutoff=pval_cutoff,
             selected_resources=selected_resources,
-            min_confidence=min_confidence,
+            min_confidence=min_confidence, method=method,
             resource_resolution=json.dumps(resolution) if resolution else None,
             id_column='gene', fc_column='logFC', pval_column='adj.P.Val',
             harmonised_background=json.dumps(['TP53', 'EGFR']), harmonised_gene_count=2,
@@ -235,25 +236,16 @@ class TestRunSettingsProvenance:
 class TestConditionMethod:
     """The page must render and export the method the batch actually ran."""
 
-    def test_method_defaults_to_ora_without_the_column(self, condition_client):
-        client, uuid = condition_client()
+    def test_method_defaults_to_ora_when_unrecorded(self, condition_client):
+        """Batches created before #76 carry no method; they are ORA runs."""
+        client, uuid = condition_client(method=None)
         html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
         assert _hidden_field(html, 'method') == 'ora'
         assert 'Gene Expression Scale' in html
 
-    def test_gsea_batch_renders_and_exports_gsea(self, condition_client, monkeypatch):
-        """A BatchRecord carrying method='gsea' must not be reported as ORA.
-
-        BatchRecord has no ``method`` column on this branch, so the attribute is
-        planted on the model the route queries. That is the shape
-        ``getattr(batch, 'method', None) or 'ora'`` has to cope with once the
-        column lands on the other branch.
-        """
-        client, uuid = condition_client()
-
-        # Make the batch look like a GSEA run without adding a column this
-        # branch does not own.
-        monkeypatch.setattr(BatchRecord, 'method', 'gsea', raising=False)
+    def test_gsea_batch_renders_and_exports_gsea(self, condition_client):
+        """A batch run as GSEA must not have its condition page report ORA."""
+        client, uuid = condition_client(method='gsea')
         html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
         assert _hidden_field(html, 'method') == 'gsea'
         assert 'KE NES Scale' in html
