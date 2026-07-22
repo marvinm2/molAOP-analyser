@@ -1224,7 +1224,18 @@ def generate_report():
                 'description': request.form.get('description', '')
             }
             logger.info(f"Created metadata from form data: {metadata}")
-        
+
+        # Issue #74: the results page always posts the dataset identity, so the
+        # posted values win over the session's. Without this a report exported
+        # from a batch condition page carried the dataset name, stressor,
+        # dosing and owner of whatever single analysis the browser last ran —
+        # the page described one run and its PDF described another. Keyed on
+        # presence rather than truth so an intentionally blank field stays blank.
+        metadata = dict(metadata)
+        for field in ('dataset_id', 'stressor', 'dosing', 'owner', 'description'):
+            if field in request.form:
+                metadata[field] = request.form.get(field, '')
+
         # Extract report data from form/session
         try:
             enrichment_results_str = request.form.get('enrichment_results', '[]')
@@ -1308,6 +1319,22 @@ def generate_report():
                 metadata.get('resource_resolution') if isinstance(metadata, dict) else None
             )
 
+        # Issue #74: the results page always posts its own resource selection,
+        # including when that selection is empty. Trust the posted field on its
+        # presence rather than its truthiness — falling back to the session on
+        # an empty value would let a batch-condition export inherit the resource
+        # list of the last single analysis run in the same browser session, and
+        # falling back to a literal 'WikiPathways' would state a resource that
+        # may never have been used. A page that posts nothing at all (an older
+        # cached page) still falls back to the session, then to unrecorded.
+        if 'selected_resources' in request.form:
+            report_resources = request.form.get('selected_resources', '').strip()
+        else:
+            report_resources = (
+                metadata.get('selected_resources', '') if isinstance(metadata, dict) else ''
+            )
+        report_resources = report_resources or 'Not recorded'
+
         report_data = ReportData(
             metadata=metadata,
             filename=request.form.get('filename', metadata.get('filename', 'unknown')),
@@ -1327,7 +1354,7 @@ def generate_report():
             network_png=network_png_data,
             software_versions=get_software_versions(),
             method=request.form.get('method') or metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
-            selected_resources=request.form.get('selected_resources') or metadata.get('selected_resources', 'WikiPathways'),  # #55: forward resources to report
+            selected_resources=report_resources,  # #55 / #74: forward resources to report
             min_confidence=request.form.get('min_confidence') or metadata.get('min_confidence', DEFAULT_MIN_CONFIDENCE),  # #60: forward confidence threshold to report
             ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
             # Issue #68: what the run actually used, posted back by the results
@@ -2531,6 +2558,22 @@ def batch_condition_results(batch_uuid_str, position):
         ke_type_map = json.loads(cond.ke_type_map_json) if cond.ke_type_map_json else {}
         ke_title_map = json.loads(cond.ke_title_map_json) if cond.ke_title_map_json else {}
 
+        # Issue #74: the gene-set resources are a property of the batch, and
+        # every condition in it was analysed against the same selection. Without
+        # them the header fell back to naming WikiPathways, so a three-resource
+        # run reported a one-resource provenance — a claim that would travel
+        # into a figure legend or a methods section. Carry both the requested
+        # selection (#55) and what those resources actually resolved to (#68),
+        # exactly as the batch summary page does.
+        resolution = _parse_resource_resolution(batch.resource_resolution)
+        batch_min_confidence = batch.min_confidence or DEFAULT_MIN_CONFIDENCE
+
+        # Issue #74: batch runs were ORA-only when this route was written, so
+        # it hardcoded the method. Read it from the batch instead — and tolerate
+        # a BatchRecord that predates the column, which reads as ORA because
+        # that is what every batch before it ran.
+        batch_method = getattr(batch, 'method', None) or 'ora'
+
         # Build metadata dict compatible with results.html template variables
         metadata = {
             'dataset_id': cond.condition_label,
@@ -2542,6 +2585,27 @@ def batch_condition_results(batch_uuid_str, position):
             'significant_genes': cond.significant_genes,
             'analysis_date': cond.completed_at.strftime('%Y-%m-%d %H:%M') if cond.completed_at else '',
             'data_source': 'batch',
+            'selected_resources': batch.selected_resources or '',
+            'resource_resolution': resolution,
+            'resource_warnings': resource_resolution_warnings(
+                resolution, batch_min_confidence
+            ),
+            # Issue #60/#74: the confidence threshold decides which mappings
+            # became gene sets, so the header and the exported report have to
+            # state the batch's own value. Omitting it left the header reading
+            # "All mappings" underneath the warnings raised by a stricter
+            # threshold, and posted `min_confidence=all` into the report.
+            'min_confidence': batch_min_confidence,
+            'min_confidence_label': MIN_CONFIDENCE_LABELS.get(
+                batch_min_confidence, MIN_CONFIDENCE_LABELS[DEFAULT_MIN_CONFIDENCE]
+            ),
+            'method': batch_method,
+            # Column mapping, so a report exported from this page names the
+            # columns the batch was actually run on rather than inheriting
+            # them from whatever single analysis last touched the session.
+            'id_column': batch.id_column or '',
+            'fc_column': batch.fc_column or '',
+            'pval_column': batch.pval_column or '',
             # Pass batch context so results.html renders the "Back to batch summary" breadcrumb
             'batch_uuid': batch_uuid_str,
             'batch_name': batch.batch_name,
@@ -2560,7 +2624,7 @@ def batch_condition_results(batch_uuid_str, position):
                 ke_type_map=ke_type_map,
                 ke_title_map=ke_title_map,
                 metadata=metadata,
-                method='ora',  # batch runs are ORA-only; BatchRecord has no method column
+                method=batch_method,
                 pval_threshold=batch.pval_cutoff,
                 # Issue #65: ConditionRecord has no field for the accounting, so
                 # recover it from the stored network exactly as the shared-result

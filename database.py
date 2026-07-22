@@ -81,7 +81,11 @@ class ExperimentRecord(Base):
             'id_column': self.id_column,
             'fc_column': self.fc_column,
             'pval_column': self.pval_column,
-            'selected_resources': self.selected_resources or 'WikiPathways',  # coerce NULL (pre-#55 rows)
+            # Issue #74: a row written before #55 recorded no selection. Report
+            # that as an absent value rather than naming WikiPathways — the run
+            # may have used something else, and a consumer cannot tell an
+            # invented default from a recorded one.
+            'selected_resources': self.selected_resources or None,
             'min_confidence': self.min_confidence or 'all',  # coerce NULL (pre-#60 rows)
             'enrichment_results': json.loads(self.enrichment_results) if self.enrichment_results else None,
             'gene_count': self.gene_count,

@@ -370,8 +370,78 @@ def _run_condition(
             cond.id, cond.condition_label, overlap['matched'], overlap['total'],
             overlap['fraction'] * 100,
         )
+    # Issue #75: the hub-gene panel on a batch condition page reads its
+    # "Adj. p-value" straight out of the stored KE-gene payload. The batch
+    # runner never built the per-gene p-value maps, so every hub row on every
+    # condition page rendered an em dash while the same file analysed on its
+    # own showed a p-value. Detect the raw and adjusted p-value columns on the
+    # uploaded file the way the single analysis does, rather than reusing the
+    # one column the batch thresholds on — a batch thresholded on a raw
+    # p-value still has an adjusted column worth reporting.
+    #
+    # Failure here is non-fatal: the maps stay None, build_ke_gene_mapping
+    # emits its pre-#75 three-key shape and the panel reads as it did before.
+    gene_pvalue_raw_map = None
+    gene_pvalue_adj_map = None
+    try:
+        from scipy.stats import combine_pvalues
+        from services.column_detector import ColumnDetector, column_detector
+
+        df_raw_for_pvalues = pd.read_csv(filepath, sep=None, engine='python')
+        suggestions = column_detector.detect_columns(df_raw_for_pvalues)
+        raw_col = suggestions.best_pvalue.column_name if suggestions.best_pvalue else None
+        adj_col = (
+            suggestions.best_pvalue_adj.column_name if suggestions.best_pvalue_adj else None
+        )
+
+        # Same disambiguation as the single analysis: when both slots resolve
+        # to one column and its name reads as adjusted, treat it as adjusted
+        # only rather than emitting the same number twice.
+        if raw_col and adj_col and raw_col == adj_col:
+            if any(
+                re.search(pattern, raw_col, re.IGNORECASE)
+                for pattern in ColumnDetector.PVALUE_ADJ_PATTERNS
+            ):
+                raw_col = None
+
+        if batch.id_column in df_raw_for_pvalues.columns:
+            ids = df_raw_for_pvalues[batch.id_column].astype(str).str.strip().str.upper()
+
+            def _combine_per_gene(series):
+                """Fisher-combine a p-value column per gene symbol.
+
+                Mirrors data_service.process_gene_expression: a naive
+                dict(zip(...)) would keep the last probe per duplicated gene
+                and report a p-value that disagrees with the significance flag.
+                """
+                frame = pd.DataFrame(
+                    {'ID': ids, 'val': pd.to_numeric(series, errors='coerce')}
+                ).dropna()
+                out = {}
+                for gene, group in frame.groupby('ID'):
+                    values = group['val'].astype(float).values
+                    if len(values) == 1:
+                        out[gene] = float(values[0])
+                    else:
+                        _, combined = combine_pvalues(values, method='fisher')
+                        out[gene] = float(combined)
+                return out
+
+            if raw_col and raw_col in df_raw_for_pvalues.columns:
+                gene_pvalue_raw_map = _combine_per_gene(df_raw_for_pvalues[raw_col])
+            if adj_col and adj_col in df_raw_for_pvalues.columns:
+                gene_pvalue_adj_map = _combine_per_gene(df_raw_for_pvalues[adj_col])
+    except Exception as exc:
+        logger.warning(
+            '_run_condition: per-gene p-value capture failed for condition %s '
+            '(non-fatal, hub p-values will be blank): %s',
+            cond.id, exc,
+        )
+
     ke_gene_map = build_ke_gene_mapping(
-        reference_sets, ke_list, gene_logfc_map, gene_significance_map
+        reference_sets, ke_list, gene_logfc_map, gene_significance_map,
+        gene_pvalue_raw_map=gene_pvalue_raw_map,
+        gene_pvalue_adj_map=gene_pvalue_adj_map,
     )
 
     # Convert enrichment DataFrame to JSON-serialisable list

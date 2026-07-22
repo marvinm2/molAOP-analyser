@@ -76,6 +76,54 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **Batch condition pages state the gene-set resources the batch actually used** (#74).
+  `/batch/<uuid>/condition/<n>` re-renders the results page from stored condition data, but
+  never carried the batch's resource selection into that context — and the template
+  defaulted the missing value to `WikiPathways`. A batch run over all three resources
+  therefore reported a single-resource provenance, confidently and wrongly, while the batch
+  summary for the same run reported all three. Which resources contributed gene sets decides
+  which Key Events were testable at all, so the header was misstating the analysis it sat on
+  top of, in the one place a reader would copy from into a methods section. The condition
+  page now carries both the requested selection (#55) and the per-resource resolution and
+  warnings (#68), and the template no longer substitutes a real resource name for an absent
+  one — an unrecorded selection reads as *"Not recorded"*.
+
+  The same page was misstating two more of the run's settings, both of which travel into a
+  methods section together with the resources. The mapping-confidence threshold read *"All
+  mappings"* on every condition page, even one run at *"High only"* — and even directly above
+  the warning banner that the stricter threshold had raised. And a report exported from a
+  condition page reported no column mapping and a p-value cutoff of `0.05` whatever the batch
+  had actually been run at. All of these now come from the batch record, as does the
+  enrichment method: the page had hardcoded over-representation, so with batch GSEA (#76) it
+  would have shown a GSEA run the ORA colour scale and exported it as ORA.
+
+  **A report exported from a condition page reported the wrong resources too**, which is the
+  form the claim is most likely to be quoted in. The report form posted no resource list at
+  all, so the generator fell back to the browser session — meaning a PDF exported from a
+  batch condition page named the resources of whatever single analysis had last been run in
+  the same session, and named `WikiPathways` when there was no session to borrow from. The
+  form now posts the run's own selection, always, and the report no longer invents a resource
+  name: a run with nothing recorded reports *"Not recorded"*. The same invented default is
+  gone from the stored-experiment JSON. It remains in the **batch report** (the multi-
+  condition PDF), which is not covered by this change.
+
+  The dataset identity leaked the same way: the report generator preferred the browser
+  session over the values the page posted, so a PDF exported from a condition page carried
+  the dataset name, stressor, dosing and owner of whatever single analysis had last been run
+  in that session, under a page header naming the condition. The posted values now win.
+
+- **Hub genes on a batch condition page show their p-value** (#75). The hub-gene panel reads
+  its "Adj. p-value" from the per-gene data stored with each condition, and the batch runner
+  never captured p-values at all — so every hub row of every condition of every batch showed
+  an em dash, while the same file analysed on its own showed a number. Batch runs now capture
+  the raw and adjusted p-value columns from each uploaded file the way a single analysis
+  does, independently of the one column the batch thresholds on, and store them alongside the
+  fold changes. A file that genuinely carries no adjusted p-value column still reads as a
+  dash, which is the honest answer.
+
+  This applies to batches run from now on. Conditions stored before this change hold no
+  p-values and will keep showing a dash; re-run the batch to get them.
+
 - **"No gene set mapped" no longer covers Key Events that are mapped** (#81). The
   per-condition accounting had two exclusion counters, and one of them was answering three
   different questions at once. A Key Event with no curated mapping, a Key Event whose

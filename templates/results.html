@@ -64,8 +64,11 @@
             <div class="metadata-summary__item">
                 <span class="metadata-summary__label">Gene Set Resources</span>
                 {# Issue #68: this is the REQUESTED selection; what actually
-                   loaded is on the provenance line below the table. #}
-                <span class="metadata-summary__value">{{ metadata.get('selected_resources', 'WikiPathways') }}</span>
+                   loaded is on the provenance line below the table.
+                   Issue #74: no resource default. A route that fails to pass
+                   the selection must not make the page name a real resource —
+                   an unrecorded selection has to read as unrecorded. #}
+                <span class="metadata-summary__value">{{ metadata.get('selected_resources') or 'Not recorded' }}</span>
             </div>
             {# Issue #60: the mapping-confidence threshold the gene sets were built at. #}
             <div class="metadata-summary__item">
@@ -601,7 +604,7 @@
             <input type="hidden" name="aop_id" value="{{ metadata.get('aop_id', '') }}">
             <input type="hidden" name="aop_label" value="{{ metadata.get('aop_label', '') }}">
             <input type="hidden" name="logfc_threshold" value="{{ threshold }}">
-            <input type="hidden" name="pval_cutoff" value="0.05">
+            <input type="hidden" name="pval_cutoff" value="{{ metadata.get('pval_cutoff', 0.05) }}">
             <input type="hidden" name="method" value="{{ method or 'ora' }}">
             <input type="hidden" name="id_column" value="{{ metadata.get('id_column', '') }}">
             <input type="hidden" name="fc_column" value="{{ metadata.get('fc_column', '') }}">
@@ -610,6 +613,14 @@
             {# Issue #60: carry the confidence threshold explicitly so the report
                is correct even if the session has been lost. #}
             <input type="hidden" name="min_confidence" value="{{ metadata.get('min_confidence', 'all') }}">
+            {# Issue #74: the requested resource list, posted explicitly for the
+               same reason. Without it the report fell back to the session, so a
+               PDF exported from a batch condition page reported the resources of
+               whatever single analysis the browser had last run — or, with no
+               session at all, "WikiPathways". The field is always posted, even
+               empty, so an unrecorded selection reaches the report as unrecorded
+               rather than being filled in from another run. #}
+            <input type="hidden" name="selected_resources" value="{{ metadata.get('selected_resources', '') }}">
             {# Issue #68: gene-set provenance for the report, carried explicitly
                for the same reason as the threshold above. #}
             <textarea name="resource_resolution" style="display: none;">{{ metadata.get('resource_resolution') | tojson }}</textarea>
