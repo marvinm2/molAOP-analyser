@@ -250,6 +250,7 @@
                             'NES': 'NES',
                             'ES': 'ES',
                             'nes_status': 'NES status',
+                            'p_value_resolution': 'P-value resolution',
                             'null_same_signed_n': 'Same-signed permutations',
                             'lead_genes': 'Lead Edge Genes'
                         } %}
@@ -258,13 +259,22 @@
                            of the three regimes each row is in. #}
                         {% set nes_status_labels = {
                             'ok': 'normalised',
-                            'unstable_normalisation': 'unstable magnitude',
-                            'beyond_permutation_resolution': 'beyond permutation resolution'
+                            'unstable_normalisation': 'coarse — NES and p',
+                            'beyond_permutation_resolution': 'beyond permutation resolution',
+                            'undiagnosed': 'not diagnosed'
                         } %}
+                        {# Issue #117: an earlier version of these tooltips told the reader
+                           that an unstable normalisation left the nominal p-value intact.
+                           It does not. gseapy divides the exceedance count by the same
+                           same-signed tail it normalises against, so a tail of five admits
+                           only p in {0, 0.2, 0.4, 0.6, 0.8, 1} and a tail of one only
+                           {0, 1}. That claim is retracted here and the achievable
+                           resolution is reported per row instead. #}
                         {% set nes_status_titles = {
-                            'ok': 'The permutation null had permutations on both sides of zero; the NES is an estimate.',
-                            'unstable_normalisation': 'Fewer than 10 permutations fell on the same side of zero as the observed score. The p-value stands; the NES magnitude is normalised against too few values to rank or threshold on.',
-                            'beyond_permutation_resolution': 'No permutation reached the observed side of zero, so the observed score beat every one of them. The NES cannot be normalised and is left blank; the p-value is an upper bound (1/permutations) and the ES column carries the direction.'
+                            'ok': 'At least 10 permutations fell on the same side of zero as the observed score; the NES is an estimate and the nominal p-value is resolved to at worst 1 in 10.',
+                            'unstable_normalisation': 'Fewer than 10 permutations fell on the same side of zero as the observed score. Both the NES magnitude and the nominal p-value are computed against that handful of values — gseapy divides by the same-signed tail, not by the permutation count — so the p-value is quantised to the step size in the resolution column. Neither number should be ranked or thresholded on.',
+                            'beyond_permutation_resolution': 'No permutation reached the observed side of zero, so the observed score beat every one of them. The NES cannot be normalised and is left blank; the p-value is an upper bound (1/permutations) and the ES column carries the direction.',
+                            'undiagnosed': 'The permutation null could not be read for this Key Event, so nothing here has been checked: the degenerate one-signed case that reports a maximally enriched Key Event as null cannot be ruled out. This is not the same as a clean result.'
                         } %}
                         {% for col in table[0].keys() %}
                         <th>{{ column_names.get(col, col) }}</th>
@@ -287,10 +297,18 @@
                         {% elif col == 'NES' %}
                             {# Issue #117: a blank NES means "not normalisable", which the
                                nes_status column names. It is never a weak result. #}
-                            <td>{{ "%.2f"|format(val) if val is not none else '—' }}</td>                        {% elif col == 'nes_status' %}
+                            <td>{{ "%.2f"|format(val) if val is not none else '—' }}</td>
+                        {% elif col == 'nes_status' %}
                             <td title="{{ nes_status_titles.get(val, '') }}">{{ nes_status_labels.get(val, val) }}</td>
                         {% elif col == 'ES' %}
                             <td>{{ "%.3f"|format(val) if val is not none else '—' }}</td>
+                        {% elif col == 'p_value_resolution' %}
+                            {# Issue #117: the finest p-value this row could have produced.
+                               gseapy computes the nominal p on the same-signed tail, so a
+                               p of 0.000 against a resolution of 0.5 means "zero out of
+                               two" — the same printed number as a p estimated on a
+                               thousand permutations, and not the same claim. #}
+                            <td title="The step size the nominal p-value was quantised to: 1 divided by the number of same-signed permutations. A p-value finer than this was not achievable for this Key Event.">{{ "%.3g"|format(val) if val is not none else '—' }}</td>
                         {% elif col == 'null_same_signed_n' %}
                             <td>{{ val|int if val is not none else '—' }}</td>
                         {% elif col == 'Representation' %}
@@ -418,6 +436,22 @@
                         <div style="width: 100px; height: 12px; background: linear-gradient(to right, #307BBF, #FFFFFF, #d73027); border: 1px solid #999;"></div>
                         <span style="font-size: 11px; margin-left: 5px;">+3</span>
                         <span style="font-size: 11px; margin-left: 10px; color: #666;">Negative NES &larr; 0 &rarr; Positive NES</span>
+                    </div>
+                    {# Issue #117: white on this scale means NES = 0. A Key Event
+                       whose observed score beat every permutation has no NES at
+                       all, so it is drawn off the scale entirely rather than
+                       being folded onto the zero colour. #}
+                    <div class="network-legend__item" style="margin-top: 6px;">
+                        <div class="network-legend__swatch" style="background: #3A2E4D; border: 3px dashed red;"></div>
+                        <span>NES not normalisable &mdash; no permutation reached this Key
+                              Event's enrichment score, so there is nothing to normalise
+                              against. Off the scale, not at zero; the ES in the results
+                              table carries the direction.</span>
+                    </div>
+                    <div class="network-legend__item">
+                        <div class="network-legend__swatch" style="background: #ffd9b3; border: 3px dotted #b25a00;"></div>
+                        <span>Permutation null not inspected &mdash; this Key Event's NES
+                              and p-value are unchecked.</span>
                     </div>
                 </div>
                 {% else %}
@@ -849,8 +883,20 @@ function defaultLogFCColor(logfc) {
 }
 
 // --- NES gradient for GSEA KE nodes (UI-SPEC §Color, locked stops) ---
+// Issue #117: a null NES is NOT zero. `parseFloat(null) || 0` used to fold the
+// beyond-permutation-resolution case — a Key Event whose observed score beat
+// every permutation, so there is nothing to normalise it against — onto
+// '#FFFFFF', the colour reserved for exactly no enrichment. The node was drawn
+// white with a significance border, saying the opposite of the result, and the
+// .cyjs export and the network PNG in both reports inherited it. A NES that is
+// not a finite number is now given its own colour and never enters the
+// gradient; the node style block below overrides it further for the case where
+// the reason is known.
+const NES_UNDEFINED_COLOR = '#3A2E4D';   // off-gradient: not blue, white or red
 function nesColor(nes) {
-    const v = Math.max(-3, Math.min(3, parseFloat(nes) || 0));
+    const parsed = parseFloat(nes);
+    if (!Number.isFinite(parsed)) return NES_UNDEFINED_COLOR;
+    const v = Math.max(-3, Math.min(3, parsed));
     if (v === 0) return '#FFFFFF';
     const t = (v + 3) / 6;
     const lerp = (a, b, k) => Math.round(a + (b - a) * k);
@@ -1007,6 +1053,36 @@ const cy = cytoscape({
         selector: 'node[method = "gsea"]',
         style: {
             'background-color': ele => nesColor(ele.data('nes'))
+        }
+    },
+    {
+        // Issue #117 — the Key Event beat every permutation, so its NES has no
+        // value at all. This is the strongest result the run can express, and
+        // before this rule it was drawn in the colour reserved for NES = 0.
+        // Solid off-gradient plum with a thick dashed ring: unmistakably not a
+        // point on the blue-white-red scale, and unmistakably not the muted
+        // grey of a Key Event that could not be assessed. Only the border
+        // *style* and width are set, so the red significance border from
+        // node.significant survives and the node still reads as a called
+        // result. The direction lives in `es`, which the tooltip and the .cyjs
+        // export carry.
+        // Ordered after the gradient rule so it wins.
+        selector: 'node[method = "gsea"][nes_status = "beyond_permutation_resolution"]',
+        style: {
+            'background-color': NES_UNDEFINED_COLOR,
+            'border-width': 5,
+            'border-style': 'dashed'
+        }
+    },
+    {
+        // Issue #117 — the permutation null could not be inspected for this
+        // Key Event, so nothing about its NES has been checked. Hatched via a
+        // dotted border rather than recoloured: the value is still gseapy's own.
+        selector: 'node[method = "gsea"][nes_status = "undiagnosed"]',
+        style: {
+            'border-width': 3,
+            'border-color': '#b25a00',
+            'border-style': 'dotted'
         }
     },
     {

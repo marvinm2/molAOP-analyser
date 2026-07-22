@@ -151,6 +151,18 @@ def format_ke_summary(summary: Optional[Dict[str, Any]]) -> str:
         clauses.append(f"{errored} excluded (statistics could not be computed)")
     if clauses:
         parts.append('; ' + ', '.join(clauses))
+    # Issue #117 — GSEA only, and only when it happened. A run whose permutation
+    # null could not be inspected cannot rule out the degenerate one-signed case
+    # that reports a maximally enriched Key Event as null, and the reader has to
+    # be told that in the same sentence that tells them what was tested. Absent
+    # (0) on every ORA run and on results stored before the check existed, which
+    # keeps the clause out rather than asserting a zero.
+    undiagnosed = summary.get('nes_undiagnosed_kes', 0)
+    if undiagnosed:
+        parts.append(
+            f". The permutation null could not be inspected for {undiagnosed} "
+            "tested Key Event(s), so their NES and p-value are unchecked"
+        )
     return ''.join(parts)
 
 
@@ -558,6 +570,7 @@ def _build_ke_summary(
     min_ke_genes: int,
     unresolved_pathways_by_ke: Optional[Dict[str, List[str]]] = None,
     max_ke_genes: Optional[int] = None,
+    nes_undiagnosed_kes: int = 0,
 ) -> Dict[str, Any]:
     """Assemble the tested/excluded KE accounting dict (issue #65).
 
@@ -597,6 +610,10 @@ def _build_ke_summary(
         'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
         'min_ke_genes': min_ke_genes,
         'max_ke_genes': max_ke_genes,
+        # Issue #117 — tested Key Events whose permutation null could not be
+        # read, so the degenerate one-signed case could not be ruled out for
+        # them. GSEA only; always 0 under Fisher, which has no permutation null.
+        'nes_undiagnosed_kes': nes_undiagnosed_kes,
         # Issue #81 — named so the reader can check them against the Builder
         # rather than being told, wrongly, that the Key Event is uncurated.
         'unresolved_pathways': unresolved_pathways,

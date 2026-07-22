@@ -9,6 +9,7 @@ user's method selection.
 import importlib
 import math
 import logging
+import threading
 from contextlib import contextmanager
 from typing import Any, Dict, Iterator, List, Optional, Set
 
@@ -41,10 +42,19 @@ logger = logging.getLogger(__name__)
 #
 # The failure is continuous, not binary. A tail of one or two permutations
 # still yields a finite NES, but its magnitude is a ratio against a sample of
-# one or two and carries no information, even though the nominal p-value is
-# sound. Testing NES == 1.0 catches only the first regime; the size of the
-# same-signed tail catches both, and it is available from the null distribution
-# gseapy already computes.
+# one or two and carries no information. Testing NES == 1.0 catches only the
+# first regime; the size of the same-signed tail catches both, and it is
+# available from the null distribution gseapy already computes.
+#
+# The *nominal p-value goes with it*. An earlier version of this module said
+# the p-value survived a short tail. It does not: gseapy divides by the same
+# same-signed tail it normalises against, so the p is quantised to multiples of
+# 1/tail. Measured directly against gseapy 1.1.4 on a ranking of 200 genes, a
+# term with a same-signed tail of 56 and one exceedance returned exactly
+# 1/56 = 0.017857…, not 1/100 = 0.01, which is the pooled figure. A tail of two
+# therefore admits only p ∈ {0, 0.5, 1}; a tail of one only p ∈ {0, 1}. Under
+# NES_UNSTABLE both the magnitude and the p-value are coarse, and the coarseness
+# is reported as ``p_value_resolution`` beside them.
 #
 # Incidence rises with gene-set size: a larger set tightens the permutation
 # null, and a tight null sitting off zero in a skewed ranking is exactly the
@@ -54,7 +64,8 @@ logger = logging.getLogger(__name__)
 #: NES reported as a number only when at least this many permutations fell on
 #: the same side of zero as the observed ES. Below 10 the mean being divided by
 #: has a relative standard error above ~30%, so the magnitude is not a quantity
-#: to rank or threshold on.
+#: to rank or threshold on — and the nominal p-value, computed on that same
+#: tail, is quantised to steps of 1/10 or coarser.
 MIN_SAME_SIGNED_NULL = 10
 
 #: Both tails healthy — NES is an estimate and may be read as one.
@@ -63,9 +74,35 @@ NES_OK = 'ok'
 #: single permutation, so the empirical p is below 1/permutation_num; the NES
 #: itself is not normalisable and is reported as NaN rather than as a number.
 NES_BEYOND_RESOLUTION = 'beyond_permutation_resolution'
-#: Fewer than MIN_SAME_SIGNED_NULL same-signed permutations. The p-value stands;
-#: the NES magnitude is normalised against a handful of values and does not.
+#: Fewer than MIN_SAME_SIGNED_NULL same-signed permutations. Neither the NES
+#: magnitude nor the nominal p-value is usable: both are computed against that
+#: handful of values, so the p can only take the values k/tail. The achievable
+#: resolution travels with the row in ``p_value_resolution``.
 NES_UNSTABLE = 'unstable_normalisation'
+#: The permutation null could not be read at all — the gseapy entry point this
+#: module wraps was not called (renamed upstream, or the ``multilevel`` method
+#: routed through ``fgsea_rs``). Distinct from NES_OK on purpose: "we looked and
+#: the tails were healthy" and "we could not look" are different claims, and
+#: collapsing the second into the first would let a gseapy upgrade reintroduce
+#: the whole of #117 under a clean bill of health.
+NES_UNDIAGNOSED = 'undiagnosed'
+
+#: Serialises the process-global patch in :func:`_capture_prerank_summaries`.
+#:
+#: The capture rebinds ``gseapy.gsea.prerank_rs``, which is process-global, and
+#: this application is concurrent: Flask runs threaded and every batch condition
+#: is dispatched on its own ``threading.Thread``, so two ``run_gsea_analysis``
+#: calls overlapping is routine rather than exotic. Without this lock the two
+#: patches nest, every sink receives both runs' summaries, and the per-term
+#: counts — keyed by KE ID, which is identical across conditions — are
+#: last-write-wins. That does not merely lose the diagnostics: it writes one
+#: condition's tail count onto another condition's row, and the repair in
+#: :func:`apply_null_diagnostics` then rewrites that row's NES, p and FDR on the
+#: strength of it. The lock covers the patch *and* the ``gp.prerank`` call it
+#: exists for, so GSEA runs serialise against each other. gseapy is already
+#: pinned to ``threads=1`` for determinism, so this costs wall-clock on
+#: concurrent batches and nothing else.
+_PRERANK_PATCH_LOCK = threading.Lock()
 
 
 def _build_ranking(df: pd.DataFrame) -> pd.Series:
@@ -103,7 +140,7 @@ def _build_ranking(df: pd.DataFrame) -> pd.Series:
 
 
 @contextmanager
-def _capture_prerank_summaries(sink: List[Any]) -> Iterator[None]:
+def _capture_prerank_summaries(sink: List[Any]) -> Iterator[Dict[str, bool]]:
     """Collect the per-term GSEA summaries ``gseapy.prerank`` throws away.
 
     The permutation null distribution is the only place the empty-tail
@@ -113,43 +150,72 @@ def _capture_prerank_summaries(sink: List[Any]) -> Iterator[None]:
     back: ``res2d`` carries ES/NES/p/FDR but not ``esnull``.
 
     Rather than reimplement prerank, this wraps the extension entry point
-    ``gseapy.gsea.prerank_rs`` for the duration of one call and keeps the
-    summaries. Verified against gseapy 1.1.4 and 1.3.0, which both resolve that
-    name as a module global at call time. If a future release renames it, or
-    the caller selects the ``multilevel`` method (which routes through
-    ``fgsea_rs`` instead), the sink stays empty and the analysis proceeds
-    without the diagnostics rather than failing — the numbers are still
-    gseapy's own.
+    ``gseapy.gsea.prerank_rs`` and keeps the summaries. Verified against gseapy
+    1.1.4 and 1.3.0, which both resolve that name as a module global at call
+    time. If a future release renames it, or the caller selects the
+    ``multilevel`` method (which routes through ``fgsea_rs`` instead), the sink
+    stays empty, ``captured`` stays False and every row is labelled
+    :data:`NES_UNDIAGNOSED` — the analysis proceeds on gseapy's own numbers, but
+    it does not claim to have checked them.
+
+    The rebind is process-global, so the whole block runs under
+    :data:`_PRERANK_PATCH_LOCK`; see that constant for what overlapping runs did
+    without it. The restore is also identity-checked, because an unlocked nested
+    patch used to leave the global bound to a dead wrapper appending to an
+    abandoned list for the life of the process.
 
     Args:
         sink: List the captured ``GSEASummary`` objects are appended to.
 
     Yields:
-        None. The patch is reverted on exit, including on exception.
+        dict: ``{'captured': bool}`` — flipped to True once the wrapper has
+        actually run, i.e. once the diagnostics are known to be available for
+        this call. Read it after the block, not inside it. The patch is reverted
+        on exit, including on exception.
     """
+    state: Dict[str, bool] = {'captured': False}
     try:
         gsea_module = importlib.import_module('gseapy.gsea')
     except ImportError:  # pragma: no cover — gseapy is a hard dependency
         gsea_module = None
-    original = getattr(gsea_module, 'prerank_rs', None)
-    if original is None:
-        logger.warning(
-            "gseapy.gsea.prerank_rs not found — GSEA null diagnostics "
-            "(issue #117) are unavailable for this run"
-        )
-        yield
-        return
 
-    def _wrapped(*args, **kwargs):
-        result = original(*args, **kwargs)
-        sink.extend(list(getattr(result, 'summaries', None) or []))
-        return result
+    # The lock is taken *before* the global is read. Reading it first and
+    # locking afterwards is the same defect in slower motion: a run that arrives
+    # while another holds the patch would capture the other run's wrapper as its
+    # "original" and restore that on exit, leaving the global permanently bound
+    # to a dead wrapper appending to an abandoned list.
+    with _PRERANK_PATCH_LOCK:
+        original = getattr(gsea_module, 'prerank_rs', None)
+        if original is None:
+            logger.error(
+                "gseapy.gsea.prerank_rs not found — the GSEA permutation null "
+                "cannot be inspected, so the degenerate one-signed null of "
+                "issue #117 cannot be detected in this run. Every Key Event "
+                "will be reported with nes_status='%s'. This usually means "
+                "gseapy renamed the entry point; the wrapper needs updating.",
+                NES_UNDIAGNOSED,
+            )
+            yield state
+            return
 
-    setattr(gsea_module, 'prerank_rs', _wrapped)
-    try:
-        yield
-    finally:
-        setattr(gsea_module, 'prerank_rs', original)
+        def _wrapped(*args, **kwargs):
+            result = original(*args, **kwargs)
+            sink.extend(list(getattr(result, 'summaries', None) or []))
+            state['captured'] = True
+            return result
+
+        setattr(gsea_module, 'prerank_rs', _wrapped)
+        try:
+            yield state
+        finally:
+            if getattr(gsea_module, 'prerank_rs', None) is not _wrapped:
+                logger.error(
+                    "gseapy.gsea.prerank_rs was rebound by something other "
+                    "than this capture while it was patched — restoring the "
+                    "real function anyway. GSEA null diagnostics for this run "
+                    "may be unreliable."
+                )
+            setattr(gsea_module, 'prerank_rs', original)
 
 
 def _null_tail_sizes(summaries: List[Any]) -> Dict[str, int]:
@@ -186,13 +252,15 @@ def apply_null_diagnostics(
     res: pd.DataFrame,
     same_signed_sizes: Dict[str, int],
     permutation_num: int,
+    diagnostics_captured: bool = True,
 ) -> pd.DataFrame:
     """Classify each result row by its same-signed null tail and repair it (#117).
 
-    Adds ``null_same_signed_n`` and ``nes_status``, and for the degenerate
-    regime replaces the values gseapy invents. It is a separate function
-    because the two regimes it distinguishes are the whole content of #117 and
-    they must be testable without paying for a thousand permutations.
+    Adds ``null_same_signed_n``, ``nes_status`` and ``p_value_resolution``, and
+    for the degenerate regime replaces the values gseapy invents. It is a
+    separate function because the regimes it distinguishes are the whole content
+    of #117 and they must be testable without paying for a thousand
+    permutations.
 
     An empty same-signed tail is not a missing result: the observed ES beat
     every permutation, so the empirical p is bounded above by
@@ -202,25 +270,45 @@ def apply_null_diagnostics(
     the status column carries the reason. NaN is the one thing that cannot be
     read as a weak result; the direction survives in the ES column beside it.
 
-    A KE missing from ``same_signed_sizes`` keeps ``NaN`` there and status
-    ``ok``: the diagnostics were not available, which is a different statement
-    from a tail of zero, and it must not silently rewrite gseapy's numbers.
+    ``p_value_resolution`` is the finest p-value the row could have produced.
+    gseapy divides the exceedance count by the *same-signed* tail, not by
+    ``permutation_num``, so a row with a tail of two can only report
+    p ∈ {0, 0.5, 1} — a p of 0.000 there means "zero of two", and a p of 0.600
+    on a tail of five means "three of five". Reporting the step size beside the
+    p-value is the only way a reader can tell those from a p estimated on a
+    thousand permutations. Under :data:`NES_BEYOND_RESOLUTION` the column
+    carries ``1/permutation_num``, the bound the substituted p-value is.
+
+    A KE missing from ``same_signed_sizes`` is labelled
+    :data:`NES_UNDIAGNOSED`, never ``ok``: the diagnostics were not available,
+    which is a different statement from a healthy tail, and gseapy's numbers are
+    left exactly as they came.
 
     Args:
         res: Result frame with at least 'KE', 'NES', 'p_value', 'FDR'.
         same_signed_sizes: KE → same-signed permutation count.
-        permutation_num: Permutations run, i.e. the resolution of the p-value.
+        permutation_num: Permutations run, i.e. the coarsest bound on the
+            p-value when the same-signed tail is empty.
+        diagnostics_captured: Whether the null-capture wrapper actually ran.
+            False means the wrapper never fired — the failure is in this
+            module's grip on gseapy, not in the data — and is logged as an
+            error rather than a warning.
 
     Returns:
         pd.DataFrame: ``res``, mutated in place and returned for chaining.
     """
     res['null_same_signed_n'] = res['KE'].map(same_signed_sizes)
     tail = res['null_same_signed_n']
+    undiagnosed = tail.isna()
     beyond = tail == 0
     unstable = (tail > 0) & (tail < MIN_SAME_SIGNED_NULL)
     res['nes_status'] = NES_OK
     res.loc[unstable, 'nes_status'] = NES_UNSTABLE
     res.loc[beyond, 'nes_status'] = NES_BEYOND_RESOLUTION
+    res.loc[undiagnosed, 'nes_status'] = NES_UNDIAGNOSED
+    # The step size the nominal p-value was quantised to (see docstring).
+    res['p_value_resolution'] = 1.0 / tail.where(tail > 0)
+    res.loc[beyond, 'p_value_resolution'] = 1.0 / permutation_num
     if beyond.any():
         res.loc[beyond, 'NES'] = np.nan
         res.loc[beyond, 'p_value'] = 1.0 / permutation_num
@@ -237,15 +325,32 @@ def apply_null_diagnostics(
     if unstable.any():
         logger.warning(
             "GSEA: %d Key Event(s) normalised against fewer than %d same-signed "
-            "permutations — the p-value stands but the NES magnitude is not "
-            "usable (issue #117): %s",
+            "permutations (issue #117): %s. Neither the NES magnitude nor the "
+            "nominal p-value is usable there — gseapy computes the p on that "
+            "same short tail, so it is quantised to steps of 1/tail (reported "
+            "per row as p_value_resolution).",
             int(unstable.sum()), MIN_SAME_SIGNED_NULL,
-            sorted(res.loc[unstable, 'KE'].tolist()),
+            sorted(
+                f"{ke} (tail {int(n)}, p in steps of {1.0 / int(n):.3g})"
+                for ke, n in zip(
+                    res.loc[unstable, 'KE'], res.loc[unstable, 'null_same_signed_n']
+                )
+            ),
         )
-    if not same_signed_sizes:
-        logger.warning(
-            "GSEA: permutation null diagnostics unavailable — degenerate "
-            "one-signed nulls (issue #117) cannot be detected in this run"
+    if undiagnosed.any():
+        logger.error(
+            "GSEA: the permutation null could not be read for %d of %d Key "
+            "Event(s)%s, so the degenerate one-signed null of issue #117 could "
+            "not be ruled out for them. They are reported with "
+            "nes_status='%s' — that is not a clean bill of health, and their "
+            "NES and p-value are gseapy's unchecked output: %s",
+            int(undiagnosed.sum()), len(res),
+            "" if diagnostics_captured
+            else " (the capture wrapper never ran — gseapy has probably "
+                 "renamed its entry point, or method='multilevel' routed "
+                 "around it)",
+            NES_UNDIAGNOSED,
+            sorted(res.loc[undiagnosed, 'KE'].tolist()),
         )
     return res
 
@@ -296,18 +401,22 @@ def run_gsea_analysis(
 
     Returns:
         pd.DataFrame sorted by FDR ascending with columns:
-        ['KE', 'Title', 'NES', 'nes_status', 'ES', 'p_value', 'FDR',
-         'null_same_signed_n', 'lead_genes', 'total_KE_genes_in_dataset']
+        ['KE', 'Title', 'NES', 'nes_status', 'ES', 'p_value',
+         'p_value_resolution', 'FDR', 'null_same_signed_n', 'lead_genes',
+         'total_KE_genes_in_dataset']
 
-        ``nes_status`` is one of ``NES_OK``, ``NES_UNSTABLE`` or
-        ``NES_BEYOND_RESOLUTION`` (issue #117). Under
+        ``nes_status`` is one of ``NES_OK``, ``NES_UNSTABLE``,
+        ``NES_BEYOND_RESOLUTION`` or ``NES_UNDIAGNOSED`` (issue #117). Under
         ``NES_BEYOND_RESOLUTION`` the NES is NaN — the quantity does not
         exist — while ``p_value`` carries the bound ``1/permutation_num``,
         ``FDR`` is 0.0 and ``ES`` still carries the direction. Under
-        ``NES_UNSTABLE`` every number is gseapy's own; only the NES *magnitude*
-        should not be ranked or thresholded on. ``null_same_signed_n`` is the
-        evidence for the call and is NaN when the diagnostics could not be
-        read.
+        ``NES_UNSTABLE`` every number is gseapy's own, but neither the NES
+        magnitude nor the p-value may be ranked or thresholded on: gseapy
+        computes both against the same short same-signed tail, so the p-value
+        is quantised to the step size in ``p_value_resolution``. Under
+        ``NES_UNDIAGNOSED`` the null could not be read at all and nothing about
+        the row has been checked. ``null_same_signed_n`` is the evidence for
+        the call and is NaN when the diagnostics could not be read.
 
     Raises:
         ValueError: When no reference gene sets are found for the selected AOP,
@@ -339,7 +448,7 @@ def run_gsea_analysis(
     # Run gseapy.prerank
     # threads=1 is the determinism guard per RESEARCH §Pitfall #2 — load-bearing for D-15.1
     summaries: List[Any] = []
-    with _capture_prerank_summaries(summaries):
+    with _capture_prerank_summaries(summaries) as capture_state:
         pre_res = gp.prerank(
             rnk=ranking,
             gene_sets=gene_sets,
@@ -352,6 +461,7 @@ def run_gsea_analysis(
             no_plot=True,
             verbose=False,
         )
+    diagnostics_captured = bool(capture_state.get('captured'))
     same_signed_sizes = _null_tail_sizes(summaries)
 
     res = pre_res.res2d.copy()
@@ -387,7 +497,11 @@ def run_gsea_analysis(
 
     # Issue #117 — classify each cell by the size of its same-signed
     # permutation tail and repair the two regimes gseapy misreports.
-    res = apply_null_diagnostics(res, same_signed_sizes, permutation_num)
+    res = apply_null_diagnostics(
+        res, same_signed_sizes, permutation_num,
+        diagnostics_captured=diagnostics_captured,
+    )
+    undiagnosed_kes = int((res['nes_status'] == NES_UNDIAGNOSED).sum())
 
     # Populate total_KE_genes_in_dataset from pre-computed overlap counts
     res['total_KE_genes_in_dataset'] = (
@@ -456,14 +570,17 @@ def run_gsea_analysis(
         ke_list, len(res), excluded_reasons, min_size,
         unresolved_pathways_by_ke=unresolved_named,
         max_ke_genes=max_size,
+        # Issue #117 / R5: a run that could not inspect its own permutation null
+        # has to say so where the reader is, not only in the server log.
+        nes_undiagnosed_kes=undiagnosed_kes,
     )
 
     # Sort by FDR ascending; use KE ID as tie-breaker so row order is fully
     # deterministic regardless of the internal ordering gseapy returns.
     res = res.sort_values(['FDR', 'KE'], ascending=[True, True], kind='mergesort')
 
-    out = res[['KE', 'Title', 'NES', 'nes_status', 'ES', 'p_value', 'FDR',
-               'null_same_signed_n', 'lead_genes',
+    out = res[['KE', 'Title', 'NES', 'nes_status', 'ES', 'p_value',
+               'p_value_resolution', 'FDR', 'null_same_signed_n', 'lead_genes',
                'total_KE_genes_in_dataset']]
     # Attach on the returned object: pandas only propagates .attrs through
     # operations that call __finalize__, so set it last.

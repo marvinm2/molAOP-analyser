@@ -147,21 +147,69 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
   The condition is now read off the null distribution rather than off the reported values: the
   size of the same-signed tail, not `NES == 1.0`. That matters because the failure is
-  continuous. A tail of one or two permutations still yields a plausible-looking NES and a
-  sound p-value, but the magnitude is a ratio against a sample of two and cannot be ranked or
-  thresholded on — and no check on the output values can find it. Results now carry a
-  `nes_status` of `ok`, `unstable_normalisation` or `beyond_permutation_resolution`, the
-  same-signed count that produced the call, and the raw `ES` so direction survives even where
+  continuous. A tail of one or two permutations still yields a plausible-looking NES, but the
+  magnitude is a ratio against a sample of two — and no check on the output values can find
+  it. Results now carry a `nes_status` of `ok`, `unstable_normalisation`,
+  `beyond_permutation_resolution` or `undiagnosed`, the same-signed count that produced the
+  call, the achievable `p_value_resolution`, and the raw `ES` so direction survives even where
   the NES does not.
+
+  **The p-value goes with the magnitude.** An earlier draft of this change said the nominal
+  p-value survived a short same-signed tail and only the NES did not; that claim is retracted.
+  gseapy divides the exceedance count by the *same-signed* tail, not by the permutation count,
+  so a term with a tail of five can only report p in steps of 0.2 and a term with a tail of one
+  only 0 or 1. Measured on gseapy 1.1.4, a term with a tail of 56 and one exceedance returns
+  1/56, not 1/100 — and the AOP 472 grid contains a p of 0.600 that is three out of five and a
+  p of 0.000 that is zero out of one. Under `unstable_normalisation` neither number may be
+  ranked or thresholded on, the step size is reported per row as `p_value_resolution`, and the
+  reports print the p-value with that qualifier attached.
 
   Where the tail is empty the NES is reported as undefined rather than as a number — it is
   genuinely not normalisable — while the p-value becomes the resolution bound `1/permutations`
   and the FDR its limit of zero, because no permutation was as extreme as the observation.
   The cell reads as maximally significant, which is what it is, instead of as null.
 
+  **The distinction now reaches every view, not only the single-analysis table.** The batch
+  comparison path — the cross-condition grid, its exports and both batch reports — received a
+  recovered Key Event as a bare `NES = None` and rendered it as an em-dash: unshaded, sorted
+  last, dropped from the heatmap and stripped even of the FDR every other cell carries, i.e.
+  indistinguishable from a Key Event that was never tested and the exact inverse of the
+  result. `nes_status` and `ES` now travel through `build_comparison_matrix` into the table,
+  the heatmap (those cells are ringed rather than coloured — there is no magnitude to put on a
+  diverging scale, only a direction) and both report tables. On the network the same cell
+  reached `nesColor(null)`, whose `parseFloat(nes) || 0` folded it onto `#FFFFFF`, the colour
+  reserved for a NES of exactly zero: a maximally enriched Key Event drawn white with a
+  significance border, inherited by the `.cyjs` export and the network PNG in both reports. The
+  node now carries `nes_status` and `es`, and the state has its own off-gradient treatment and
+  legend entry. Two report captions that promised "every NES value, significant or not" were
+  false for exactly these cells and have been corrected.
+
+  **The diagnostics no longer fabricate statistics under concurrency.** The capture rebinds a
+  process-global (`gseapy.gsea.prerank_rs`), and this app is threaded: Flask runs with
+  `threaded=True` and every batch condition is dispatched on its own thread, so two overlapping
+  runs are routine. Unserialised, the patches nested, both sinks received both runs' summaries,
+  and — since the per-term counts are keyed by KE ID, which is identical across conditions —
+  one condition's tail count landed on another condition's row, where the repair then rewrote
+  that row's NES, p and FDR on the strength of it. The same nesting left the global permanently
+  bound to a dead wrapper whenever the inner block outlived the outer one, which is the normal
+  case. The patch and the `gp.prerank` call it exists for now run under one module-level lock,
+  taken before the global is read, and the restore is identity-checked.
+
+  **A failure to capture is no longer reported as a clean result.** If gseapy renames the entry
+  point, or `method='multilevel'` routes through `fgsea_rs` instead, no null can be inspected.
+  Those rows were labelled `ok` — so a future gseapy bump would have quietly reintroduced the
+  original misreporting under a clean bill of health. They are now labelled `undiagnosed`,
+  logged at error level naming the symbol, and counted into the run's own Key Event accounting
+  sentence, which says in as many words that their NES and p-value are unchecked.
+
   Incidence rises with gene-set size, since a larger set tightens the null: this gets *more*
   likely as Key Event curation improves. Across the AOP 472 grid (5 gene-set pools × 9
   conditions, 315 cells) the six affected cells all carry 379–817 measured genes.
+
+  Known residual, not addressed here: gseapy computes the FDR for the *unaffected* terms from
+  a pooled null that still contains the degenerate terms' substituted `NES = 1.0`. Correcting
+  that means recomputing the FDR outside gseapy, which is a larger change than this one and is
+  tracked separately.
 
 - **A Key Event above the GSEA size ceiling is no longer reported as under-measured** (#120).
   `gseapy.prerank` discards a gene set larger than `max_size` before computing anything, and

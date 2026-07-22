@@ -17,8 +17,10 @@ from services.enrichment_service import (
     format_ke_summary,
 )
 from services.gsea_service import (
+    MIN_SAME_SIGNED_NULL,
     NES_BEYOND_RESOLUTION,
     NES_OK,
+    NES_UNDIAGNOSED,
     NES_UNSTABLE,
     _build_ranking,
     _capture_prerank_summaries,
@@ -149,8 +151,8 @@ class TestRunGseaAnalysis:
         result = run_gsea_analysis(df, reference_sets, ke_list, ke_title_map)
 
         expected_cols = ['KE', 'Title', 'NES', 'nes_status', 'ES', 'p_value',
-                         'FDR', 'null_same_signed_n', 'lead_genes',
-                         'total_KE_genes_in_dataset']
+                         'p_value_resolution', 'FDR', 'null_same_signed_n',
+                         'lead_genes', 'total_KE_genes_in_dataset']
         assert list(result.columns) == expected_cols
 
     def test_min_size_filter(self, caplog):
@@ -289,9 +291,15 @@ class TestOneSignedNull:
 
         out = apply_null_diagnostics(res, {}, 1000)
 
-        assert out.iloc[0]['nes_status'] == NES_OK
+        # gseapy's numbers are untouched...
         assert out.iloc[0]['NES'] == 1.0
+        assert out.iloc[0]['p_value'] == 1.0
         assert math.isnan(out.iloc[0]['null_same_signed_n'])
+        # ...but the row does NOT claim to have been checked. Labelling this
+        # 'ok' is how a gseapy rename would reintroduce the whole of #117 under
+        # a clean bill of health.
+        assert out.iloc[0]['nes_status'] == NES_UNDIAGNOSED
+        assert out.iloc[0]['nes_status'] != NES_OK
 
     def test_null_tail_sizes_counts_the_observed_side(self):
         """Same-signed means the side the observed ES fell on, not the majority."""

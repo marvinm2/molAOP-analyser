@@ -20,7 +20,11 @@ from dataclasses import dataclass
 from io import BytesIO
 import pandas as pd
 
-from services.gsea_service import NES_BEYOND_RESOLUTION, NES_UNSTABLE
+from services.gsea_service import (
+    NES_BEYOND_RESOLUTION,
+    NES_UNDIAGNOSED,
+    NES_UNSTABLE,
+)
 
 try:
     import plotly.graph_objects as go
@@ -93,7 +97,56 @@ def format_nes(nes: Any, status: Optional[str] = None) -> str:
     if status == NES_BEYOND_RESOLUTION:
         return f"{text} (beyond permutation resolution, p < 1/permutations)"
     if status == NES_UNSTABLE:
-        return f"{text} (magnitude unstable)"
+        return f"{text} (unstable)"
+    if status == NES_UNDIAGNOSED:
+        return f"{text} (null not inspected)"
+    return text
+
+
+def format_pvalue(
+    pvalue: Any,
+    status: Optional[str] = None,
+    resolution: Optional[float] = None,
+) -> str:
+    """Render a nominal GSEA p-value, saying when it is coarser than it looks.
+
+    Issue #117, corrected. An earlier revision of this module asserted that the
+    nominal p-value survived a short same-signed permutation tail and only the
+    NES magnitude did not. That is wrong: gseapy divides the exceedance count by
+    the *same-signed* tail, not by the permutation count, so a term with a tail
+    of five can only report p in steps of 0.2 and a term with a tail of one only
+    0 or 1. Measured on gseapy 1.1.4, a term with a tail of 56 and a single
+    exceedance returned 1/56, not 1/100. Printing ``0.0000`` for "zero out of
+    two" beside ``0.0000`` for "zero out of a thousand" invites exactly the
+    thresholding the qualifier exists to prevent.
+
+    A report is the artefact that leaves the tool, so the qualifier travels with
+    the number rather than living in a separate status column.
+
+    Args:
+        pvalue: The nominal p-value.
+        status: The row's ``nes_status``, when the result carries one. Results
+            stored before #117 do not, and render as they always did.
+        resolution: The row's ``p_value_resolution`` — the step size the
+            p-value was quantised to.
+
+    Returns:
+        str: the formatted cell text.
+    """
+    if pvalue is None or (isinstance(pvalue, float) and math.isnan(pvalue)):
+        text = 'n/a'
+    elif isinstance(pvalue, (int, float)):
+        text = f"{pvalue:.2e}" if pvalue < 0.001 else f"{pvalue:.4f}"
+    else:
+        text = str(pvalue)
+    if status == NES_BEYOND_RESOLUTION:
+        return f"< {text} (bound; no permutation reached the observed score)"
+    if status == NES_UNSTABLE:
+        if isinstance(resolution, (int, float)) and not math.isnan(resolution):
+            return f"{text} (resolution {resolution:.3g}; do not threshold)"
+        return f"{text} (coarse; do not threshold)"
+    if status == NES_UNDIAGNOSED:
+        return f"{text} (null not inspected)"
     return text
 
 
@@ -527,6 +580,12 @@ class ReportGenerator:
 
             if is_gsea:
                 nes_str = format_nes(result.get('NES'), result.get('nes_status'))
+                # Issue #117: the p-value is qualified the same way the NES is,
+                # because it is computed on the same short tail.
+                gsea_pval_str = format_pvalue(
+                    result.get('p_value'), result.get('nes_status'),
+                    result.get('p_value_resolution'),
+                )
                 lead = result.get('lead_genes', '')
                 # Export carries the FULL untruncated gene list.
                 lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
@@ -535,7 +594,7 @@ class ReportGenerator:
                 <td>{ke_id}</td>
                 <td>{title}</td>
                 <td>{nes_str}</td>
-                <td>{pval_str}</td>
+                <td>{gsea_pval_str}</td>
                 <td>{adj_pval_str}</td>
                 <td>{ke_size}</td>
                 <td>{lead_str}</td>
@@ -1000,10 +1059,15 @@ class ReportGenerator:
 
             if is_gsea:
                 nes_str = format_nes(result.get('NES'), result.get('nes_status'))
+                # Issue #117 — see the HTML table: same tail, same qualifier.
+                gsea_pval_str = format_pvalue(
+                    result.get('p_value'), result.get('nes_status'),
+                    result.get('p_value_resolution'),
+                )
                 lead = result.get('lead_genes', '')
                 lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
                 table_data.append([
-                    result.get('KE', 'N/A'), title, nes_str, pval_str, fdr_str,
+                    result.get('KE', 'N/A'), title, nes_str, gsea_pval_str, fdr_str,
                     str(result.get('total_KE_genes_in_dataset', 0)), lead_str,
                 ])
             else:

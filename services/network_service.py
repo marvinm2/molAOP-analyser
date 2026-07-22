@@ -15,6 +15,7 @@ from services.enrichment_service import (
     EXCLUDED_TOO_MANY_GENES,
     EXCLUDED_UNRESOLVED_MAPPING,
 )
+from services.gsea_service import NES_UNDIAGNOSED
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,20 @@ def build_cytoscape_network(
             nes = _to_native(enrichment_row.get('NES')) if method == 'gsea' else None
             if nes is not None:
                 nes = max(-3.0, min(3.0, float(nes)))
+            # Issue #117 — the NES alone cannot say why it is missing. Under
+            # NES_BEYOND_RESOLUTION it is None because the quantity does not
+            # exist, on a Key Event that beat every permutation; without the
+            # status beside it the frontend's `parseFloat(nes) || 0` turns that
+            # into 0, which is the colour reserved for *no* enrichment. The raw
+            # ES rides along because it is the only surviving statement of
+            # direction for exactly those nodes, and both travel into the .cyjs
+            # export and the network PNG.
+            if method == 'gsea':
+                nes_status = _to_native(enrichment_row.get('nes_status'))
+                es = _to_native(enrichment_row.get('ES'))
+            else:
+                nes_status = None
+                es = None
         else:
             odds_ratio = 0
             is_significant = False
@@ -148,6 +163,8 @@ def build_cytoscape_network(
             fdr = None
             fdr_depleted = None
             nes = None
+            nes_status = None
+            es = None
 
         # Get KE metadata
         label = ke_title_map.get(ke, ke)
@@ -221,6 +238,10 @@ def build_cytoscape_network(
             node_payload["unresolved_pathways"] = sorted(node_unresolved)
         if method == 'gsea':
             node_payload["nes"] = nes
+            # Issue #117 — see above. None on results produced before the
+            # diagnostics existed, which the frontend reads as "no claim".
+            node_payload["nes_status"] = nes_status
+            node_payload["es"] = es
             node_payload["logfc"] = 0  # neutral surrogate per D-10 back-compat
         else:
             node_payload["logfc"] = odds_ratio  # ORA: odds ratio as color surrogate
@@ -317,6 +338,14 @@ def ke_accounting_from_network(network_json: Any) -> Optional[Dict[str, Any]]:
                 for d in ke_nodes
                 for wp in (d.get('unresolved_pathways') or [])
             }),
+            # Issue #117 — tested Key Events whose permutation null could not be
+            # read. Recovered from the node payload so a shared link and the
+            # batch report make the same admission the live results page does.
+            # Zero for ORA and for networks stored before nes_status existed.
+            'nes_undiagnosed_kes': sum(
+                1 for d in ke_nodes
+                if d.get('nes_status') == NES_UNDIAGNOSED
+            ),
         }
     except (json.JSONDecodeError, TypeError, AttributeError) as exc:
         logger.warning(f"ke_accounting_from_network failed: {exc}")
