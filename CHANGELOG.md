@@ -30,6 +30,29 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 - Design-token layer in `static/css/main.css` mirroring the Builder's `:root` block —
   VHP4Safety palette, spacing, radius, shadow and z-index scales as CSS custom properties.
 
+### Fixed
+
+- **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
+  KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was
+  resolved against `data/edges_wpid_to_gene.csv` — a snapshot topping out at `WP5452`. Any
+  pathway curated since resolved to **no genes at all**, silently, because the merge is an
+  inner join. 8 of the 79 live-mapped pathways were affected; 8 Key Events lost every gene
+  they had and were reported as *"no gene set mapped"*, which is the opposite of what
+  happened — they are curated, and the tool could not resolve them. It also quietly deflated
+  the WikiPathways coverage that a resource comparison reports, while the run advertised its
+  provenance as `WikiPathways (Builder API, live)`: the *mappings* were live, the gene
+  membership behind them was not.
+
+  Membership now comes from the Builder's own KE-WP GMT export, per pathway, with the
+  bundled CSV still covering anything the Builder does not answer for. Concretely: KE 1115
+  (Reactive oxygen species) goes from excluded-entirely to 49 genes, KE 1392 from 33 to 73,
+  KE 177 from 109 to 115, and the reference sets grow from 87 to 90 Key Events.
+
+  Three pathways (`WP1234`, `WP3980`, `WP4010`) resolve in neither source — `WP1234` is a
+  404 upstream. Those are now **named in a warning** on the results page and in the run's
+  provenance rather than disappearing, so a Key Event that looks uncovered can be told apart
+  from one that genuinely is.
+
 ### Changed
 
 - Page-specific CSS moved out of the templates into `static/css/pages/`.

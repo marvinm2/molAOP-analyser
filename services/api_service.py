@@ -24,16 +24,26 @@ from helpers import (
 logger = logging.getLogger(__name__)
 
 # Builder GMT export paths that already resolve pathways/terms to genes.
-# WikiPathways is intentionally omitted here — it keeps its existing
-# CSV-backed pipeline (see fetch_reference_sets_from_api / load_reference_sets).
+# WikiPathways keeps its own KE-WP pipeline (mappings API + confidence filter),
+# but its GMT is still used as the *pathway-to-gene* source — see
+# WP_GMT_PATH and fetch_wp_pathway_gene_map.
 GMT_RESOURCE_PATHS = {
     "GO_BP": "exports/gmt/ke-go",
     "Reactome": "exports/gmt/ke-reactome",
 }
 
+# The KE-WP GMT. Not in GMT_RESOURCE_PATHS because WikiPathways reference sets
+# are not built from it directly: the GMT carries no confidence level, so
+# building KE sets from it would silently ignore min_confidence (#67). It is
+# read only to learn which genes each *pathway* contains.
+WP_GMT_PATH = "exports/gmt/ke-wp"
+
 # Matches the leading "KE<number>" token of a GMT descriptor column, e.g.
 # "KE177_Increase_Mitochondrial_dysfunction_WP5241" -> "177".
 _KE_ID_RE = re.compile(r"^KE\s?(\d+)_")
+
+# Matches the trailing pathway token of the same descriptor -> "WP5241".
+_WP_ID_RE = re.compile(r"_(WP\d+)$", re.IGNORECASE)
 
 
 def _make_api_session(retries=3, backoff_factor=1.0):
@@ -213,9 +223,13 @@ def fetch_reference_sets_from_api(config, min_confidence=DEFAULT_MIN_CONFIDENCE)
 
     Returns
     -------
-    dict[str, set[str]]
-        Mapping of KE ID -> set of gene symbols, identical in shape to
-        the CSV-based output of :func:`helpers.load_reference_sets`.
+    tuple[dict[str, set[str]], list[str]]
+        The KE ID -> gene symbol mapping (identical in shape to the CSV-based
+        output of :func:`helpers.load_reference_sets`), and the sorted list of
+        mapped pathway IDs that could not be resolved to genes by either the
+        Builder or the bundled snapshot (issue #79). The second element is
+        normally empty; when it is not, those Key Events are missing gene sets
+        they are curated to have, and the caller must surface that.
 
     Raises
     ------
@@ -255,14 +269,105 @@ def fetch_reference_sets_from_api(config, min_confidence=DEFAULT_MIN_CONFIDENCE)
         min_confidence,
     )
 
-    reference_sets = load_reference_sets(ke_wp_df=ke_wp_df)
+    # Issue #79: resolve pathway membership from the Builder, not only from the
+    # bundled snapshot. Without this a pathway curated after the snapshot was
+    # taken contributes no genes, and the KE is reported as unmapped.
+    wp_gene_map = fetch_wp_pathway_gene_map(config)
+    unresolved = []
+    reference_sets = load_reference_sets(
+        ke_wp_df=ke_wp_df,
+        wp_gene_map=wp_gene_map,
+        unresolved_out=unresolved,
+    )
 
     logger.info(
         "Reference sets loaded: %d KE gene sets produced from API data",
         len(reference_sets),
     )
-    return reference_sets
+    return reference_sets, sorted(set(unresolved))
 
+
+def parse_gmt_pathway_gene_map(gmt_text):
+    """Parse a KE-WP GMT export into a *pathway*-to-gene map.
+
+    :func:`parse_gmt_reference_sets` collapses the same file to KE -> genes.
+    This keeps the pathway dimension instead, because the WikiPathways pipeline
+    needs to apply the confidence threshold to KE->pathway mappings first and
+    only then look up each qualifying pathway's genes.
+
+    Genes are unioned across every row naming the same pathway (a pathway
+    mapped by several KEs appears several times, with identical membership).
+
+    Parameters
+    ----------
+    gmt_text : str
+        Raw GMT file contents.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping of upper-case pathway ID (``"WP5477"``) -> gene symbols.
+    """
+    pathway_genes = {}
+    for line in gmt_text.splitlines():
+        if not line.strip():
+            continue
+        fields = line.split("\t")
+        if len(fields) < 3:
+            continue  # descriptor + title but no genes
+        match = _WP_ID_RE.search(fields[0])
+        if not match:
+            continue
+        wp_id = match.group(1).upper()
+        genes = {g.strip().upper() for g in fields[2:] if g.strip()}
+        if not genes:
+            continue
+        pathway_genes.setdefault(wp_id, set()).update(genes)
+    return pathway_genes
+
+
+def fetch_wp_pathway_gene_map(config):
+    """Fetch pathway-to-gene membership for WikiPathways from the Builder.
+
+    The bundled ``data/edges_wpid_to_gene.csv`` is a snapshot, so any pathway
+    curated after it was taken resolves to no genes at all — silently, because
+    the merge is an inner join (issue #79). The Builder resolves pathway
+    membership itself for its GMT export, so its copy is the fresher source.
+
+    Parameters
+    ----------
+    config : Config
+        Application config providing ``BUILDER_API_URL`` and
+        ``BUILDER_API_TIMEOUT``.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Pathway ID -> gene symbols. Empty dict if the Builder is not
+        configured or the export cannot be fetched — callers fall back to the
+        bundled CSV rather than failing, since a stale gene set beats none.
+    """
+    if not config.BUILDER_API_URL:
+        logger.info("BUILDER_API_URL not configured; skipping WP pathway-gene fetch")
+        return {}
+
+    url = f"{config.BUILDER_API_URL.rstrip('/')}/{WP_GMT_PATH}"
+    try:
+        session = _make_api_session()
+        response = session.get(url, timeout=config.BUILDER_API_TIMEOUT)
+        response.raise_for_status()
+        pathway_genes = parse_gmt_pathway_gene_map(response.text)
+        logger.info(
+            "Loaded gene membership for %d WikiPathways pathways from %s",
+            len(pathway_genes), url,
+        )
+        return pathway_genes
+    except Exception as exc:
+        logger.warning(
+            "Could not fetch WikiPathways gene membership from the Builder (%s); "
+            "falling back to the bundled CSV snapshot", exc
+        )
+        return {}
 
 def parse_gmt_reference_sets(gmt_text):
     """Parse a Builder GMT export into KE-to-gene reference sets.

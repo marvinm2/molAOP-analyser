@@ -205,3 +205,60 @@ class TestFetchReferenceSetsConfidence:
         # KE:1 keeps WP1 only; KE:3 (all Low) disappears entirely.
         assert list(df["WP_ID"]) == ["WP1"]
         assert list(df["KE_ID"]) == ["KE:1"]
+
+
+# ---------------------------------------------------------------------------
+# Issue #79: pathway gene membership must not come only from the bundled CSV
+# ---------------------------------------------------------------------------
+
+class TestPathwayGeneMap:
+    """parse_gmt_pathway_gene_map / fetch_wp_pathway_gene_map."""
+
+    GMT = (
+        "KE1115_Increase_Reactive_oxygen_species_WP5477\tOxidative stress\tSOD1\tCAT\n"
+        "KE1392_Increase_Oxidative_Stress_WP5477\tOxidative stress\tSOD1\tGPX1\n"
+        "KE177_Increase_Mitochondrial_dysfunction_WP5507\tMito\tNDUFA1\n"
+        "KE999_No_genes_WP1\tEmpty\n"
+        "not a descriptor\tignored\tXYZ\n"
+    )
+
+    def test_keys_on_pathway_not_ke(self):
+        """The map is pathway-centric — that is what the KE-WP merge needs."""
+        from services.api_service import parse_gmt_pathway_gene_map
+
+        result = parse_gmt_pathway_gene_map(self.GMT)
+        assert set(result) == {"WP5477", "WP5507"}
+
+    def test_unions_genes_across_kes_sharing_a_pathway(self):
+        """WP5477 is mapped by two KEs; membership is the union of both rows."""
+        from services.api_service import parse_gmt_pathway_gene_map
+
+        assert parse_gmt_pathway_gene_map(self.GMT)["WP5477"] == {"SOD1", "CAT", "GPX1"}
+
+    def test_rows_without_genes_or_pathway_are_skipped(self):
+        """A descriptor with no genes must not create an empty gene set."""
+        from services.api_service import parse_gmt_pathway_gene_map
+
+        result = parse_gmt_pathway_gene_map(self.GMT)
+        assert "WP1" not in result
+        assert all(genes for genes in result.values())
+
+    def test_fetch_returns_empty_when_builder_unset(self):
+        """No Builder configured falls back to the CSV rather than raising."""
+        from services.api_service import fetch_wp_pathway_gene_map
+
+        cfg = MagicMock()
+        cfg.BUILDER_API_URL = ""
+        assert fetch_wp_pathway_gene_map(cfg) == {}
+
+    def test_fetch_swallows_builder_failure(self):
+        """A Builder outage must degrade to the CSV, not fail the analysis."""
+        from services.api_service import fetch_wp_pathway_gene_map
+
+        cfg = MagicMock()
+        cfg.BUILDER_API_URL = "https://b.example.com"
+        cfg.BUILDER_API_TIMEOUT = 5
+        session = MagicMock()
+        session.get.side_effect = RuntimeError("connection refused")
+        with patch("services.api_service._make_api_session", return_value=session):
+            assert fetch_wp_pathway_gene_map(cfg) == {}
