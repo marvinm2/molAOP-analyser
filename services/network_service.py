@@ -56,6 +56,7 @@ def build_cytoscape_network(
     method: str = 'ora',
     fdr_cutoff: float = Config.SIGNIFICANCE_FDR_CUTOFF,
     excluded_kes: Optional[Dict[str, str]] = None,
+    unresolved_ke_pathways: Optional[Dict[str, List[str]]] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Build Cytoscape.js network data structure.
@@ -90,6 +91,13 @@ def build_cytoscape_network(
             class (issue #81), so "could not assess" never renders like
             "assessed but not enriched" and a mapped Key Event whose pathway
             could not be resolved never renders like an uncurated one.
+        unresolved_ke_pathways: Optional KE_ID → the pathway IDs behind an
+            ``'unresolved_mapping'`` exclusion, as produced by
+            ``get_ke_summary()['unresolved_pathways_by_ke']`` (issue #81).
+            Written onto the node payload as ``unresolved_pathways`` so a
+            summary rebuilt from stored network JSON — the batch report, a
+            shared link — can still name them. Naming them is the point of the
+            clause: an unnamed count cannot be checked against the Builder.
 
     Returns:
         Dictionary with 'nodes' and 'edges' keys for Cytoscape.js
@@ -163,14 +171,16 @@ def build_cytoscape_network(
             # Issue #81 — the KE *is* mapped; the mapping resolved to no genes.
             # Styled apart from the uncurated case because the two ask for
             # different repairs: one a Builder mapping, the other this tool's
-            # reference data.
+            # reference data. This is the *only* reason that withholds
+            # `no-genes`; every other gene-set-less KE keeps the muted styling
+            # it had before #81, including one excluded with reason 'error'.
             classes.append("unresolved-mapping")
         elif excluded_reason == EXCLUDED_NO_MAPPING or (
-            reference_sets is not None and not has_gene_set and not excluded_reason
+            reference_sets is not None and not has_gene_set
         ):
-            # No curated gene set at all. Note the reason, when present, is
-            # authoritative: a mapped-but-unresolvable KE also has no gene set
-            # here and must not be dressed up as a curation gap (issue #81).
+            # No usable gene set. An explicit 'no_mapping' says so; otherwise
+            # the KE simply has nothing in the reference sets, which is what
+            # this class has always meant.
             classes.append("no-genes")
 
         # D-10: build node payload with method-aware fields.
@@ -196,6 +206,15 @@ def build_cytoscape_network(
             # recover the tested/excluded accounting without a second payload.
             "excluded_reason": excluded_reason,
         }
+        # Issue #81: carry the offending pathway IDs on the node, not only in
+        # the in-memory summary. ConditionRecord and SharedResult store the
+        # network and nothing else, so without this the batch report and the
+        # shared view rebuild the sentence with the IDs stripped out — and the
+        # IDs are the part a reader can act on. Written only when there are
+        # any, so every other node payload is byte-identical to before.
+        node_unresolved = (unresolved_ke_pathways or {}).get(ke)
+        if node_unresolved:
+            node_payload["unresolved_pathways"] = sorted(node_unresolved)
         if method == 'gsea':
             node_payload["nes"] = nes
             node_payload["logfc"] = 0  # neutral surrogate per D-10 back-compat
@@ -251,7 +270,9 @@ def ke_accounting_from_network(network_json: Any) -> Optional[Dict[str, Any]]:
 
     Returns:
         Summary dict shaped like ``enrichment_service.get_ke_summary()`` (minus
-        the per-KE ``excluded_reasons`` map), or None when unavailable.
+        the per-KE ``excluded_reasons`` and ``unresolved_pathways_by_ke`` maps,
+        but including the flat ``unresolved_pathways`` list so the rendered
+        sentence still names them), or None when unavailable.
     """
     try:
         if isinstance(network_json, str):
@@ -278,6 +299,14 @@ def ke_accounting_from_network(network_json: Any) -> Optional[Dict[str, Any]]:
             'excluded_too_few_genes': sum(1 for r in reasons if r == EXCLUDED_TOO_FEW_GENES),
             'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
             'min_ke_genes': Config.MIN_KE_GENES,
+            # Issue #81 — the pathway IDs behind those exclusions, recovered
+            # from the nodes that carry them. Empty for networks stored before
+            # they were written, which reads as "not known" rather than wrong.
+            'unresolved_pathways': sorted({
+                str(wp)
+                for d in ke_nodes
+                for wp in (d.get('unresolved_pathways') or [])
+            }),
         }
     except (json.JSONDecodeError, TypeError, AttributeError) as exc:
         logger.warning(f"ke_accounting_from_network failed: {exc}")

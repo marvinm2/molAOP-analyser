@@ -24,7 +24,9 @@ from helpers import (
     DEFAULT_MIN_CONFIDENCE,
     MIN_CONFIDENCE_LABELS,
     VALID_MIN_CONFIDENCE,
+    ReferenceSets,
     load_reference_sets,
+    unresolved_ke_pathways_for,
 )
 from cache_manager import cache, cached_data_loader, get_reference_cache
 from services.api_service import (
@@ -834,6 +836,13 @@ def analyze():
             resources, min_confidence=min_confidence
         )
 
+        # Issue #81: a KE whose only pathway could not be resolved to genes is
+        # absent from the reference sets exactly like an uncurated one. This
+        # map is the only thing that tells the two apart, so it has to reach
+        # the enrichment backend — without it the run reports a live, curated
+        # mapping as a curation gap.
+        unresolved_ke_pathways = unresolved_ke_pathways_for(current_reference_sets)
+
         # Pre-build gene_logfc_map so the enrichment service can derive the
         # observed Direction column ("N↑ / M↓") for each KE alongside the
         # direction-agnostic Fisher result. Reused below for the per-KE
@@ -855,6 +864,7 @@ def analyze():
                 method,
                 df_processed, current_reference_sets, ke_list, ke_title_map,
                 gene_logfc_map=gene_logfc_map if method == 'ora' else None,
+                unresolved_ke_pathways=unresolved_ke_pathways,
             )
         except ValueError:
             # Issue #69: with the wrong ID column nothing overlaps, every KE is
@@ -885,6 +895,7 @@ def analyze():
             reference_sets=current_reference_sets,
             method=method,
             excluded_kes=(ke_summary or {}).get('excluded_reasons'),
+            unresolved_ke_pathways=(ke_summary or {}).get('unresolved_pathways_by_ke'),
         )
 
         # Plan 11-03 (D-04 passthrough): capture raw and adjusted p-value
@@ -1459,43 +1470,62 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
             sets are built; the cache entry is keyed by the threshold.
 
     Returns:
-        tuple: (reference_sets dict, source string) where source is one of
-        'api', 'cache(api)', 'cache(csv)', 'csv'. Issue #68: a cache hit keeps
-        the original provenance rather than collapsing to 'cache' — otherwise a
-        set built from the bundled CSVs during a Builder outage is
-        indistinguishable, one cache hop later, from a live API response.
+        tuple: (reference_sets, source, unresolved_pathways, unresolved_ke_pathways).
+
+        ``source`` is one of 'api', 'cache(api)', 'cache(csv)', 'csv'. Issue
+        #68: a cache hit keeps the original provenance rather than collapsing
+        to 'cache' — otherwise a set built from the bundled CSVs during a
+        Builder outage is indistinguishable, one cache hop later, from a live
+        API response.
+
+        ``unresolved_pathways`` (#79) lists the mapped pathway IDs no source
+        could resolve to genes; ``unresolved_ke_pathways`` (#81) attributes
+        those pathways to their Key Events, which is what lets the enrichment
+        backends tell a mapped-but-unresolvable KE apart from an uncurated
+        one. The returned mapping also carries that map on
+        ``.unresolved_ke_pathways`` (see ``helpers.ReferenceSets``).
     """
     cache_key = _confidence_cache_key(REFERENCE_CACHE_KEY, min_confidence)
     cached = _reference_cache.get(cache_key)
     if cached is not None:
-        # Entries written before #79 are 2-tuples; treat them as "nothing known
-        # to be unresolved" rather than invalidating a warm cache on deploy.
-        if len(cached) == 3:
+        # Entries written before #79 are 2-tuples and before #81 3-tuples;
+        # treat them as "nothing known to be unresolved" rather than
+        # invalidating a warm cache on deploy.
+        unresolved_ke = {}
+        if len(cached) == 4:
+            reference_sets, original_source, unresolved, unresolved_ke = cached
+        elif len(cached) == 3:
             reference_sets, original_source, unresolved = cached
         else:
             reference_sets, original_source = cached
             unresolved = []
+        # An old entry pickled a plain dict; rewrap so the attribute-carrying
+        # contract holds for every caller regardless of cache age.
+        reference_sets = ReferenceSets(
+            reference_sets, unresolved_ke_pathways=unresolved_ke
+        )
         logger.info(
             f"Loaded {len(reference_sets)} WikiPathways KE sets from disk cache "
             f"(originally from {original_source}, min_confidence={min_confidence})"
         )
-        return reference_sets, f"cache({original_source})", unresolved
+        return reference_sets, f"cache({original_source})", unresolved, unresolved_ke
 
     # Try API
     try:
         reference_sets, unresolved = fetch_reference_sets_from_api(
             Config, min_confidence=min_confidence
         )
+        unresolved_ke = unresolved_ke_pathways_for(reference_sets)
         _reference_cache.set(
             cache_key,
-            (reference_sets, "api", unresolved),
+            (dict(reference_sets), "api", unresolved, unresolved_ke),
             expire=Config.CACHE_TTL,
         )
         logger.info(
             f"Loaded {len(reference_sets)} WikiPathways KE sets from Builder API, "
             f"cached for {Config.CACHE_TTL}s"
         )
-        return reference_sets, "api", unresolved
+        return reference_sets, "api", unresolved, unresolved_ke
     except Exception as exc:
         logger.warning(
             f"Builder API unavailable ({exc}); falling back to local CSV files"
@@ -1511,16 +1541,18 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
         min_confidence=min_confidence,
         unresolved_out=unresolved,
     )
+    unresolved_ke = unresolved_ke_pathways_for(reference_sets)
+    unresolved = sorted(set(unresolved))
     _reference_cache.set(
         cache_key,
-        (reference_sets, "csv", unresolved),
+        (dict(reference_sets), "csv", unresolved, unresolved_ke),
         expire=Config.CACHE_TTL,
     )
     logger.info(
         f"Loaded {len(reference_sets)} WikiPathways KE sets from local CSV files, "
         f"cached for {Config.CACHE_TTL}s"
     )
-    return reference_sets, "csv", sorted(set(unresolved))
+    return reference_sets, "csv", unresolved, unresolved_ke
 
 
 def _load_gmt_resource_reference_sets(resource, min_confidence=DEFAULT_MIN_CONFIDENCE):
@@ -1631,7 +1663,15 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
             flows so both stay consistent by construction.
 
     Returns:
-        tuple: (merged reference_sets dict, data_source string, resolution list).
+        tuple: (merged reference sets, data_source string, resolution list).
+
+        The merged sets are a ``helpers.ReferenceSets`` — a dict of KE_ID ->
+        gene set that additionally carries ``.unresolved_ke_pathways``, the
+        union across resources of KE_ID -> pathway IDs that are curated and
+        mapped but that no source could resolve to genes (issue #81). Read it
+        with ``helpers.unresolved_ke_pathways_for()`` and hand it to the
+        enrichment backend, which otherwise cannot tell such a Key Event from
+        one nobody has mapped.
 
         ``data_source`` reflects the WikiPathways component's source
         ('api'/'cache(api)'/'cache(csv)'/'csv') when WikiPathways is selected —
@@ -1645,6 +1685,8 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
              'source': 'api' | 'cache(api)' | 'cache(csv)' | 'csv' | None,
              'ke_count': 412,
              'confidence_applied': False,   # issue #67
+             'unresolved_pathways': ['WP5477'],          # issue #79
+             'unresolved_ke_pathways': {'KE:1115': ['WP5477']},  # issue #81
              'error': 'HTTP 502' or None}
 
         Recording resolution rather than selection is the point: a run where
@@ -1659,16 +1701,21 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
         min_confidence = DEFAULT_MIN_CONFIDENCE
 
     merged = {}
+    # Issue #81: KE -> unresolvable pathway IDs, unioned across resources. This
+    # rides on the merged mapping (helpers.ReferenceSets) so it survives every
+    # hand-off between here and the enrichment backends, including the batch
+    # thread, which is handed nothing but the gene sets.
+    merged_unresolved_ke = {}
     wp_source = None
     loaded = []
     resolution = []
     for resource in selected:
         try:
             unresolved_pathways = []
+            unresolved_ke = {}
             if resource == "WikiPathways":
-                sets, source, unresolved_pathways = _load_wikipathways_reference_sets(
-                    min_confidence
-                )
+                (sets, source, unresolved_pathways,
+                 unresolved_ke) = _load_wikipathways_reference_sets(min_confidence)
                 wp_source = source
             else:
                 sets, source = _load_gmt_resource_reference_sets(resource, min_confidence)
@@ -1683,12 +1730,15 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
                 'ke_count': 0,
                 'confidence_applied': False,
                 'unresolved_pathways': [],
+                'unresolved_ke_pathways': {},
                 'error': str(exc),
             })
             continue
         # Build fresh sets so cached resource sets are never mutated.
         for ke_id, genes in sets.items():
             merged.setdefault(ke_id, set()).update(genes)
+        for ke_id, pathways in (unresolved_ke or {}).items():
+            merged_unresolved_ke.setdefault(ke_id, set()).update(pathways)
         loaded.append(f"{resource}:{source}")
         resolution.append({
             'resource': resource,
@@ -1703,6 +1753,9 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
             # membership no source could resolve. Their KEs silently lose those
             # genes, and a KE that loses all of them looks unmapped.
             'unresolved_pathways': unresolved_pathways,
+            # Issue #81: the same pathways attributed to their Key Events, so a
+            # stored resolution can say which KE was misreported as unmapped.
+            'unresolved_ke_pathways': unresolved_ke,
             'error': None,
         })
 
@@ -1714,10 +1767,16 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
         data_source = "gmt"
 
     logger.info(
-        "Merged %d KE sets across resources [%s] (data_source=%s, min_confidence=%s)",
+        "Merged %d KE sets across resources [%s] (data_source=%s, min_confidence=%s, "
+        "%d KE(s) with unresolvable mappings)",
         len(merged), ", ".join(loaded) or "-", data_source, min_confidence,
+        len(merged_unresolved_ke),
     )
-    return merged, data_source, resolution
+    return (
+        ReferenceSets(merged, unresolved_ke_pathways=merged_unresolved_ke),
+        data_source,
+        resolution,
+    )
 
 
 def describe_resource_resolution(resolution):
@@ -1822,11 +1881,31 @@ def resource_resolution_warnings(resolution, min_confidence=DEFAULT_MIN_CONFIDEN
         shown = ", ".join(unresolved[:5])
         if len(unresolved) > 5:
             shown += f" and {len(unresolved) - 5} more"
+        # Issue #81: this sentence used to end "...are reported as having no
+        # gene set", because they were. They are not any more — the exclusion
+        # accounting now separates "mapped, but no genes could be resolved"
+        # from "no gene set mapped" — so say what actually happens instead of
+        # apologising for a misreport that has been fixed.
+        affected_kes = sorted({
+            ke
+            for e in resolution
+            for ke in (e.get('unresolved_ke_pathways') or {})
+        })
+        ke_clause = ''
+        if affected_kes:
+            ke_shown = ", ".join(affected_kes[:5])
+            if len(affected_kes) > 5:
+                ke_shown += f" and {len(affected_kes) - 5} more"
+            ke_clause = (
+                f" {len(affected_kes)} Key Event(s) lost genes this way "
+                f"({ke_shown}); those left with none are listed as mapped but "
+                f"unresolvable rather than unmapped."
+            )
         warnings.append(
             f"{len(unresolved)} mapped pathway(s) could not be resolved to genes "
-            f"({shown}) and contributed nothing to this analysis. Key Events whose "
-            f"only mappings are affected are reported as having no gene set, but "
-            f"they are curated — their coverage is understated here."
+            f"({shown}) and contributed nothing to this analysis.{ke_clause} "
+            f"The affected Key Events are curated — their coverage is "
+            f"understated here."
         )
     return warnings
 

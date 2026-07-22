@@ -28,6 +28,51 @@ _CONFIDENCE_RANKS = {"low": 1, "medium": 2, "high": 3}
 CONFIDENCE_KEYS = ("confidence_level", "Confidence_Level", "Confidence", "confidence")
 
 
+class ReferenceSets(dict):
+    """KE_ID -> gene set mapping that remembers what it could not resolve.
+
+    A plain ``dict`` in every respect, plus one attribute:
+    ``unresolved_ke_pathways``, the KE_ID -> sorted pathway-ID map of curated
+    mappings whose gene membership no configured source could resolve.
+
+    Issue #81: that information is produced deep inside
+    :func:`load_reference_sets`, but it is needed at the far end of the call
+    chain — in the enrichment backends, which decide whether an untestable Key
+    Event is *uncurated* or *unresolvable*. Between the two sit callers that
+    only ever hand the gene sets on (``api_service.fetch_reference_sets_from_api``,
+    ``batch_service.run_batch``), so carrying it on the mapping itself keeps it
+    from being dropped by an intermediary that has no reason to know about it.
+    Consumers should read it through :func:`unresolved_ke_pathways_for`, which
+    tolerates a plain dict from a cache written before this existed.
+    """
+
+    def __init__(self, *args, unresolved_ke_pathways=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.unresolved_ke_pathways = {
+            str(ke): sorted(pathways)
+            for ke, pathways in (unresolved_ke_pathways or {}).items()
+            if pathways
+        }
+
+
+def unresolved_ke_pathways_for(reference_sets):
+    """Read the KE -> unresolvable-pathway-ID map off a reference-set mapping.
+
+    Parameters
+    ----------
+    reference_sets : dict
+        Any KE_ID -> gene set mapping. A :class:`ReferenceSets` carries the
+        map; a plain dict (an older cache entry, a hand-built test fixture)
+        does not.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        The map, or ``{}`` when the mapping does not carry one.
+    """
+    return dict(getattr(reference_sets, 'unresolved_ke_pathways', None) or {})
+
+
 def confidence_rank(value):
     """Map a confidence label to its ordinal rank.
 
@@ -148,7 +193,8 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
                         ke_wp_df=None,
                         min_confidence=DEFAULT_MIN_CONFIDENCE,
                         wp_gene_map=None,
-                        unresolved_out=None):
+                        unresolved_out=None,
+                        unresolved_ke_out=None):
     """Build KE-to-gene reference sets from local CSV files or a pre-built DataFrame.
 
     Parameters
@@ -182,11 +228,20 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
         in the inner join, which is exactly the silence #79 reported: the Key
         Event is then reported as having no gene set mapped, when in truth it
         is mapped and the mapping could not be resolved.
+    unresolved_ke_out : dict or None
+        Optional sink for the same information attributed to Key Events:
+        KE_ID -> sorted list of that KE's unresolvable pathway IDs, taken from
+        the mappings *before* the inner merge drops them. Issue #81: a KE whose
+        only pathway is unresolvable is absent from the returned sets entirely,
+        so this is the only place the association still exists. The same map is
+        always attached to the return value (see :class:`ReferenceSets`); the
+        sink exists for callers that want it without depending on the type.
 
     Returns
     -------
-    dict[str, set[str]]
-        Mapping of KE ID -> set of uppercase gene symbols.
+    ReferenceSets
+        Mapping of KE ID -> set of uppercase gene symbols, carrying the
+        KE -> unresolvable-pathway-ID map on ``.unresolved_ke_pathways``.
     """
     # Use the provided DataFrame or read from the CSV file
     if ke_wp_df is None:
@@ -280,6 +335,7 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
     # the analyser simply cannot say which genes it contains.
     resolvable = set(merged['WP_ID'].unique()) if len(merged) else set()
     unresolved = sorted(set(ke_wp_df['WP_ID'].unique()) - resolvable)
+    unresolved_by_ke = {}
     if unresolved:
         logger.warning(
             "%d mapped pathway(s) could not be resolved to genes and are absent "
@@ -289,6 +345,25 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
         if unresolved_out is not None:
             unresolved_out.extend(unresolved)
 
+        # Issue #81: attribute the unresolvable pathways to their Key Events
+        # here, on the pre-merge mappings. After the inner merge below the
+        # association is gone — a KE whose only pathway is unresolvable does
+        # not appear in the merged frame at all, so downstream it is
+        # indistinguishable from a KE nobody has ever mapped. That is exactly
+        # the misreport #81 is about, and this map is what fixes it.
+        unresolved_set = set(unresolved)
+        collected = {}
+        for ke_id, wp_id in zip(ke_wp_df['KE_ID'], ke_wp_df['WP_ID']):
+            if wp_id in unresolved_set:
+                collected.setdefault(str(ke_id), set()).add(wp_id)
+        unresolved_by_ke = {ke: sorted(wps) for ke, wps in collected.items()}
+        logger.info(
+            "%d Key Event(s) carry at least one unresolvable pathway mapping",
+            len(unresolved_by_ke),
+        )
+        if unresolved_ke_out is not None:
+            unresolved_ke_out.update(unresolved_by_ke)
+
     # Group into dict: KE_ID → set of gene symbols
     reference_sets = (
         merged.groupby('KE_ID')['GeneName']
@@ -296,5 +371,5 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
         .to_dict()
     )
 
-    return reference_sets
+    return ReferenceSets(reference_sets, unresolved_ke_pathways=unresolved_by_ke)
 

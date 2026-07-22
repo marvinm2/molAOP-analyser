@@ -39,10 +39,11 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   known but went unmeasured in the uploaded dataset were all reported as *"excluded (no gene
   set mapped)"*. They call for opposite responses: the first is a curation gap to fill in the
   molAOP Builder, the second is stale reference data in this tool and should be reported as a
-  bug, the third is a fact about the experiment's coverage and about nobody's curation. In a
-  WikiPathways-only run on AOP:472, KE 1115 was listed among the unmapped despite carrying a
+  bug, the third is a fact about the experiment's coverage and about nobody's curation. The
+  case that exposed it was KE 1115 on AOP:472, listed among the unmapped while carrying a
   live, high-confidence mapping to `WP5477` — a data-pipeline failure presented as missing
-  curation.
+  curation. (#79 has since made `WP5477` resolvable, so that particular Key Event is now
+  tested; the reporting bug it exposed outlived it.)
 
   Exclusions are now counted under three separate reasons — no curated mapping, mapped but
   unresolvable, and fewer than `MIN_KE_GENES` measured genes (zero measured genes included,
@@ -50,8 +51,22 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   clause **names the pathway IDs** so the claim can be checked against the Builder. The
   wording still comes from the single authority `format_ke_summary()`, so the results page,
   the single report and the batch report say the same thing; the network styles the new
-  reason apart from an uncurated Key Event, and its legend distinguishes them. Summaries and
-  networks stored before the split carry only the old reasons and render exactly as they did.
+  reason apart from an uncurated Key Event, and both the results page and the shared-link
+  view carry that style and legend entry. Summaries and networks stored before the split
+  carry only the old reasons and render exactly as they did.
+
+  Telling the two apart needs one piece of information that used to be thrown away: which
+  Key Event each unresolvable pathway belongs to. The KE→pathway mappings are merged with
+  pathway membership on an inner join, so a Key Event whose only pathway is unresolvable
+  never reaches the reference sets at all and is indistinguishable, downstream, from one
+  nobody has mapped. `load_reference_sets()` now builds that map *before* the merge and
+  carries it on the returned gene sets, which is what lets both the single-analysis route
+  and the batch runner hand it to the enrichment backend, and what puts the pathway IDs on
+  the network nodes so a batch report or shared link rebuilt from stored network JSON still
+  names them. Against the live Builder today, three mapped pathways resolve in neither
+  source (`WP1234`, `WP3980`, `WP4010`) and six Key Events are affected: KE 345, for
+  instance, is now reported as *"1 excluded (mapped, but no genes could be resolved:
+  WP4010)"* rather than counted among the uncurated.
 
 - **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
   KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was

@@ -329,6 +329,7 @@ def run_enrichment_analysis(
                 'excluded_error': 0,          # contingency / Fisher failure
                 'min_ke_genes': 5,
                 'unresolved_pathways': ['WP5477'],
+                'unresolved_pathways_by_ke': {'KE:1115': ['WP5477']},
                 'excluded_reasons': {'KE:123': 'too_few_genes', ...},
             }
     """
@@ -576,6 +577,10 @@ def _build_ke_summary(
         # Issue #81 — named so the reader can check them against the Builder
         # rather than being told, wrongly, that the Key Event is uncurated.
         'unresolved_pathways': unresolved_pathways,
+        # Issue #81 — kept per Key Event as well as flattened, so the network
+        # can write the IDs onto the node that lost them and a summary rebuilt
+        # from stored network JSON still names them.
+        'unresolved_pathways_by_ke': dict(unresolved_pathways_by_ke or {}),
         'excluded_reasons': excluded_reasons,
     }
 
