@@ -532,3 +532,37 @@ class TestPathwayResolutionGap:
             'unresolved_pathways': [], 'error': None,
         }]
         assert app.resource_resolution_warnings(resolution) == []
+
+class TestCacheFormatUpgrade:
+    """The #79 cache entry gained a third element; warm caches must survive.
+
+    Production runs a persistent disk cache on the Gluster mount, so the first
+    request after a deploy reads entries written by the previous build. The
+    compatibility branch in _load_wikipathways_reference_sets is what stops
+    those turning into a 500, and nothing exercised it.
+    """
+
+    def _cache(self, monkeypatch, store):
+        fake = MagicMock()
+        fake.get.side_effect = lambda key: store.get(key)
+        fake.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
+        monkeypatch.setattr(app, "_reference_cache", fake)
+
+    def test_pre_79_two_tuple_entry_still_loads(self, monkeypatch):
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._cache(monkeypatch, {key: ({"KE:1": {"A"}}, "api")})
+
+        sets, source, unresolved = app._load_wikipathways_reference_sets("all")
+
+        assert sets == {"KE:1": {"A"}}
+        assert source == "cache(api)"
+        assert unresolved == [], "an old entry knows of no unresolved pathways"
+
+    def test_new_three_tuple_entry_round_trips(self, monkeypatch):
+        key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
+        self._cache(monkeypatch, {key: ({"KE:1": {"A"}}, "api", ["WP5477"])})
+
+        sets, source, unresolved = app._load_wikipathways_reference_sets("all")
+
+        assert unresolved == ["WP5477"]
+        assert source == "cache(api)"
