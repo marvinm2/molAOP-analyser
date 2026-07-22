@@ -19,6 +19,52 @@ logger = logging.getLogger(__name__)
 # the accounting read it back with ``get_ke_summary()``.
 KE_SUMMARY_ATTR = 'ke_summary'
 
+# Issue #81 — the reasons a Key Event never reached a statistical test. These
+# strings are the shared vocabulary of the ORA backend, the GSEA backend, the
+# network's per-node ``excluded_reason`` and the accounting sentence, so all of
+# them make the same claim about the same KE.
+#
+# ``no_mapping`` and ``unresolved_mapping`` used to be one counter, and that
+# conflation pointed the reader at the wrong person: "no gene set mapped" says
+# the curation is incomplete and sends them to the Builder to add a mapping,
+# while a mapping that exists but resolves to no genes is a stale-reference-data
+# bug in this tool. A KE whose gene set is known but barely measured in the
+# uploaded dataset is a third thing again, and belongs with ``too_few_genes``
+# (zero measured genes is "fewer than the minimum", not "not curated").
+EXCLUDED_NO_MAPPING = 'no_mapping'
+EXCLUDED_UNRESOLVED_MAPPING = 'unresolved_mapping'
+EXCLUDED_TOO_FEW_GENES = 'too_few_genes'
+EXCLUDED_ERROR = 'error'
+
+
+def normalise_unresolved_ke_pathways(
+    unresolved_ke_pathways: Optional[Dict[str, Any]],
+) -> Dict[str, List[str]]:
+    """Normalise a KE -> unresolvable-pathway-ID mapping (issue #81).
+
+    Args:
+        unresolved_ke_pathways: KE_ID -> iterable of pathway IDs that are
+            curated and mapped to that KE but whose gene membership no
+            configured source could resolve (see ``load_reference_sets``'s
+            ``unresolved_out`` and the resolution entry's
+            ``unresolved_pathways``). A plain string is accepted for a single
+            pathway. None or empty yields an empty dict.
+
+    Returns:
+        KE_ID -> sorted list of unique, upper-cased pathway IDs, with entries
+        that name no pathway dropped.
+    """
+    normalised: Dict[str, List[str]] = {}
+    for ke, pathways in (unresolved_ke_pathways or {}).items():
+        if not pathways:
+            continue
+        if isinstance(pathways, str):
+            pathways = [pathways]
+        ids = sorted({str(p).strip().upper() for p in pathways if str(p).strip()})
+        if ids:
+            normalised[str(ke)] = ids
+    return normalised
+
 
 def get_ke_summary(results: pd.DataFrame) -> Optional[Dict[str, Any]]:
     """Return the tested/excluded KE accounting attached to an enrichment result.
@@ -42,12 +88,23 @@ def format_ke_summary(summary: Optional[Dict[str, Any]]) -> str:
     """Render a KE accounting summary as a one-line human-readable sentence.
 
     Example: ``"18 of 24 Key Events tested; 4 excluded (fewer than 5 measured
-    genes), 2 excluded (no gene set mapped)"``. Shared by the results page, the
-    single report and the batch report so all three word it identically.
+    genes), 2 excluded (no gene set mapped), 1 excluded (mapped, but no genes
+    could be resolved: WP5477)"``. Shared by the results page, the single report
+    and the batch report so all three word it identically.
+
+    Issue #81: the mapped-but-unresolvable clause is deliberately separate from
+    "no gene set mapped" and names the offending pathways. The two sentences
+    ask different things of the reader — one is a curation gap to fill in the
+    Builder, the other is stale reference data in this tool — and a summary
+    that says the first when it means the second sends the reader to fix
+    something that is not broken.
 
     Args:
         summary: Dict from ``get_ke_summary`` (or an equivalently-shaped dict
             rebuilt from a network payload). None/empty yields an empty string.
+            Keys added after a summary was stored are read with defaults, so
+            payloads written before #81 (which carry only the two older
+            exclusion counters) still render.
 
     Returns:
         The formatted sentence, or '' when there is nothing to report.
@@ -68,12 +125,44 @@ def format_ke_summary(summary: Optional[Dict[str, Any]]) -> str:
     no_mapping = summary.get('excluded_no_mapping', 0)
     if no_mapping:
         clauses.append(f"{no_mapping} excluded (no gene set mapped)")
+    unresolved = summary.get('excluded_unresolved_mapping', 0)
+    if unresolved:
+        clauses.append(
+            f"{unresolved} excluded (mapped, but no genes could be resolved"
+            f"{_format_unresolved_pathways(summary.get('unresolved_pathways'))})"
+        )
     errored = summary.get('excluded_error', 0)
     if errored:
         clauses.append(f"{errored} excluded (statistics could not be computed)")
     if clauses:
         parts.append('; ' + ', '.join(clauses))
     return ''.join(parts)
+
+
+# How many unresolvable pathway IDs the accounting sentence names before it
+# summarises the rest. Naming them is the point of the clause -- an unnamed
+# count cannot be checked against the Builder -- but the sentence still has to
+# stay a sentence.
+MAX_NAMED_UNRESOLVED_PATHWAYS = 3
+
+
+def _format_unresolved_pathways(pathways: Optional[List[str]]) -> str:
+    """Render the ``": WP5477, WP5498 and 2 more"`` tail of the mapped-but-empty clause.
+
+    Args:
+        pathways: Pathway IDs that could not be resolved to genes, or None.
+
+    Returns:
+        The tail including its leading ``": "``, or '' when nothing is known.
+    """
+    if not pathways:
+        return ''
+    shown = list(pathways)[:MAX_NAMED_UNRESOLVED_PATHWAYS]
+    tail = ', '.join(shown)
+    remaining = len(pathways) - len(shown)
+    if remaining > 0:
+        tail += f" and {remaining} more"
+    return f": {tail}"
 
 
 # Below this fraction of the uploaded genes matching the reference universe,
@@ -180,6 +269,7 @@ def run_enrichment_analysis(
     gene_logfc_map: Optional[Dict[str, float]] = None,
     min_ke_genes: int = Config.MIN_KE_GENES,
     fdr_cutoff: float = Config.SIGNIFICANCE_FDR_CUTOFF,
+    unresolved_ke_pathways: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """
     Run Fisher's exact test enrichment analysis for Key Events.
@@ -205,6 +295,15 @@ def run_enrichment_analysis(
             tests and from the BH denominator, and are recorded in the KE
             accounting summary instead of being dropped silently.
 
+        unresolved_ke_pathways: Optional KE_ID -> pathway IDs that are mapped
+            to that KE but whose gene membership no source could resolve
+            (issue #81; see ``load_reference_sets``'s ``unresolved_out``).
+            Such a KE is absent from ``reference_sets`` exactly like an
+            uncurated one, so without this hint the two are indistinguishable
+            here and both would be reported as "no gene set mapped" — telling
+            the reader the curation is incomplete when in fact the mapping
+            exists and this tool's reference data is stale.
+
         fdr_cutoff: BH-adjusted cutoff used to fill the ``Representation``
             column (issue #70). Both tails are always computed; this only
             decides where the pre-rendered ``enriched`` / ``depleted`` / ``ns``
@@ -224,10 +323,13 @@ def run_enrichment_analysis(
             {
                 'total_kes': 24,              # KEs in the AOP
                 'tested': 18,                 # rows in the returned DataFrame
-                'excluded_no_mapping': 2,     # no gene set, or no measured overlap
-                'excluded_too_few_genes': 4,  # overlap below min_ke_genes
+                'excluded_no_mapping': 2,     # no curated gene set at all
+                'excluded_unresolved_mapping': 1,  # mapped, zero genes resolved
+                'excluded_too_few_genes': 3,  # overlap below min_ke_genes
                 'excluded_error': 0,          # contingency / Fisher failure
                 'min_ke_genes': 5,
+                'unresolved_pathways': ['WP5477'],
+                'unresolved_pathways_by_ke': {'KE:1115': ['WP5477']},
                 'excluded_reasons': {'KE:123': 'too_few_genes', ...},
             }
     """
@@ -266,27 +368,46 @@ def run_enrichment_analysis(
     # Issue #65 — record why each KE never reached a Fisher test, so the
     # multiple-testing denominator is visible and "could not assess" is
     # distinguishable from "assessed and not enriched" downstream.
-    excluded_reasons: Dict[str, str] = {
-        ke: 'no_mapping' for ke in ke_list if ke not in filtered_reference_sets
-    }
+    # Issue #81 — and so that "not curated" is distinguishable from "curated,
+    # but this tool could not resolve the mapping to genes".
+    unresolved_map = normalise_unresolved_ke_pathways(unresolved_ke_pathways)
+    unresolved_named: Dict[str, List[str]] = {}
+    excluded_reasons: Dict[str, str] = {}
+    for ke in ke_list:
+        if ke in filtered_reference_sets:
+            continue
+        if unresolved_map.get(ke):
+            excluded_reasons[ke] = EXCLUDED_UNRESOLVED_MAPPING
+            unresolved_named[ke] = unresolved_map[ke]
+        else:
+            excluded_reasons[ke] = EXCLUDED_NO_MAPPING
 
     for ke, ref_genes in filtered_reference_sets.items():
         try:
+            # A KE present in the reference sets but carrying no genes is
+            # mapped — the mapping simply resolved to nothing (issue #81).
+            if not ref_genes:
+                logger.debug(f"KE {ke} is mapped but its gene set is empty")
+                excluded_reasons[ke] = EXCLUDED_UNRESOLVED_MAPPING
+                if unresolved_map.get(ke):
+                    unresolved_named[ke] = unresolved_map[ke]
+                continue
+
             # Find overlap between KE genes and user genes (ref_genes already normalized)
             ke_genes = ref_genes & all_genes
 
-            if not ke_genes:
-                logger.debug(f"No overlap found for KE {ke}")
-                excluded_reasons[ke] = 'no_mapping'
-                continue
-
-            # Skip KEs with too few genes for reliable statistics
-            if len(ke_genes) < min_ke_genes:
+            # Skip KEs with too few genes for reliable statistics. Issue #81:
+            # zero measured genes belongs here too — the KE has a gene set,
+            # none of it was measured in this dataset, and calling that "no
+            # gene set mapped" blamed the curator for the experiment's
+            # coverage.
+            if len(ke_genes) < max(min_ke_genes, 1):
                 logger.debug(
-                    f"Skipping KE {ke}: only {len(ke_genes)} genes "
+                    f"Skipping KE {ke}: only {len(ke_genes)} of its "
+                    f"{len(ref_genes)} genes measured "
                     f"(minimum {min_ke_genes} required)"
                 )
-                excluded_reasons[ke] = 'too_few_genes'
+                excluded_reasons[ke] = EXCLUDED_TOO_FEW_GENES
                 continue
 
             sig_in_ke = {g for g in ke_genes if user_gene_status.get(g, False)}
@@ -301,7 +422,7 @@ def run_enrichment_analysis(
             # Validate contingency table cells are non-negative
             if b < 0 or d < 0:
                 logger.error(f"KE {ke}: invalid contingency table (a={a}, b={b}, c={c}, d={d}) — skipping")
-                excluded_reasons[ke] = 'error'
+                excluded_reasons[ke] = EXCLUDED_ERROR
                 continue
 
             # Run Fisher's exact test (one-tailed, greater)
@@ -355,7 +476,7 @@ def run_enrichment_analysis(
 
         except Exception as e:
             logger.error(f"Error processing KE {ke}: {e}")
-            excluded_reasons[ke] = 'error'
+            excluded_reasons[ke] = EXCLUDED_ERROR
             continue
 
     if not r_ke:
@@ -403,7 +524,8 @@ def run_enrichment_analysis(
     # Issue #65 — attach the KE accounting after the sort, since pandas only
     # propagates .attrs through operations that call __finalize__.
     df_results.attrs[KE_SUMMARY_ATTR] = _build_ke_summary(
-        ke_list, len(r_ke), excluded_reasons, min_ke_genes
+        ke_list, len(r_ke), excluded_reasons, min_ke_genes,
+        unresolved_pathways_by_ke=unresolved_named,
     )
 
     logger.info(
@@ -419,6 +541,7 @@ def _build_ke_summary(
     tested: int,
     excluded_reasons: Dict[str, str],
     min_ke_genes: int,
+    unresolved_pathways_by_ke: Optional[Dict[str, List[str]]] = None,
 ) -> Dict[str, Any]:
     """Assemble the tested/excluded KE accounting dict (issue #65).
 
@@ -426,19 +549,38 @@ def _build_ke_summary(
         ke_list: All KE IDs of the selected AOP (the accounting denominator).
         tested: Number of KEs that reached a statistical test — i.e. the number
             of rows in the result table, and the size of the BH denominator.
-        excluded_reasons: KE_ID → 'no_mapping' | 'too_few_genes' | 'error'.
+        excluded_reasons: KE_ID → one of the ``EXCLUDED_*`` reasons.
         min_ke_genes: Minimum measured-gene threshold that was applied.
+        unresolved_pathways_by_ke: KE_ID → pathway IDs that are mapped to that
+            KE but resolved to no genes (issue #81). Flattened into the
+            summary's ``unresolved_pathways`` so the sentence can name them.
 
     Returns:
         Summary dict as documented on ``run_enrichment_analysis``.
     """
+    reasons = list(excluded_reasons.values())
+    unresolved_pathways = sorted({
+        wp
+        for wps in (unresolved_pathways_by_ke or {}).values()
+        for wp in wps
+    })
     return {
         'total_kes': len(set(ke_list)),
         'tested': tested,
-        'excluded_no_mapping': sum(1 for r in excluded_reasons.values() if r == 'no_mapping'),
-        'excluded_too_few_genes': sum(1 for r in excluded_reasons.values() if r == 'too_few_genes'),
-        'excluded_error': sum(1 for r in excluded_reasons.values() if r == 'error'),
+        'excluded_no_mapping': sum(1 for r in reasons if r == EXCLUDED_NO_MAPPING),
+        'excluded_unresolved_mapping': sum(
+            1 for r in reasons if r == EXCLUDED_UNRESOLVED_MAPPING
+        ),
+        'excluded_too_few_genes': sum(1 for r in reasons if r == EXCLUDED_TOO_FEW_GENES),
+        'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
         'min_ke_genes': min_ke_genes,
+        # Issue #81 — named so the reader can check them against the Builder
+        # rather than being told, wrongly, that the Key Event is uncurated.
+        'unresolved_pathways': unresolved_pathways,
+        # Issue #81 — kept per Key Event as well as flattened, so the network
+        # can write the IDs onto the node that lost them and a summary rebuilt
+        # from stored network JSON still names them.
+        'unresolved_pathways_by_ke': dict(unresolved_pathways_by_ke or {}),
         'excluded_reasons': excluded_reasons,
     }
 
@@ -531,6 +673,9 @@ def run_enrichment(
         **kwargs: Additional keyword arguments forwarded to the chosen backend.
             For ORA: ``gene_logfc_map`` drives the Direction column.
             For GSEA: ``gene_logfc_map`` is suppressed by the caller (D-14).
+            ``unresolved_ke_pathways`` (issue #81) is accepted by both
+            backends, so the exclusion accounting reads identically whichever
+            method was used.
 
     Returns:
         pd.DataFrame from the chosen backend, sorted by FDR ascending.

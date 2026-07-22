@@ -8,13 +8,20 @@ user's method selection.
 """
 import math
 import logging
-from typing import Dict, Set
+from typing import Any, Dict, Optional, Set
 
 import numpy as np
 import pandas as pd
 import gseapy as gp
 
-from services.enrichment_service import KE_SUMMARY_ATTR, _build_ke_summary
+from services.enrichment_service import (
+    EXCLUDED_NO_MAPPING,
+    EXCLUDED_TOO_FEW_GENES,
+    EXCLUDED_UNRESOLVED_MAPPING,
+    KE_SUMMARY_ATTR,
+    _build_ke_summary,
+    normalise_unresolved_ke_pathways,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +70,7 @@ def run_gsea_analysis(
     max_size: int = 1000,
     permutation_num: int = 1000,
     seed: int = 42,
+    unresolved_ke_pathways: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
     """Run GSEA (prerank) enrichment analysis for Key Events.
 
@@ -84,6 +92,10 @@ def run_gsea_analysis(
         permutation_num: Number of permutations for the null distribution
             (keyword-only).
         seed: Random seed for reproducibility (keyword-only).
+        unresolved_ke_pathways: Optional KE_ID -> pathway IDs that are mapped
+            to that KE but could not be resolved to genes (issue #81). Same
+            meaning and effect as in ``run_enrichment_analysis`` — ORA and
+            GSEA report exclusions with one vocabulary.
 
     Returns:
         pd.DataFrame sorted by FDR ascending with columns:
@@ -177,14 +189,31 @@ def run_gsea_analysis(
 
     # Issue #65 — same tested/excluded accounting the Fisher backend produces,
     # so the results page, network and reports read one shape regardless of
-    # method. A dropped KE with zero measured overlap is 'no_mapping'; one with
-    # a non-empty but sub-min_size overlap is 'too_few_genes'.
-    excluded_reasons = {ke: 'no_mapping' for ke in set(ke_list) - set(reference_sets.keys())}
+    # method.
+    # Issue #81 — three distinct exclusions, not two: a KE with no curated
+    # mapping, a KE whose mapping resolved to no genes, and a KE whose gene set
+    # is known but under-measured in this dataset (zero measured genes included
+    # — that is a coverage fact about the upload, not a curation gap).
+    unresolved_map = normalise_unresolved_ke_pathways(unresolved_ke_pathways)
+    unresolved_named = {}
+    excluded_reasons = {}
+    for ke in set(ke_list) - set(reference_sets.keys()):
+        if unresolved_map.get(ke):
+            excluded_reasons[ke] = EXCLUDED_UNRESOLVED_MAPPING
+            unresolved_named[ke] = unresolved_map[ke]
+        else:
+            excluded_reasons[ke] = EXCLUDED_NO_MAPPING
     for ke in dropped:
-        excluded_reasons[ke] = (
-            'too_few_genes' if kes_to_overlap_count.get(ke, 0) else 'no_mapping'
-        )
-    ke_summary = _build_ke_summary(ke_list, len(res), excluded_reasons, min_size)
+        if not gene_sets.get(ke):
+            excluded_reasons[ke] = EXCLUDED_UNRESOLVED_MAPPING
+            if unresolved_map.get(ke):
+                unresolved_named[ke] = unresolved_map[ke]
+        else:
+            excluded_reasons[ke] = EXCLUDED_TOO_FEW_GENES
+    ke_summary = _build_ke_summary(
+        ke_list, len(res), excluded_reasons, min_size,
+        unresolved_pathways_by_ke=unresolved_named,
+    )
 
     # Sort by FDR ascending; use KE ID as tie-breaker so row order is fully
     # deterministic regardless of the internal ordering gseapy returns.

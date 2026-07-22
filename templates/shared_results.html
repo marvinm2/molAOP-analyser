@@ -231,6 +231,15 @@
                                 <div class="network-legend__swatch" style="background: #cccccc; width: 14px; height: 14px; opacity: 0.7;"></div>
                                 <span>No measurable gene set (not curated, or none of its genes measured)</span>
                             </div>
+                            {# Issue #81: a mapped Key Event whose pathway could not be
+                               resolved to genes is a reference-data problem here, not a
+                               curation gap — the legend has to be able to say so. Kept
+                               in step with results.html so the shared view of a run
+                               cannot describe it differently from the run itself. #}
+                            <div class="network-legend__item">
+                                <div class="network-legend__swatch" style="background: #f7e6d5; border: 2px dotted #EB5B25; opacity: 0.85;"></div>
+                                <span>Mapped, but no genes could be resolved</span>
+                            </div>
                             <div class="network-legend__item">
                                 <div class="network-legend__swatch" style="background: #e8e8e8; border: 2px dashed #999; opacity: 0.75;"></div>
                                 <span>Not tested (too few measured genes)</span>
@@ -499,6 +508,24 @@ const cy = cytoscape({
             'color': '#777',
             'font-size': 10,
             'opacity': 0.7
+        }
+    },
+    {
+        // Issue #81 — KEs that ARE mapped but whose pathway could not be
+        // resolved to genes. build_cytoscape_network withholds `no-genes` from
+        // these, so without this rule a shared network would render them at
+        // full size and colour — worse than the muted grey they used to get.
+        selector: 'node.unresolved-mapping',
+        style: {
+            'width': 32,
+            'height': 32,
+            'background-color': '#f7e6d5',
+            'border-color': '#EB5B25',
+            'border-width': 2,
+            'border-style': 'dotted',
+            'color': '#8a4520',
+            'font-size': 10,
+            'opacity': 0.85
         }
     },
     {
