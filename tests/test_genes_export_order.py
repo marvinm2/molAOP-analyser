@@ -45,12 +45,18 @@ def _seed(db_manager, uuid, ke_gene_map, labels=('C0', 'C1')):
         session.add(batch)
         session.flush()
         for pos, label in enumerate(labels):
+            # A list gives each condition its own map, so a gene can drive one
+            # condition without driving the others.
+            per_condition = (
+                ke_gene_map[pos] if isinstance(ke_gene_map, (list, tuple))
+                else ke_gene_map
+            )
             session.add(ConditionRecord(
                 batch_id=batch.id, position=pos, filename=f'c{pos}.tsv',
                 condition_label=label, dose=label, timepoint='4hr',
                 status='complete', gene_count=3, significant_genes=3,
                 enrichment_json=json.dumps(_ENRICHMENT),
-                ke_gene_json=json.dumps(ke_gene_map),
+                ke_gene_json=json.dumps(per_condition),
             ))
         session.commit()
     finally:
@@ -80,9 +86,18 @@ _DOSE_MAP = {
 }
 _DOSE_LABELS = ('2uM', '10uM')
 
+# Within KE:2, ZZZ drives both conditions and AAA only one. A plain
+# (KE, gene) sort would list AAA first and silently drop the shared-first
+# grouping the summary view exists to show.
+_SHARED_MAPS = (
+    {'KE:2': [_sig('ZZZ', 2.0), _sig('AAA', 1.5)]},
+    {'KE:2': [_sig('ZZZ', 2.1)]},
+)
+
 _UUID_A = '22222222-2222-2222-2222-222222222222'
 _UUID_B = '33333333-3333-3333-3333-333333333333'
 _UUID_DOSE = '44444444-4444-4444-4444-444444444444'
+_UUID_SHARED = '55555555-5555-5555-5555-555555555555'
 
 
 @pytest.fixture
@@ -91,6 +106,7 @@ def two_batches(flask_client, temp_database, monkeypatch):
     _seed(temp_database, _UUID_A, _ORDER_A)
     _seed(temp_database, _UUID_B, _ORDER_B)
     _seed(temp_database, _UUID_DOSE, _DOSE_MAP, labels=_DOSE_LABELS)
+    _seed(temp_database, _UUID_SHARED, _SHARED_MAPS)
     return flask_client
 
 
@@ -162,6 +178,17 @@ class TestGeneExportDeterminism:
             if not ke_order or ke_order[-1] != row[0]:
                 ke_order.append(row[0])
         assert ke_order == ['KE:2', 'KE:9', 'KE:10']
+
+    def test_summary_view_keeps_shared_first_ordering(self, two_batches):
+        """Sorting the export must not undo the summary's shared-first order.
+
+        A gene driving several conditions is listed above one driving a single
+        condition, which is the point of the summary view; re-sorting on Key
+        Event and gene symbol alone would replace that with the alphabet.
+        """
+        rows = _rows(two_batches, _UUID_SHARED, view='summary')
+        ke2 = [row[2] for row in rows if row[0] == 'KE:2']
+        assert ke2 == ['ZZZ', 'AAA']
 
     def test_conditions_follow_upload_order_not_alphabetical(self, two_batches):
         """A dose series must not be reordered as text ('10uM' before '2uM')."""

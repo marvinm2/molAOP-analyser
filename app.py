@@ -2709,6 +2709,13 @@ def batch_genes_export(batch_uuid_str):
                 _row_order=range(len(frame)),
             )
             sort_by = ['_ke_order']
+            if 'n_conditions_driver' in frame.columns:
+                # The summary view is deliberately shared-first within a KE (a
+                # gene driving 3 conditions is listed above one driving 1); see
+                # build_gene_tracking(). Re-sorting on KE and gene alone would
+                # silently discard that, so keep it as the second key.
+                ordered['_shared_order'] = -frame['n_conditions_driver']
+                sort_by.append('_shared_order')
             if 'Gene_Symbol' in frame.columns:
                 ordered['_gene_order'] = frame['Gene_Symbol'].astype(str)
                 sort_by.append('_gene_order')
@@ -2718,7 +2725,10 @@ def batch_genes_export(batch_uuid_str):
                 )
                 sort_by.append('_condition_order')
             sort_by.append('_row_order')
-            helper_cols = ['_ke_order', '_row_order', '_gene_order', '_condition_order']
+            helper_cols = [
+                '_ke_order', '_row_order', '_gene_order',
+                '_condition_order', '_shared_order',
+            ]
             ordered = (
                 ordered.sort_values(by=sort_by, kind='mergesort')
                 .drop(columns=[c for c in helper_cols if c in ordered.columns])
