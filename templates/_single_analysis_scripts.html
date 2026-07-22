@@ -421,13 +421,49 @@ function setPercentageThreshold(percentage) {
     let debounceTimer;
 
     /**
+     * Human-readable resource names for the coverage breakdown (#105).
+     */
+    const RESOURCE_LABELS = {
+        WikiPathways: 'WikiPathways',
+        GO_BP: 'GO BP',
+        Reactome: 'Reactome'
+    };
+
+    /**
+     * Describe which resources contribute an AOP's KE coverage (#105).
+     *
+     * The headline number is the union across WikiPathways, GO BP and
+     * Reactome, so it cannot show that (say) a single KE is covered by GO
+     * alone. This breakdown does. Returns '' for entries with no breakdown —
+     * the Builder-only and configured-AOP tiers, where per-resource numbers
+     * would be invented rather than measured.
+     *
+     * @param {Object} aop - AOP dict from /api/aops
+     * @returns {string} e.g. "WikiPathways 6, GO BP 1, Reactome 0"
+     */
+    function coverageBreakdown(aop) {
+        const counts = aop.mapped_ke_by_resource;
+        if (!counts) return '';
+        return Object.keys(RESOURCE_LABELS)
+            .filter(key => counts[key] !== undefined)
+            .map(key => `${RESOURCE_LABELS[key]} ${counts[key]}`)
+            .join(', ');
+    }
+
+    /**
      * Format a single AOP object into a human-readable label.
+     *
+     * #105: the coverage figure counts KEs with a gene set in any resource,
+     * not just WikiPathways, and says "have gene sets" rather than "mapped" —
+     * and deliberately not "testable", since no dataset has been uploaded yet
+     * and so nothing here knows how many of a KE's genes were measured.
+     *
      * @param {Object} aop - AOP dict from /api/aops
      * @returns {string}
      */
     function formatLabel(aop) {
         const mappedInfo = aop.mapped_ke_count > 0
-            ? ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs mapped`
+            ? ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs have gene sets`
             : '';
         return `${aop.aop_id}: ${aop.title} (${aop.ke_count} KEs${mappedInfo})`;
     }
@@ -475,11 +511,16 @@ function setPercentageThreshold(percentage) {
             mainText.textContent = `${aop.aop_id}: ${aop.title} (${aop.ke_count} KEs)`;
             li.appendChild(mainText);
 
-            // Mapping info badge
+            // Mapping info badge. The per-resource breakdown rides along as a
+            // tooltip so the union count can be traced to its sources (#105).
             if (aop.mapped_ke_count > 0) {
                 const info = document.createElement('span');
                 info.className = 'mapped-info';
-                info.textContent = ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs mapped`;
+                info.textContent = ` -- ${aop.mapped_ke_count}/${aop.ke_count} KEs have gene sets`;
+                const breakdown = coverageBreakdown(aop);
+                if (breakdown) {
+                    info.title = `Key Events with gene sets, by resource: ${breakdown}`;
+                }
                 li.appendChild(info);
             }
 
