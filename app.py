@@ -2668,6 +2668,74 @@ def batch_genes_export(batch_uuid_str):
         tracking = build_gene_tracking(conditions)
         frames = gene_tracking_to_dataframes(tracking)
 
+        # Issue #82: the long view inherited its row order from dict iteration
+        # over each condition's stored KE->gene map, so two runs over identical
+        # inputs produced exports that were equal only after sorting. That made
+        # the file useless for diff-based reproducibility checks.
+        # build_gene_tracking() now orders its records at the source; this pass
+        # is kept because it is cheap and guards the frames against any other
+        # producer, and because it is where the frame-level column order is
+        # known. Both views are ordered by KE (numerically, so KE:10 follows
+        # KE:9), then gene symbol, then condition.
+        #
+        # Condition is ordered by *upload position*, not alphabetically: a dose
+        # series is the main use of this export and sorting '10uM' before '2uM'
+        # as text destroys it. tracking['condition_labels'] is already in
+        # position order. Nothing enforces label uniqueness, so duplicated
+        # labels share a rank; the row index is appended as a final key to keep
+        # the sort total and therefore reproducible.
+        def _ke_sort_key(value):
+            text = str(value)
+            cut = len(text)
+            while cut > 0 and text[cut - 1].isdigit():
+                cut -= 1
+            if cut < len(text):
+                return (text[:cut], int(text[cut:]))
+            return (text, -1)
+
+        condition_rank = {}
+        for idx, label in enumerate(tracking.get('condition_labels', [])):
+            # gene_tracking_to_dataframes() runs labels through csv_guard, so
+            # rank both spellings to be safe.
+            for spelling in (label, csv_guard(label)):
+                condition_rank.setdefault(str(spelling), idx)
+        unknown_condition_rank = len(condition_rank)
+
+        for view_name, frame in frames.items():
+            if frame.empty:
+                continue
+            ordered = frame.assign(
+                _ke_order=frame['KE_ID'].map(_ke_sort_key),
+                _row_order=range(len(frame)),
+            )
+            sort_by = ['_ke_order']
+            if 'n_conditions_driver' in frame.columns:
+                # The summary view is deliberately shared-first within a KE (a
+                # gene driving 3 conditions is listed above one driving 1); see
+                # build_gene_tracking(). Re-sorting on KE and gene alone would
+                # silently discard that, so keep it as the second key.
+                ordered['_shared_order'] = -frame['n_conditions_driver']
+                sort_by.append('_shared_order')
+            if 'Gene_Symbol' in frame.columns:
+                ordered['_gene_order'] = frame['Gene_Symbol'].astype(str)
+                sort_by.append('_gene_order')
+            if 'Condition' in frame.columns:
+                ordered['_condition_order'] = frame['Condition'].map(
+                    lambda v: condition_rank.get(str(v), unknown_condition_rank)
+                )
+                sort_by.append('_condition_order')
+            sort_by.append('_row_order')
+            helper_cols = [
+                '_ke_order', '_row_order', '_gene_order',
+                '_condition_order', '_shared_order',
+            ]
+            ordered = (
+                ordered.sort_values(by=sort_by, kind='mergesort')
+                .drop(columns=[c for c in helper_cols if c in ordered.columns])
+                .reset_index(drop=True)
+            )
+            frames[view_name] = ordered
+
         stem = f"molAOP_{_safe_filename_part(batch.aop_id)}_{_safe_filename_part(batch.batch_name)}_driver_genes"
 
         if fmt == 'xlsx':

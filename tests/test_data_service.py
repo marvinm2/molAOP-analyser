@@ -3,6 +3,7 @@ import os
 import tempfile
 import pytest
 import pandas as pd
+from exceptions import DataValidationError
 from services.data_service import (
     load_and_validate_data,
     process_gene_expression,
@@ -164,3 +165,119 @@ class TestComputeLogfcPercentiles:
         """No usable data yields no thresholds rather than raising."""
         assert compute_logfc_percentiles(pd.Series([], dtype=float)) == {}
         assert compute_logfc_percentiles(pd.Series([None, None], dtype=object)) == {}
+
+
+class TestMissingGeneSymbols:
+    """Rows without a gene symbol must not become a pseudo-gene (issue #80)."""
+
+    def _write_tsv(self, path, data):
+        pd.DataFrame(data).to_csv(path, sep='\t', index=False)
+        return path
+
+    def test_missing_symbol_does_not_become_nan_gene(self, tmp_path):
+        path = self._write_tsv(str(tmp_path / 'missing.tsv'), {
+            'Gene': ['BRCA1', None, 'TP53', None],
+            'logFC': [1.5, 3.0, -0.8, 2.2],
+            'pval': [0.001, 0.001, 0.05, 0.001],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert 'NAN' not in set(df['ID'])
+        assert set(df['ID']) == {'BRCA1', 'TP53'}
+
+    def test_background_is_the_number_of_measured_genes(self, tmp_path):
+        """The background must not be inflated by the discarded rows."""
+        path = self._write_tsv(str(tmp_path / 'bg.tsv'), {
+            'Gene': ['BRCA1', None, 'TP53', float('nan'), 'EGFR'],
+            'logFC': [1.5, 3.0, -0.8, 2.2, 1.1],
+            'pval': [0.001, 0.001, 0.05, 0.001, 0.001],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        _, stats = process_gene_expression(df, logfc_threshold=0.0)
+        assert stats['total_genes'] == 3
+
+    def test_dropped_row_count_is_reported(self, tmp_path):
+        path = self._write_tsv(str(tmp_path / 'dropped.tsv'), {
+            'Gene': ['BRCA1', None, None, 'TP53'],
+            'logFC': [1.5, 3.0, 2.2, -0.8],
+            'pval': [0.001, 0.001, 0.001, 0.05],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert df.attrs['dropped_unidentified_rows'] == 2
+        _, stats = process_gene_expression(df, logfc_threshold=0.0)
+        assert stats['dropped_unidentified_rows'] == 2
+
+    def test_no_discards_reports_zero(self, tmp_path):
+        path = self._write_tsv(str(tmp_path / 'clean.tsv'), {
+            'Gene': ['BRCA1', 'TP53'],
+            'logFC': [1.5, -0.8],
+            'pval': [0.001, 0.05],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        _, stats = process_gene_expression(df, logfc_threshold=0.0)
+        assert stats['dropped_unidentified_rows'] == 0
+
+    def test_placeholder_strings_are_discarded(self, tmp_path):
+        """Literal NA / nan / empty placeholders are not gene symbols."""
+        path = self._write_tsv(str(tmp_path / 'placeholders.tsv'), {
+            'Gene': ['BRCA1', 'NA', 'nan', '-', 'TP53'],
+            'logFC': [1.5, 3.0, 2.0, 1.0, -0.8],
+            'pval': [0.001, 0.001, 0.001, 0.001, 0.05],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert set(df['ID']) == {'BRCA1', 'TP53'}
+        assert df.attrs['dropped_unidentified_rows'] == 3
+
+    def test_partial_multi_symbol_row_keeps_real_symbols(self, tmp_path):
+        """A '///' row with one usable symbol keeps it and is not counted as dropped."""
+        path = self._write_tsv(str(tmp_path / 'partial.tsv'), {
+            'Gene': ['BRCA1///NA', 'TP53'],
+            'logFC': [1.5, -0.8],
+            'pval': [0.001, 0.05],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert set(df['ID']) == {'BRCA1', 'TP53'}
+        assert df.attrs['dropped_unidentified_rows'] == 0
+
+    def test_no_usable_identifier_raises_named_validation_error(self, tmp_path):
+        """A wrong ID column must be reported, not crash downstream.
+
+        Dropping symbol-less rows can empty the frame outright (the realistic
+        cause is a user pointing the wizard at the wrong column). An empty frame
+        used to reach process_gene_expression(), whose groupby yields no rows,
+        so the next read of ['ID'] raised a bare KeyError and the request fell
+        through to the "unexpected error" catch-all.
+        """
+        path = self._write_tsv(str(tmp_path / 'wrongcol.tsv'), {
+            'Gene': ['BRCA1', 'TP53'],
+            'Empty': [None, None],
+            'logFC': [1.5, -0.8],
+            'pval': [0.001, 0.05],
+        })
+        with pytest.raises(DataValidationError) as excinfo:
+            load_and_validate_data(path, 'Empty', 'logFC', 'pval')
+        message = str(excinfo.value)
+        assert 'Empty' in message
+        assert 'identifier' in message.lower()
+
+    def test_pandas_na_vocabulary_is_covered(self, tmp_path):
+        """The placeholder set agrees with pandas' own missing-value words."""
+        path = self._write_tsv(str(tmp_path / 'vocab.tsv'), {
+            'Gene': ['BRCA1', 'N/A', 'null', 'None', '<NA>', '#N/A', '--', '?'],
+            'logFC': [1.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            'pval': [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert set(df['ID']) == {'BRCA1'}
+        assert df.attrs['dropped_unidentified_rows'] == 7
+
+    def test_missing_symbol_row_cannot_be_significant(self, tmp_path):
+        """A symbol-less row used to enter every Fisher test as 'NAN'."""
+        path = self._write_tsv(str(tmp_path / 'sig.tsv'), {
+            'Gene': ['BRCA1', None],
+            'logFC': [1.5, 9.0],
+            'pval': [0.001, 0.0001],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        result, stats = process_gene_expression(df, logfc_threshold=1.0)
+        assert stats['significant_genes'] == 1
+        assert 'NAN' not in set(result['ID'])
