@@ -63,10 +63,47 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   carries it on the returned gene sets, which is what lets both the single-analysis route
   and the batch runner hand it to the enrichment backend, and what puts the pathway IDs on
   the network nodes so a batch report or shared link rebuilt from stored network JSON still
-  names them. Against the live Builder today, three mapped pathways resolve in neither
-  source (`WP1234`, `WP3980`, `WP4010`) and six Key Events are affected: KE 345, for
-  instance, is now reported as *"1 excluded (mapped, but no genes could be resolved:
-  WP4010)"* rather than counted among the uncurated.
+  names them. A Key Event in that position now reads *"1 excluded (mapped, but no genes
+  could be resolved: WP4010)"* rather than being counted among the uncurated.
+
+- **Rows without a gene symbol no longer enter the background as a gene called `NAN`**
+  (#80). The loader expanded multi-symbol rows with `str(row[id_col]).split('///')`, and
+  `str()` on a missing value yields `'nan'` — uppercased into a literal identifier. Every
+  symbol-less row in an upload therefore collapsed into one pseudo-gene. On a DESeq2 table
+  of 13814 rows, 12939 of which carry a GeneSymbol and 12914 of which are distinct, the
+  tool reported a background of 12915: the extra entry stood in for 875 discarded rows.
+  Two things followed. The reported background was not the number of measured genes, so it
+  could not honestly be quoted in a methods section; and if the symbol-less row passed the
+  significance threshold, `NAN` counted as a significant gene that can never overlap a Key
+  Event gene set, biasing every Fisher test very slightly toward the null.
+
+  Rows whose identifier is null, empty or a missing-value placeholder are now dropped
+  before expansion, so the pseudo-gene is gone and the reported background is the true
+  count of measured genes. A `A///NA` row keeps its real symbol. The placeholder
+  vocabulary is pandas' own `STR_NA_VALUES` plus the punctuation forms (`-`, `--`, `.`,
+  `?`, …) that R, Excel and array-annotation pipelines write for "no symbol". The number
+  of discarded rows is counted, but is **not yet shown anywhere in the interface** —
+  reporting it next to the background size is still open under #80.
+
+  A file in which *no* row yields a usable identifier — most often a wrong ID column —
+  now fails with a validation error naming that column, instead of the generic
+  "unexpected error" page it produced once the pseudo-gene stopped standing in for those
+  rows.
+
+- **The driver-gene export comes out in a deterministic order** (#82). `build_gene_tracking`
+  appended its records in dict-iteration order over each condition's stored KE→gene map, so
+  the row order of `genes_export.csv` was an artefact of how that JSON happened to be
+  written; two runs over identical result data produced files that were equal only once
+  sorted, while `compare_export.csv` was already byte-stable. That made the gene export
+  unusable for diff-based reproducibility checks and generated spurious churn when exports
+  were version-controlled. Records are now ordered at the source, and the export re-applies
+  the same order: Key Event numerically (so `KE:10` follows `KE:9`), then gene symbol, then
+  condition **in upload order** — sorting condition labels as text would put `10uM` before
+  `2uM` and break a dose series. The summary view keeps its shared-first ordering (a gene
+  driving three conditions stays above one driving a single condition).
+
+  The export was the only affected artefact: the Genes tab payload was already sorted, and
+  the batch report does not use these records.
 
 - **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
   KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was
