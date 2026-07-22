@@ -11,6 +11,10 @@ from exceptions import FileProcessingError, DataValidationError, AOPDataError
 
 logger = logging.getLogger(__name__)
 
+# Placeholders that pandas/R/Excel write for a missing gene symbol. Compared
+# against the upper-cased, stripped identifier (issue #80).
+_MISSING_ID_TOKENS = {'NAN', 'NA', 'NONE', 'NULL', '#N/A', '-', '.'}
+
 def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: str) -> pd.DataFrame:
     """
     Load and validate gene expression data from file.
@@ -41,20 +45,44 @@ def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: st
                 value=str(missing_cols)
             )
         
-        # Expand if symbols are separated by '///'
+        # Expand if symbols are separated by '///'.
+        #
+        # Issue #80: rows with no gene symbol used to survive this loop as the
+        # literal identifier "NAN" (str(NaN).upper()), so every symbol-less row
+        # in the upload collapsed into a single pseudo-gene that inflated the
+        # background by one and, if it passed the significance threshold, took
+        # part in every Fisher test while being unable to overlap any KE gene
+        # set. Such rows are dropped up front and counted, so the discard is
+        # reported rather than silently renamed.
         df_expanded = []
+        dropped_rows = 0
         for _, row in df_raw.iterrows():
-            genes = str(row[id_col]).split('///')
+            raw_id = row[id_col]
+            genes = [g.strip().upper() for g in str(raw_id).split('///')]
+            genes = [g for g in genes if g and g not in _MISSING_ID_TOKENS]
+            if not genes:
+                dropped_rows += 1
+                continue
             for gene in genes:
                 df_expanded.append({
-                    'ID': gene.strip().upper(),
+                    'ID': gene,
                     'log2FC': row[fc_col],
                     'pval': row[pval_col]
                 })
-        
-        df = pd.DataFrame(df_expanded).dropna()
+
+        df = pd.DataFrame(df_expanded, columns=['ID', 'log2FC', 'pval']).dropna()
+
+        # Carried through process_gene_expression() into its stats dict so the
+        # count can be shown next to the background size.
+        df.attrs['dropped_unidentified_rows'] = dropped_rows
+
+        if dropped_rows:
+            logger.info(
+                f"Dropped {dropped_rows} row(s) without a usable gene identifier "
+                f"in column '{id_col}'"
+            )
         logger.info(f"Expanded to {len(df)} gene entries after processing")
-        
+
         return df
         
     except DataValidationError:
@@ -119,10 +147,19 @@ def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0, pval
         'significant_genes': n_sig,
         'non_significant_genes': n_non_sig,
         'logfc_threshold': logfc_threshold,
-        'pval_threshold': effective_pval
+        'pval_threshold': effective_pval,
+        # Issue #80: rows the loader discarded for having no gene identifier.
+        # Reported alongside the background size so 'total_genes' can be quoted
+        # as the number of measured genes and the discard stays visible.
+        'dropped_unidentified_rows': int(df.attrs.get('dropped_unidentified_rows', 0)),
     }
-    
-    logger.info(f"Processed {stats['total_genes']} unique genes: {stats['significant_genes']} significant, {stats['non_significant_genes']} non-significant")
+
+
+    logger.info(
+        f"Processed {stats['total_genes']} unique genes: {stats['significant_genes']} significant, "
+        f"{stats['non_significant_genes']} non-significant "
+        f"({stats['dropped_unidentified_rows']} row(s) dropped without a gene identifier)"
+    )
     
     if n_sig == 0:
         logger.warning("No significant genes found. Check thresholds.")

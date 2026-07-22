@@ -32,6 +32,30 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **Rows without a gene symbol no longer enter the background as a gene called `NAN`**
+  (#80). The loader expanded multi-symbol rows with `str(row[id_col]).split('///')`, and
+  `str()` on a missing value yields `'nan'` — uppercased into a literal identifier. Every
+  symbol-less row in an upload therefore collapsed into one pseudo-gene. On a DESeq2 table
+  of 13814 rows, 12939 of which carry a GeneSymbol and 12914 of which are distinct, the
+  tool reported a background of 12915: the extra entry stood in for 875 discarded rows.
+  Two things followed. The reported background was not the number of measured genes, so it
+  could not honestly be quoted in a methods section; and if the symbol-less row passed the
+  significance threshold, `NAN` counted as a significant gene that can never overlap a Key
+  Event gene set, biasing every Fisher test very slightly toward the null.
+
+  Rows whose identifier is null, empty or a placeholder (`nan`, `NA`, `-`, …) are now
+  dropped before expansion and counted; the count is carried in the processing stats as
+  `dropped_unidentified_rows` so the discard is reported next to the background size rather
+  than silently renamed. A `A///NA` row keeps its real symbol.
+
+- **`genes_export.csv` rows now come out in a deterministic order** (#82). The long view
+  inherited its order from dict iteration over each condition's stored KE→gene map, so two
+  runs over identical result data produced files that were equal only once sorted —
+  `compare_export.csv`, by contrast, was already byte-stable. That made the gene export
+  unusable for diff-based reproducibility checks and generated spurious churn when exports
+  were version-controlled. Both views are now sorted by Key Event (numerically, so `KE:10`
+  follows `KE:9`), then gene symbol, then condition.
+
 - **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
   KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was
   resolved against `data/edges_wpid_to_gene.csv` — a snapshot topping out at `WP5452`. Any

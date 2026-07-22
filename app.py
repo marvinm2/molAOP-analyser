@@ -2668,6 +2668,29 @@ def batch_genes_export(batch_uuid_str):
         tracking = build_gene_tracking(conditions)
         frames = gene_tracking_to_dataframes(tracking)
 
+        # Issue #82: the long view inherited its row order from dict iteration
+        # over each condition's stored KE->gene map, so two runs over identical
+        # inputs produced exports that were equal only after sorting. That made
+        # the file useless for diff-based reproducibility checks. Both views are
+        # ordered here by KE (numerically, so KE:10 follows KE:9), then gene,
+        # then condition.
+        def _ke_sort_key(value):
+            text = str(value)
+            match = re.search(r'(\d+)\s*$', text)
+            if match:
+                return (text[:match.start()], int(match.group(1)))
+            return (text, -1)
+
+        for view_name, frame in frames.items():
+            if frame.empty:
+                continue
+            sort_cols = [c for c in ('Gene_Symbol', 'Condition') if c in frame.columns]
+            ordered = frame.assign(_ke_order=frame['KE_ID'].map(_ke_sort_key))
+            ordered = ordered.sort_values(
+                by=['_ke_order'] + sort_cols, kind='mergesort'
+            ).drop(columns='_ke_order').reset_index(drop=True)
+            frames[view_name] = ordered
+
         stem = f"molAOP_{_safe_filename_part(batch.aop_id)}_{_safe_filename_part(batch.batch_name)}_driver_genes"
 
         if fmt == 'xlsx':
