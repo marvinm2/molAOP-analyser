@@ -327,7 +327,11 @@
                             </div>
                             <div class="network-legend__item">
                                 <div class="network-legend__swatch" style="background: #cccccc; width: 14px; height: 14px; opacity: 0.7;"></div>
-                                <span>No gene set mapped (no curated mapping in the Builder)</span>
+                                {# The class is also applied to any KE that simply has no
+                                   gene set in the loaded reference data, so the wording
+                                   stays hedged — only the entry below makes a positive
+                                   claim about what went wrong. #}
+                                <span>No measurable gene set (not curated, or none of its genes measured)</span>
                             </div>
                             {# Issue #81: a mapped Key Event whose pathway could not be
                                resolved to genes is a reference-data problem here, not a
