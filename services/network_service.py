@@ -8,6 +8,12 @@ import logging
 from typing import Dict, Set, List, Any, Optional
 
 from config import Config
+from services.enrichment_service import (
+    EXCLUDED_ERROR,
+    EXCLUDED_NO_MAPPING,
+    EXCLUDED_TOO_FEW_GENES,
+    EXCLUDED_UNRESOLVED_MAPPING,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +84,12 @@ def build_cytoscape_network(
             (issue #70).
         excluded_kes: Optional KE_ID → exclusion reason map (issue #65), as
             produced by ``enrichment_service.get_ke_summary()['excluded_reasons']``.
-            KEs excluded for ``'too_few_genes'`` get a `too-few-genes` class and
-            KEs excluded for ``'no_mapping'`` get the existing `no-genes` class,
-            so "could not assess" never renders like "assessed but not enriched".
+            KEs excluded for ``'too_few_genes'`` get a `too-few-genes` class,
+            KEs excluded for ``'no_mapping'`` get the `no-genes` class, and KEs
+            excluded for ``'unresolved_mapping'`` get an `unresolved-mapping`
+            class (issue #81), so "could not assess" never renders like
+            "assessed but not enriched" and a mapped Key Event whose pathway
+            could not be resolved never renders like an uncurated one.
 
     Returns:
         Dictionary with 'nodes' and 'edges' keys for Cytoscape.js
@@ -146,13 +155,22 @@ def build_cytoscape_network(
             # Issue #70 — significantly under-represented. A distinct class, not
             # the significance border, so the reader can tell which way it went.
             classes.append("depleted")
-        if excluded_reason == 'too_few_genes':
+        if excluded_reason == EXCLUDED_TOO_FEW_GENES:
             # Assessed-impossible, not assessed-and-null: fewer than the
             # minimum number of the KE's genes were measured (issue #65).
             classes.append("too-few-genes")
-        if (reference_sets is not None and not has_gene_set) or excluded_reason == 'no_mapping':
-            # No curated gene set at all, or a gene set with no measured
-            # overlap — either way the KE could not be assessed.
+        if excluded_reason == EXCLUDED_UNRESOLVED_MAPPING:
+            # Issue #81 — the KE *is* mapped; the mapping resolved to no genes.
+            # Styled apart from the uncurated case because the two ask for
+            # different repairs: one a Builder mapping, the other this tool's
+            # reference data.
+            classes.append("unresolved-mapping")
+        elif excluded_reason == EXCLUDED_NO_MAPPING or (
+            reference_sets is not None and not has_gene_set and not excluded_reason
+        ):
+            # No curated gene set at all. Note the reason, when present, is
+            # authoritative: a mapped-but-unresolvable KE also has no gene set
+            # here and must not be dressed up as a curation gap (issue #81).
             classes.append("no-genes")
 
         # D-10: build node payload with method-aware fields.
@@ -250,9 +268,15 @@ def ke_accounting_from_network(network_json: Any) -> Optional[Dict[str, Any]]:
         return {
             'total_kes': len(ke_nodes),
             'tested': sum(1 for r in reasons if not r),
-            'excluded_no_mapping': sum(1 for r in reasons if r == 'no_mapping'),
-            'excluded_too_few_genes': sum(1 for r in reasons if r == 'too_few_genes'),
-            'excluded_error': sum(1 for r in reasons if r == 'error'),
+            'excluded_no_mapping': sum(1 for r in reasons if r == EXCLUDED_NO_MAPPING),
+            # Issue #81 — absent from networks stored before the distinction
+            # existed, which is exactly right: those runs did not know it, and
+            # a zero here keeps the clause out of the rendered sentence.
+            'excluded_unresolved_mapping': sum(
+                1 for r in reasons if r == EXCLUDED_UNRESOLVED_MAPPING
+            ),
+            'excluded_too_few_genes': sum(1 for r in reasons if r == EXCLUDED_TOO_FEW_GENES),
+            'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
             'min_ke_genes': Config.MIN_KE_GENES,
         }
     except (json.JSONDecodeError, TypeError, AttributeError) as exc:

@@ -32,6 +32,27 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **"No gene set mapped" no longer covers Key Events that are mapped** (#81). The
+  per-condition accounting had two exclusion counters, and one of them was answering three
+  different questions at once. A Key Event with no curated mapping, a Key Event whose
+  mapping exists but could not be resolved to genes (#79), and a Key Event whose gene set is
+  known but went unmeasured in the uploaded dataset were all reported as *"excluded (no gene
+  set mapped)"*. They call for opposite responses: the first is a curation gap to fill in the
+  molAOP Builder, the second is stale reference data in this tool and should be reported as a
+  bug, the third is a fact about the experiment's coverage and about nobody's curation. In a
+  WikiPathways-only run on AOP:472, KE 1115 was listed among the unmapped despite carrying a
+  live, high-confidence mapping to `WP5477` — a data-pipeline failure presented as missing
+  curation.
+
+  Exclusions are now counted under three separate reasons — no curated mapping, mapped but
+  unresolvable, and fewer than `MIN_KE_GENES` measured genes (zero measured genes included,
+  since that is a coverage number, not a curation one) — and the mapped-but-unresolvable
+  clause **names the pathway IDs** so the claim can be checked against the Builder. The
+  wording still comes from the single authority `format_ke_summary()`, so the results page,
+  the single report and the batch report say the same thing; the network styles the new
+  reason apart from an uncurated Key Event, and its legend distinguishes them. Summaries and
+  networks stored before the split carry only the old reasons and render exactly as they did.
+
 - **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
   KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was
   resolved against `data/edges_wpid_to_gene.csv` — a snapshot topping out at `WP5452`. Any
