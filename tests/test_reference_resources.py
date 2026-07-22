@@ -15,7 +15,7 @@ class TestLoadCachedReferenceSets:
 
     def test_default_is_wikipathways_only(self):
         wp = {"KE:1": {"A", "B"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")) as wp_loader, \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv", [])) as wp_loader, \
              patch.object(app, "_load_gmt_resource_reference_sets") as gmt_loader:
             sets, source, _ = app.load_cached_reference_sets()
         wp_loader.assert_called_once()
@@ -27,7 +27,7 @@ class TestLoadCachedReferenceSets:
     def test_unions_genes_across_resources(self):
         wp = {"KE:1": {"A", "B"}}
         go = {"KE:1": {"B", "C"}, "KE:2": {"D"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])), \
              patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
             sets, source, _ = app.load_cached_reference_sets(["WikiPathways", "GO_BP"])
         assert sets == {"KE:1": {"A", "B", "C"}, "KE:2": {"D"}}
@@ -36,7 +36,7 @@ class TestLoadCachedReferenceSets:
     def test_does_not_mutate_source_sets(self):
         wp = {"KE:1": {"A"}}
         go = {"KE:1": {"B"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])), \
              patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
             app.load_cached_reference_sets(["WikiPathways", "GO_BP"])
         # Cached per-resource sets are untouched by the merge.
@@ -49,7 +49,7 @@ class TestLoadCachedReferenceSets:
         def _boom(resource, min_confidence="all"):
             raise RuntimeError("builder GMT export unavailable")
 
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])), \
              patch.object(app, "_load_gmt_resource_reference_sets", side_effect=_boom):
             sets, source, _ = app.load_cached_reference_sets(["WikiPathways", "Reactome"])
         # Reactome skipped; WikiPathways retained -> analysis still runs.
@@ -58,7 +58,7 @@ class TestLoadCachedReferenceSets:
 
     def test_unknown_resource_falls_back_to_default(self):
         wp = {"KE:1": {"A"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")) as wp_loader:
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv", [])) as wp_loader:
             sets, source, _ = app.load_cached_reference_sets(["bogus"])
         wp_loader.assert_called_once()
         assert sets == {"KE:1": {"A"}}
@@ -207,7 +207,7 @@ class TestMinConfidenceThreading:
     def test_threshold_forwarded_to_resource_loaders(self):
         wp = {"KE:1": {"A"}}
         go = {"KE:1": {"B"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")) as wp_loader, \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])) as wp_loader, \
              patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")) as gmt_loader:
             app.load_cached_reference_sets(["WikiPathways", "GO_BP"], min_confidence="high")
         assert wp_loader.call_args.args[0] == "high"
@@ -215,13 +215,13 @@ class TestMinConfidenceThreading:
 
     def test_default_threshold_is_all(self):
         wp = {"KE:1": {"A"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")) as wp_loader:
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv", [])) as wp_loader:
             app.load_cached_reference_sets(["WikiPathways"])
         assert wp_loader.call_args.args[0] == "all"
 
     def test_junk_threshold_falls_back_to_all(self):
         wp = {"KE:1": {"A"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")) as wp_loader:
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv", [])) as wp_loader:
             app.load_cached_reference_sets(["WikiPathways"], min_confidence="'; DROP TABLE --")
         assert wp_loader.call_args.args[0] == "all"
 
@@ -254,8 +254,8 @@ class TestConfidenceScopedCacheKeys:
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
 
-        with patch.object(app, "fetch_reference_sets_from_api", return_value={"KE:1": {"A"}}) as fetch:
-            sets, source = app._load_wikipathways_reference_sets("high")
+        with patch.object(app, "fetch_reference_sets_from_api", return_value=({"KE:1": {"A"}}, [])) as fetch:
+            sets, source, _ = app._load_wikipathways_reference_sets("high")
 
         # Cache miss for 'high' -> a fresh fetch at that threshold, not the 'all' set.
         fetch.assert_called_once()
@@ -274,8 +274,8 @@ class TestConfidenceScopedCacheKeys:
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
 
-        with patch.object(app, "fetch_reference_sets_from_api", return_value={"KE:1": {"A", "B"}}):
-            sets, _ = app._load_wikipathways_reference_sets("all")
+        with patch.object(app, "fetch_reference_sets_from_api", return_value=({"KE:1": {"A", "B"}}, [])):
+            sets, _, _ = app._load_wikipathways_reference_sets("all")
         assert sets == {"KE:1": {"A", "B"}}
 
     def test_gmt_loader_caches_per_threshold(self, monkeypatch):
@@ -312,7 +312,7 @@ class TestCachePreservesOriginalSource:
         key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
         self._fake_cache(monkeypatch, {key: ({"KE:1": {"A"}}, "csv")})
 
-        sets, source = app._load_wikipathways_reference_sets("all")
+        sets, source, _ = app._load_wikipathways_reference_sets("all")
         assert sets == {"KE:1": {"A"}}
         assert source == "cache(csv)"
 
@@ -320,7 +320,7 @@ class TestCachePreservesOriginalSource:
         key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
         self._fake_cache(monkeypatch, {key: ({"KE:1": {"A"}}, "api")})
 
-        _, source = app._load_wikipathways_reference_sets("all")
+        _, source, _ = app._load_wikipathways_reference_sets("all")
         assert source == "cache(api)"
 
     def test_a_cached_csv_fallback_is_still_warned_about(self, monkeypatch):
@@ -337,7 +337,7 @@ class TestResourceResolutionRecording:
     def test_loaded_resources_are_recorded_with_their_source(self):
         wp = {"KE:1": {"A"}}
         go = {"KE:1": {"B"}, "KE:2": {"C"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])), \
              patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "cache(api)")):
             _, _, resolution = app.load_cached_reference_sets(["WikiPathways", "GO_BP"])
 
@@ -355,7 +355,7 @@ class TestResourceResolutionRecording:
         def _boom(resource, min_confidence="all"):
             raise RuntimeError("builder GMT export unavailable")
 
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])), \
              patch.object(app, "_load_gmt_resource_reference_sets", side_effect=_boom):
             _, _, resolution = app.load_cached_reference_sets(["WikiPathways", "Reactome"])
 
@@ -368,7 +368,7 @@ class TestResourceResolutionRecording:
 
     def test_csv_fallback_is_disclosed(self):
         wp = {"KE:1": {"A"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")):
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv", [])):
             _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
 
         warnings = app.resource_resolution_warnings(resolution)
@@ -376,13 +376,13 @@ class TestResourceResolutionRecording:
 
     def test_clean_run_produces_no_warnings(self):
         wp = {"KE:1": {"A"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")):
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])):
             _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
         assert app.resource_resolution_warnings(resolution, "high") == []
 
     def test_description_reads_as_a_sentence(self):
         wp = {"KE:1": {"A"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "cache(csv)")):
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "cache(csv)", [])):
             _, _, resolution = app.load_cached_reference_sets(["WikiPathways"])
         assert app.describe_resource_resolution(resolution) == (
             "WikiPathways (bundled reference files, cached)"
@@ -402,7 +402,7 @@ class TestConfidenceApplicabilityIsRecorded:
     def test_gmt_resources_are_marked_unfiltered(self):
         wp = {"KE:1": {"A"}}
         go = {"KE:1": {"B"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])), \
              patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
             _, _, resolution = app.load_cached_reference_sets(
                 ["WikiPathways", "GO_BP"], min_confidence="high"
@@ -417,7 +417,7 @@ class TestConfidenceApplicabilityIsRecorded:
     def test_csv_fallback_cannot_apply_the_threshold_either(self):
         """KE-WP.csv has no confidence column, so 'high' is a no-op there too."""
         wp = {"KE:1": {"A"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv")):
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "csv", [])):
             _, _, resolution = app.load_cached_reference_sets(
                 ["WikiPathways"], min_confidence="high"
             )
@@ -427,9 +427,108 @@ class TestConfidenceApplicabilityIsRecorded:
         """'All mappings' filters nothing, so there is nothing to caveat."""
         wp = {"KE:1": {"A"}}
         go = {"KE:1": {"B"}}
-        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api")), \
+        with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [])), \
              patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "api")):
             _, _, resolution = app.load_cached_reference_sets(
                 ["WikiPathways", "GO_BP"], min_confidence="all"
             )
         assert app.resource_resolution_warnings(resolution, "all") == []
+
+
+# ---------------------------------------------------------------------------
+# Issue #79: a mapped pathway the bundled CSV does not know about
+# ---------------------------------------------------------------------------
+
+class TestPathwayResolutionGap:
+    """load_reference_sets must not silently drop unresolvable pathways.
+
+    Reproduces the reported case: KE 1115 maps only to WP5477, which is curated
+    in the Builder but absent from data/edges_wpid_to_gene.csv. Before the fix
+    the inner join dropped it without trace, so the KE was reported as having no
+    gene set mapped — the opposite of what had happened.
+    """
+
+    KE_WP = pd.DataFrame([
+        {"KE_ID": "KE:1115", "WP_ID": "WP5477"},   # only in the Builder
+        {"KE_ID": "KE:177", "WP_ID": "WP4324"},    # in the bundled CSV
+    ])
+
+    def _csv_files(self, tmp_path):
+        """Write a minimal stand-in for the two bundled CSVs."""
+        wp_gene = tmp_path / "edges.csv"
+        wp_gene.write_text("WPID,gene_id,edge_id\nWP4324,111,e1\n")
+        nodes = tmp_path / "nodes.csv"
+        nodes.write_text("GeneID,GeneName\n111,TP53\n")
+        return str(wp_gene), str(nodes)
+
+    def test_pathway_absent_from_csv_is_reported_not_dropped(self, tmp_path):
+        wp_gene_path, node_path = self._csv_files(tmp_path)
+        unresolved = []
+
+        sets = load_reference_sets(
+            ke_wp_df=self.KE_WP.copy(),
+            wp_gene_path=wp_gene_path,
+            node_path=node_path,
+            unresolved_out=unresolved,
+        )
+
+        assert unresolved == ["WP5477"]
+        # The KE really does end up with no genes — the point is that we say so.
+        assert "KE:1115" not in sets
+        assert sets["KE:177"] == {"TP53"}
+
+    def test_builder_membership_resolves_the_gap(self, tmp_path):
+        """With the Builder's map, the same KE gets its genes and nothing is unresolved."""
+        wp_gene_path, node_path = self._csv_files(tmp_path)
+        unresolved = []
+
+        sets = load_reference_sets(
+            ke_wp_df=self.KE_WP.copy(),
+            wp_gene_path=wp_gene_path,
+            node_path=node_path,
+            wp_gene_map={"WP5477": {"SOD1", "CAT"}},
+            unresolved_out=unresolved,
+        )
+
+        assert unresolved == []
+        assert sets["KE:1115"] == {"SOD1", "CAT"}
+        # The CSV still covers pathways the Builder did not answer for.
+        assert sets["KE:177"] == {"TP53"}
+
+    def test_builder_membership_replaces_rather_than_unions_the_snapshot(self, tmp_path):
+        """When both sources know a pathway, the Builder's membership wins.
+
+        Unioning would resurrect genes removed upstream, which is worse than
+        either source alone: the result would match no version of the pathway.
+        """
+        wp_gene_path, node_path = self._csv_files(tmp_path)
+
+        sets = load_reference_sets(
+            ke_wp_df=pd.DataFrame([{"KE_ID": "KE:177", "WP_ID": "WP4324"}]),
+            wp_gene_path=wp_gene_path,
+            node_path=node_path,
+            wp_gene_map={"WP4324": {"MT-CO1"}},
+        )
+
+        assert sets["KE:177"] == {"MT-CO1"}, "stale TP53 should not survive"
+
+    def test_unresolved_pathways_surface_as_a_warning(self):
+        """The run must say so — that is the whole complaint in #79."""
+        resolution = [{
+            'resource': 'WikiPathways', 'status': 'loaded', 'source': 'api',
+            'ke_count': 90, 'confidence_applied': True,
+            'unresolved_pathways': ['WP1234', 'WP5477'], 'error': None,
+        }]
+
+        warnings = app.resource_resolution_warnings(resolution)
+        joined = " ".join(warnings)
+        assert "WP5477" in joined and "WP1234" in joined
+        assert "no gene set" in joined
+
+    def test_no_warning_when_everything_resolves(self):
+        resolution = [{
+            'resource': 'WikiPathways', 'status': 'loaded', 'source': 'api',
+            'ke_count': 90, 'confidence_applied': True,
+            'unresolved_pathways': [], 'error': None,
+        }]
+        assert app.resource_resolution_warnings(resolution) == []

@@ -1468,26 +1468,34 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
     cache_key = _confidence_cache_key(REFERENCE_CACHE_KEY, min_confidence)
     cached = _reference_cache.get(cache_key)
     if cached is not None:
-        reference_sets, original_source = cached
+        # Entries written before #79 are 2-tuples; treat them as "nothing known
+        # to be unresolved" rather than invalidating a warm cache on deploy.
+        if len(cached) == 3:
+            reference_sets, original_source, unresolved = cached
+        else:
+            reference_sets, original_source = cached
+            unresolved = []
         logger.info(
             f"Loaded {len(reference_sets)} WikiPathways KE sets from disk cache "
             f"(originally from {original_source}, min_confidence={min_confidence})"
         )
-        return reference_sets, f"cache({original_source})"
+        return reference_sets, f"cache({original_source})", unresolved
 
     # Try API
     try:
-        reference_sets = fetch_reference_sets_from_api(Config, min_confidence=min_confidence)
+        reference_sets, unresolved = fetch_reference_sets_from_api(
+            Config, min_confidence=min_confidence
+        )
         _reference_cache.set(
             cache_key,
-            (reference_sets, "api"),
+            (reference_sets, "api", unresolved),
             expire=Config.CACHE_TTL,
         )
         logger.info(
             f"Loaded {len(reference_sets)} WikiPathways KE sets from Builder API, "
             f"cached for {Config.CACHE_TTL}s"
         )
-        return reference_sets, "api"
+        return reference_sets, "api", unresolved
     except Exception as exc:
         logger.warning(
             f"Builder API unavailable ({exc}); falling back to local CSV files"
@@ -1495,22 +1503,24 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
 
     # Fall back to CSV. The local KE-WP.csv carries no confidence column, so
     # min_confidence is a documented no-op here (#60 graceful degradation).
+    unresolved = []
     reference_sets = load_reference_sets(
         ke_wp_path='data/KE-WP.csv',
         wp_gene_path='data/edges_wpid_to_gene.csv',
         node_path='data/node_attributes.csv',
         min_confidence=min_confidence,
+        unresolved_out=unresolved,
     )
     _reference_cache.set(
         cache_key,
-        (reference_sets, "csv"),
+        (reference_sets, "csv", unresolved),
         expire=Config.CACHE_TTL,
     )
     logger.info(
         f"Loaded {len(reference_sets)} WikiPathways KE sets from local CSV files, "
         f"cached for {Config.CACHE_TTL}s"
     )
-    return reference_sets, "csv"
+    return reference_sets, "csv", sorted(set(unresolved))
 
 
 def _load_gmt_resource_reference_sets(resource, min_confidence=DEFAULT_MIN_CONFIDENCE):
@@ -1654,8 +1664,11 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
     resolution = []
     for resource in selected:
         try:
+            unresolved_pathways = []
             if resource == "WikiPathways":
-                sets, source = _load_wikipathways_reference_sets(min_confidence)
+                sets, source, unresolved_pathways = _load_wikipathways_reference_sets(
+                    min_confidence
+                )
                 wp_source = source
             else:
                 sets, source = _load_gmt_resource_reference_sets(resource, min_confidence)
@@ -1669,6 +1682,7 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
                 'source': None,
                 'ke_count': 0,
                 'confidence_applied': False,
+                'unresolved_pathways': [],
                 'error': str(exc),
             })
             continue
@@ -1685,6 +1699,10 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
             # honour the threshold. Recorded per resource so a "high only" run
             # cannot be mistaken for one where every gene set was filtered.
             'confidence_applied': _confidence_was_applicable(resource, source),
+            # Issue #79: pathways that are curated and mapped but whose gene
+            # membership no source could resolve. Their KEs silently lose those
+            # genes, and a KE that loses all of them looks unmapped.
+            'unresolved_pathways': unresolved_pathways,
             'error': None,
         })
 
@@ -1790,6 +1808,26 @@ def resource_resolution_warnings(resolution, min_confidence=DEFAULT_MIN_CONFIDEN
                 f"files, which carry no confidence column, so the minimum mapping "
                 f"confidence could not be applied to it either."
             )
+
+    # Issue #79: a mapped pathway whose genes cannot be resolved removes real
+    # coverage. Left unsaid, its Key Events read as "no gene set mapped" — the
+    # opposite of what happened, and it quietly deflates the coverage numbers a
+    # resource comparison reports.
+    unresolved = sorted({
+        wp
+        for e in resolution
+        for wp in (e.get('unresolved_pathways') or [])
+    })
+    if unresolved:
+        shown = ", ".join(unresolved[:5])
+        if len(unresolved) > 5:
+            shown += f" and {len(unresolved) - 5} more"
+        warnings.append(
+            f"{len(unresolved)} mapped pathway(s) could not be resolved to genes "
+            f"({shown}) and contributed nothing to this analysis. Key Events whose "
+            f"only mappings are affected are reported as having no gene set, but "
+            f"they are curated — their coverage is understated here."
+        )
     return warnings
 
 

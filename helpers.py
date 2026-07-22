@@ -146,7 +146,9 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
                         wp_gene_path='data/edges_wpid_to_gene.csv',
                         node_path='data/node_attributes.csv',
                         ke_wp_df=None,
-                        min_confidence=DEFAULT_MIN_CONFIDENCE):
+                        min_confidence=DEFAULT_MIN_CONFIDENCE,
+                        wp_gene_map=None,
+                        unresolved_out=None):
     """Build KE-to-gene reference sets from local CSV files or a pre-built DataFrame.
 
     Parameters
@@ -168,6 +170,18 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
         only the genes of its qualifying pathways and a KE whose mappings are
         all below threshold is absent from the result. The filter is a no-op
         when the mappings carry no confidence column (CSV fallback).
+    wp_gene_map : dict[str, set[str]] or None
+        Optional pathway-to-gene membership, normally the Builder's live copy
+        from :func:`services.api_service.fetch_wp_pathway_gene_map`. Takes
+        precedence over ``wp_gene_path`` per pathway; the CSV still covers any
+        pathway the map lacks. Issue #79: the bundled CSV is a snapshot, so
+        pathways curated after it was taken resolved to no genes at all.
+    unresolved_out : list or None
+        Optional sink. Pathway IDs that neither source can resolve are appended
+        here so the caller can surface them. Without it such a pathway vanishes
+        in the inner join, which is exactly the silence #79 reported: the Key
+        Event is then reported as having no gene set mapped, when in truth it
+        is mapped and the mapping could not be resolved.
 
     Returns
     -------
@@ -217,6 +231,33 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
 
     logger.debug("After annotation merge: %s", wp_gene_annotated.shape)
 
+    # Issue #79: prefer the Builder's live pathway membership, per pathway, and
+    # fall back to the bundled CSV for anything it does not carry. Rows are
+    # appended rather than replacing the CSV wholesale so a partial Builder
+    # response cannot lose pathways the snapshot does cover.
+    if wp_gene_map:
+        wanted = set(ke_wp_df['WP_ID'].unique())
+        live_rows = [
+            {'WPID': wp_id, 'GeneName': gene}
+            for wp_id in wanted
+            for gene in wp_gene_map.get(wp_id, ())
+        ]
+        if live_rows:
+            live_df = pd.DataFrame(live_rows)
+            covered = set(live_df['WPID'].unique())
+            # Drop the snapshot's rows for pathways the Builder answered for, so
+            # a pathway whose membership changed upstream does not end up as the
+            # union of both versions.
+            csv_only = wp_gene_annotated[~wp_gene_annotated['WPID'].isin(covered)]
+            wp_gene_annotated = pd.concat(
+                [csv_only[['WPID', 'GeneName']], live_df], ignore_index=True
+            )
+            logger.info(
+                "WP gene membership: %d of %d mapped pathways resolved from the "
+                "Builder, remainder from the bundled CSV",
+                len(covered & wanted), len(wanted),
+            )
+
     # Merge WP → KE
     merged = ke_wp_df.merge(
         wp_gene_annotated,
@@ -233,13 +274,20 @@ def load_reference_sets(ke_wp_path='data/KE-WP.csv',
 
     logger.debug("Final merged KE-gene mapping after dropna: %s", merged.shape)
 
-    # Report any KE-WP mappings lost in the inner join
-    dropped_ke_wp = len(ke_wp_df) - merged['KE_ID'].nunique()
-    if dropped_ke_wp > 0:
+    # Issue #79: name the pathways that resolved to nothing, rather than
+    # reporting a count of "lost mappings" that compared rows against unique
+    # KEs and so could not be acted on. A pathway here is curated and mapped;
+    # the analyser simply cannot say which genes it contains.
+    resolvable = set(merged['WP_ID'].unique()) if len(merged) else set()
+    unresolved = sorted(set(ke_wp_df['WP_ID'].unique()) - resolvable)
+    if unresolved:
         logger.warning(
-            "Inner join dropped %d of %d KE-WP mappings (no matching WikiPathways genes)",
-            dropped_ke_wp, len(ke_wp_df)
+            "%d mapped pathway(s) could not be resolved to genes and are absent "
+            "from the reference sets: %s",
+            len(unresolved), ", ".join(unresolved),
         )
+        if unresolved_out is not None:
+            unresolved_out.extend(unresolved)
 
     # Group into dict: KE_ID → set of gene symbols
     reference_sets = (
