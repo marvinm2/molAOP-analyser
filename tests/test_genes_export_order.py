@@ -1,10 +1,12 @@
-"""Row-order determinism of the driver-gene export (issue #82).
+"""Row-order determinism of the driver-gene tracking and export (issue #82).
 
-The long view used to inherit its order from dict iteration over each
-condition's stored KE->gene map, so two runs over identical result data
-produced CSVs that were equal only after sorting. These tests seed two
-batches holding the same driver genes in different insertion orders and
-assert the exports are byte-identical.
+``build_gene_tracking`` used to append its records in dict-iteration order over
+each condition's stored ``ke_gene_json``, so the Genes tab payload, the batch
+report and the CSV/Excel export all inherited an order that was an artefact of
+how the JSON happened to be written. These tests pin the order at both ends:
+directly on ``build_gene_tracking`` (the source) and through the export route
+(the boundary), seeding batches that hold the same driver genes in different
+insertion orders.
 """
 import json
 from datetime import datetime, timedelta, timezone
@@ -13,6 +15,7 @@ import pytest
 
 import app as app_module
 from database import BatchRecord, ConditionRecord
+from services.comparison_service import build_gene_tracking
 
 
 def _expiry():
@@ -29,7 +32,7 @@ _ENRICHMENT = [
 ]
 
 
-def _seed(db_manager, uuid, ke_gene_map):
+def _seed(db_manager, uuid, ke_gene_map, labels=('C0', 'C1')):
     session = db_manager.get_session()
     try:
         batch = BatchRecord(
@@ -41,10 +44,10 @@ def _seed(db_manager, uuid, ke_gene_map):
         )
         session.add(batch)
         session.flush()
-        for pos in range(2):
+        for pos, label in enumerate(labels):
             session.add(ConditionRecord(
                 batch_id=batch.id, position=pos, filename=f'c{pos}.tsv',
-                condition_label=f'C{pos}', dose=f'{pos + 1}uM', timepoint='4hr',
+                condition_label=label, dose=label, timepoint='4hr',
                 status='complete', gene_count=3, significant_genes=3,
                 enrichment_json=json.dumps(_ENRICHMENT),
                 ke_gene_json=json.dumps(ke_gene_map),
@@ -70,8 +73,16 @@ _ORDER_B = {
     'KE:2': [_sig('BRCA1', 1.5), _sig('TP53', 2.0)],
 }
 
+# A dose series: label order and upload order disagree lexically.
+_DOSE_MAP = {
+    'KE:2': [_sig('TP53', 2.0), _sig('BRCA1', 1.5)],
+    'KE:10': [_sig('EGFR', 1.1)],
+}
+_DOSE_LABELS = ('2uM', '10uM')
+
 _UUID_A = '22222222-2222-2222-2222-222222222222'
 _UUID_B = '33333333-3333-3333-3333-333333333333'
+_UUID_DOSE = '44444444-4444-4444-4444-444444444444'
 
 
 @pytest.fixture
@@ -79,7 +90,54 @@ def two_batches(flask_client, temp_database, monkeypatch):
     monkeypatch.setattr(app_module, 'db_manager', temp_database)
     _seed(temp_database, _UUID_A, _ORDER_A)
     _seed(temp_database, _UUID_B, _ORDER_B)
+    _seed(temp_database, _UUID_DOSE, _DOSE_MAP, labels=_DOSE_LABELS)
     return flask_client
+
+
+def _rows(client, uuid, view='long'):
+    body = client.get(
+        f'/batch/{uuid}/genes/export?fmt=csv&view={view}'
+    ).get_data(as_text=True)
+    return [line.split(',') for line in body.strip().splitlines()[1:]]
+
+
+class _StubCondition:
+    """Minimal stand-in for a ConditionRecord for the unit-level tests."""
+
+    def __init__(self, label, ke_gene_map):
+        self.condition_label = label
+        self.ke_gene_json = json.dumps(ke_gene_map)
+        self.enrichment_json = json.dumps(_ENRICHMENT)
+
+
+class TestGeneTrackingRecordOrder:
+    """The source of the order, not just the export boundary."""
+
+    def test_records_are_ordered_independently_of_json_key_order(self):
+        first = build_gene_tracking([
+            _StubCondition('C0', _ORDER_A), _StubCondition('C1', _ORDER_A),
+        ])
+        second = build_gene_tracking([
+            _StubCondition('C0', _ORDER_B), _StubCondition('C1', _ORDER_B),
+        ])
+        assert first['records'] == second['records']
+
+    def test_records_are_ke_numeric_then_gene_then_upload_position(self):
+        tracking = build_gene_tracking([
+            _StubCondition(label, _DOSE_MAP) for label in _DOSE_LABELS
+        ])
+        triples = [
+            (r['KE_ID'], r['Gene_Symbol'], r['Condition'])
+            for r in tracking['records']
+        ]
+        assert triples == [
+            ('KE:2', 'BRCA1', '2uM'),
+            ('KE:2', 'BRCA1', '10uM'),
+            ('KE:2', 'TP53', '2uM'),
+            ('KE:2', 'TP53', '10uM'),
+            ('KE:10', 'EGFR', '2uM'),
+            ('KE:10', 'EGFR', '10uM'),
+        ]
 
 
 class TestGeneExportDeterminism:
@@ -91,31 +149,41 @@ class TestGeneExportDeterminism:
         assert first.status_code == second.status_code == 200
         assert first.get_data() == second.get_data()
 
-    def test_repeated_export_is_stable(self, two_batches):
-        client = two_batches
-        bodies = {
-            client.get(f'/batch/{_UUID_A}/genes/export?fmt=csv&view=long').get_data()
-            for _ in range(3)
-        }
-        assert len(bodies) == 1
+    def test_summary_view_ke_order_is_numeric(self, two_batches):
+        """The summary frame is sorted too, not merely stable by accident.
 
-    def test_ke_ids_sorted_numerically(self, two_batches):
-        client = two_batches
-        body = client.get(
-            f'/batch/{_UUID_A}/genes/export?fmt=csv&view=long'
-        ).get_data(as_text=True)
-        rows = [line.split(',') for line in body.strip().splitlines()[1:]]
+        The wide view was already insertion-order-independent, so byte equality
+        between two batches proves nothing about it. Its KE order, however, was
+        a lexical sort of the KE ID — 'KE:10' ahead of 'KE:2'.
+        """
+        rows = _rows(two_batches, _UUID_A, view='summary')
         ke_order = []
         for row in rows:
             if not ke_order or ke_order[-1] != row[0]:
                 ke_order.append(row[0])
         assert ke_order == ['KE:2', 'KE:9', 'KE:10']
 
+    def test_conditions_follow_upload_order_not_alphabetical(self, two_batches):
+        """A dose series must not be reordered as text ('10uM' before '2uM')."""
+        rows = _rows(two_batches, _UUID_DOSE)
+        triples = [(r[0], r[2], r[3]) for r in rows]
+        assert triples == [
+            ('KE:2', 'BRCA1', '2uM'),
+            ('KE:2', 'BRCA1', '10uM'),
+            ('KE:2', 'TP53', '2uM'),
+            ('KE:2', 'TP53', '10uM'),
+            ('KE:10', 'EGFR', '2uM'),
+            ('KE:10', 'EGFR', '10uM'),
+        ]
+
+    def test_ke_ids_sorted_numerically(self, two_batches):
+        ke_order = []
+        for row in _rows(two_batches, _UUID_A):
+            if not ke_order or ke_order[-1] != row[0]:
+                ke_order.append(row[0])
+        assert ke_order == ['KE:2', 'KE:9', 'KE:10']
+
     def test_genes_sorted_within_ke(self, two_batches):
-        client = two_batches
-        body = client.get(
-            f'/batch/{_UUID_A}/genes/export?fmt=csv&view=long'
-        ).get_data(as_text=True)
-        rows = [line.split(',') for line in body.strip().splitlines()[1:]]
+        rows = _rows(two_batches, _UUID_A)
         ke2 = [r[2] for r in rows if r[0] == 'KE:2']
         assert ke2 == sorted(ke2)

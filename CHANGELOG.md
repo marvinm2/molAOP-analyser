@@ -43,18 +43,30 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   significance threshold, `NAN` counted as a significant gene that can never overlap a Key
   Event gene set, biasing every Fisher test very slightly toward the null.
 
-  Rows whose identifier is null, empty or a placeholder (`nan`, `NA`, `-`, …) are now
-  dropped before expansion and counted; the count is carried in the processing stats as
-  `dropped_unidentified_rows` so the discard is reported next to the background size rather
-  than silently renamed. A `A///NA` row keeps its real symbol.
+  Rows whose identifier is null, empty or a missing-value placeholder are now dropped
+  before expansion, so the pseudo-gene is gone and the reported background is the true
+  count of measured genes. A `A///NA` row keeps its real symbol. The placeholder
+  vocabulary is pandas' own `STR_NA_VALUES` plus the punctuation forms (`-`, `--`, `.`,
+  `?`, …) that R, Excel and array-annotation pipelines write for "no symbol". The number
+  of discarded rows is counted and carried in the processing stats as
+  `dropped_unidentified_rows`; it is **not yet shown in the interface** — displaying it
+  next to the background size is still open under #80.
 
-- **`genes_export.csv` rows now come out in a deterministic order** (#82). The long view
-  inherited its order from dict iteration over each condition's stored KE→gene map, so two
-  runs over identical result data produced files that were equal only once sorted —
-  `compare_export.csv`, by contrast, was already byte-stable. That made the gene export
-  unusable for diff-based reproducibility checks and generated spurious churn when exports
-  were version-controlled. Both views are now sorted by Key Event (numerically, so `KE:10`
-  follows `KE:9`), then gene symbol, then condition.
+  A file in which *no* row yields a usable identifier — most often a wrong ID column —
+  now fails with a validation error naming that column, instead of the generic
+  "unexpected error" page it produced once the pseudo-gene stopped standing in for those
+  rows.
+
+- **The driver-gene export comes out in a deterministic order** (#82). `build_gene_tracking`
+  appended its records in dict-iteration order over each condition's stored KE→gene map, so
+  the order of the Genes tab payload, the batch report and the CSV/Excel export was an
+  artefact of how that JSON happened to be written; two runs over identical result data
+  produced files that were equal only once sorted, while `compare_export.csv` was already
+  byte-stable. That made the gene export unusable for diff-based reproducibility checks and
+  generated spurious churn when exports were version-controlled. Records are now ordered at
+  the source, and the export re-applies the same order: Key Event numerically (so `KE:10`
+  follows `KE:9`), then gene symbol, then condition **in upload order** — sorting condition
+  labels as text would put `10uM` before `2uM` and break a dose series.
 
 - **WikiPathways gene membership no longer comes only from a bundled snapshot** (#79).
   KE→pathway mappings were fetched live from the Builder, but pathway→gene membership was

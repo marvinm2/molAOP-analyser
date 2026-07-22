@@ -3,6 +3,7 @@ import os
 import tempfile
 import pytest
 import pandas as pd
+from exceptions import DataValidationError
 from services.data_service import (
     load_and_validate_data,
     process_gene_expression,
@@ -236,6 +237,38 @@ class TestMissingGeneSymbols:
         df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
         assert set(df['ID']) == {'BRCA1', 'TP53'}
         assert df.attrs['dropped_unidentified_rows'] == 0
+
+    def test_no_usable_identifier_raises_named_validation_error(self, tmp_path):
+        """A wrong ID column must be reported, not crash downstream.
+
+        Dropping symbol-less rows can empty the frame outright (the realistic
+        cause is a user pointing the wizard at the wrong column). An empty frame
+        used to reach process_gene_expression(), whose groupby yields no rows,
+        so the next read of ['ID'] raised a bare KeyError and the request fell
+        through to the "unexpected error" catch-all.
+        """
+        path = self._write_tsv(str(tmp_path / 'wrongcol.tsv'), {
+            'Gene': ['BRCA1', 'TP53'],
+            'Empty': [None, None],
+            'logFC': [1.5, -0.8],
+            'pval': [0.001, 0.05],
+        })
+        with pytest.raises(DataValidationError) as excinfo:
+            load_and_validate_data(path, 'Empty', 'logFC', 'pval')
+        message = str(excinfo.value)
+        assert 'Empty' in message
+        assert 'identifier' in message.lower()
+
+    def test_pandas_na_vocabulary_is_covered(self, tmp_path):
+        """The placeholder set agrees with pandas' own missing-value words."""
+        path = self._write_tsv(str(tmp_path / 'vocab.tsv'), {
+            'Gene': ['BRCA1', 'N/A', 'null', 'None', '<NA>', '#N/A', '--', '?'],
+            'logFC': [1.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            'pval': [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'pval')
+        assert set(df['ID']) == {'BRCA1'}
+        assert df.attrs['dropped_unidentified_rows'] == 7
 
     def test_missing_symbol_row_cannot_be_significant(self, tmp_path):
         """A symbol-less row used to enter every Fisher test as 'NAN'."""
