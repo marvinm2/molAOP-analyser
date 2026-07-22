@@ -14,13 +14,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # Single version, matching the Dockerfile's python:3.11-bookworm. The
+    # Single version, matching the Dockerfile's python:3.14-bookworm. The
     # requirements lock is compiled on that interpreter (see CLAUDE.md), so a
     # matrix leg on another version would be testing pins that never ship.
     - name: Set up Python
       uses: actions/setup-python@v7
       with:
-        python-version: '3.11'
+        python-version: '3.14'
 
     # Same system libraries the Dockerfile installs. pycairo builds from source
     # and needs the cairo headers; weasyprint needs pango and gdk-pixbuf.

@@ -74,6 +74,35 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 - Design-token layer in `static/css/main.css` mirroring the Builder's `:root` block —
   VHP4Safety palette, spacing, radius, shadow and z-index scales as CSS custom properties.
 
+### Changed
+
+- **Python 3.11 → 3.14** (#88). Dependabot proposed this as a one-line Docker bump, which is
+  the one way it cannot safely be done: `requirements.txt` and `requirements-dev.txt` are
+  pip-compile locks resolved *inside* the image's base, and CI pins its interpreter to match,
+  so moving the base alone would have left the locks and CI describing an interpreter the
+  image no longer runs. Done here as the single change the docs prescribe — both locks
+  regenerated in `python:3.14-bookworm`, the suite run there, and the Dockerfile plus all
+  three `python-version` keys updated together.
+
+  **The pins did not move.** Regenerating without `--upgrade` preserves existing pins where
+  they still resolve, and every one did: the locks are byte-identical to their 3.11 versions
+  apart from the `with Python 3.14` header. That is the desired outcome for an interpreter
+  bump — one variable changes, so anything that breaks is attributable to Python and not to
+  a simultaneous dependency upgrade. Notably `kaleido==0.2.1` and pycairo both install
+  cleanly on 3.14.
+
+  Verified before merge, in the 3.14 base: both locks compile, the shipped lock installs,
+  **593 tests pass**, the image builds, and a container from it serves `/`, `/demos`,
+  `/documentation` and `/about` at 200. The SQLite "unable to open database file" line in a
+  mountless local run is pre-existing and identical on the 3.11 image — it disappears with
+  the production `/data` mount.
+
+### Removed
+
+- **The "under development" banner on the landing page.** The orange band reading *"This tool
+  is under development — results and interface are subject to change"* has been removed, along
+  with its now-unused `.alert-band` rule in `static/css/pages/index.css`.
+
 ### Added
 
 - **The mapping-confidence threshold now applies to GO BP and Reactome, not just
