@@ -248,7 +248,23 @@
                             'p_value_depleted': 'P-value (depletion)',
                             'FDR_depleted': 'FDR (depletion)',
                             'NES': 'NES',
+                            'ES': 'ES',
+                            'nes_status': 'NES status',
+                            'null_same_signed_n': 'Same-signed permutations',
                             'lead_genes': 'Lead Edge Genes'
+                        } %}
+                        {# Issue #117: a NES is only a magnitude when the permutation
+                           null had a usable same-signed tail. These labels say which
+                           of the three regimes each row is in. #}
+                        {% set nes_status_labels = {
+                            'ok': 'normalised',
+                            'unstable_normalisation': 'unstable magnitude',
+                            'beyond_permutation_resolution': 'beyond permutation resolution'
+                        } %}
+                        {% set nes_status_titles = {
+                            'ok': 'The permutation null had permutations on both sides of zero; the NES is an estimate.',
+                            'unstable_normalisation': 'Fewer than 10 permutations fell on the same side of zero as the observed score. The p-value stands; the NES magnitude is normalised against too few values to rank or threshold on.',
+                            'beyond_permutation_resolution': 'No permutation reached the observed side of zero, so the observed score beat every one of them. The NES cannot be normalised and is left blank; the p-value is an upper bound (1/permutations) and the ES column carries the direction.'
                         } %}
                         {% for col in table[0].keys() %}
                         <th>{{ column_names.get(col, col) }}</th>
@@ -269,7 +285,14 @@
                             <td></td>
                             {% endif %}
                         {% elif col == 'NES' %}
-                            <td>{{ "%.2f"|format(val) }}</td>
+                            {# Issue #117: a blank NES means "not normalisable", which the
+                               nes_status column names. It is never a weak result. #}
+                            <td>{{ "%.2f"|format(val) if val is not none else '—' }}</td>                        {% elif col == 'nes_status' %}
+                            <td title="{{ nes_status_titles.get(val, '') }}">{{ nes_status_labels.get(val, val) }}</td>
+                        {% elif col == 'ES' %}
+                            <td>{{ "%.3f"|format(val) if val is not none else '—' }}</td>
+                        {% elif col == 'null_same_signed_n' %}
+                            <td>{{ val|int if val is not none else '—' }}</td>
                         {% elif col == 'Representation' %}
                             {# Issue #70: which tail the Key Event fell on. Kept in
                                step with the FDR selector by applyFdrThreshold(). #}

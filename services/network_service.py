@@ -12,6 +12,7 @@ from services.enrichment_service import (
     EXCLUDED_ERROR,
     EXCLUDED_NO_MAPPING,
     EXCLUDED_TOO_FEW_GENES,
+    EXCLUDED_TOO_MANY_GENES,
     EXCLUDED_UNRESOLVED_MAPPING,
 )
 
@@ -163,9 +164,12 @@ def build_cytoscape_network(
             # Issue #70 — significantly under-represented. A distinct class, not
             # the significance border, so the reader can tell which way it went.
             classes.append("depleted")
-        if excluded_reason == EXCLUDED_TOO_FEW_GENES:
-            # Assessed-impossible, not assessed-and-null: fewer than the
-            # minimum number of the KE's genes were measured (issue #65).
+        if excluded_reason in (EXCLUDED_TOO_FEW_GENES, EXCLUDED_TOO_MANY_GENES):
+            # Assessed-impossible, not assessed-and-null: the KE's measured
+            # gene count fell outside the testable range — below the minimum
+            # (issue #65) or, under GSEA, above gseapy's ceiling (issue #120).
+            # One class, because the styling says "no statistic was computed";
+            # the accounting sentence says which bound it was.
             classes.append("too-few-genes")
         if excluded_reason == EXCLUDED_UNRESOLVED_MAPPING:
             # Issue #81 — the KE *is* mapped; the mapping resolved to no genes.
@@ -297,8 +301,14 @@ def ke_accounting_from_network(network_json: Any) -> Optional[Dict[str, Any]]:
                 1 for r in reasons if r == EXCLUDED_UNRESOLVED_MAPPING
             ),
             'excluded_too_few_genes': sum(1 for r in reasons if r == EXCLUDED_TOO_FEW_GENES),
+            # Issue #120 — GSEA's upper bound. Zero for every ORA run and for
+            # networks stored before the reason existed.
+            'excluded_too_many_genes': sum(
+                1 for r in reasons if r == EXCLUDED_TOO_MANY_GENES
+            ),
             'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
             'min_ke_genes': Config.MIN_KE_GENES,
+            'max_ke_genes': Config.GSEA_MAX_KE_GENES,
             # Issue #81 — the pathway IDs behind those exclusions, recovered
             # from the nodes that carry them. Empty for networks stored before
             # they were written, which reads as "not known" rather than wrong.

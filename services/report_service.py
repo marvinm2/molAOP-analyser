@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from io import BytesIO
 import pandas as pd
 
+from services.gsea_service import NES_BEYOND_RESOLUTION, NES_UNSTABLE
+
 try:
     import plotly.graph_objects as go
     import plotly.io as pio
@@ -63,6 +65,37 @@ from helpers import MIN_CONFIDENCE_LABELS  # Issue #60: confidence threshold lab
 from services.enrichment_service import REPRESENTATION_LABELS  # Issue #70
 
 logger = logging.getLogger(__name__)
+
+
+def format_nes(nes: Any, status: Optional[str] = None) -> str:
+    """Render a NES for a report table, saying so when it is not a number.
+
+    Issue #117: under ``NES_BEYOND_RESOLUTION`` the NES does not exist — the
+    observed score beat every permutation, so there is no same-signed tail to
+    divide by — and the cell must not read as a blank or as ``None``. The
+    qualifier travels with the value because the reports are the artefact that
+    leaves the tool: a reader with only the PDF has no status column to consult.
+
+    Args:
+        nes: The NES value, or None/NaN when it could not be normalised.
+        status: The row's ``nes_status``, when the result carries one. Results
+            stored before #117 do not, and render as they always did.
+
+    Returns:
+        str: the formatted cell text.
+    """
+    if nes is None or (isinstance(nes, float) and math.isnan(nes)):
+        text = 'n/a'
+    elif isinstance(nes, (int, float)):
+        text = f"{nes:.2f}"
+    else:
+        text = str(nes)
+    if status == NES_BEYOND_RESOLUTION:
+        return f"{text} (beyond permutation resolution, p < 1/permutations)"
+    if status == NES_UNSTABLE:
+        return f"{text} (magnitude unstable)"
+    return text
+
 
 @dataclass
 class ReportData:
@@ -493,8 +526,7 @@ class ReportGenerator:
             row_class = 'significant' if adj_pval < Config.SIGNIFICANCE_FDR_CUTOFF else ''
 
             if is_gsea:
-                nes = result.get('NES', 0)
-                nes_str = f"{nes:.2f}" if isinstance(nes, (int, float)) else str(nes)
+                nes_str = format_nes(result.get('NES'), result.get('nes_status'))
                 lead = result.get('lead_genes', '')
                 # Export carries the FULL untruncated gene list.
                 lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
@@ -967,8 +999,7 @@ class ReportGenerator:
                 title = title[:37] + "..."
 
             if is_gsea:
-                nes = result.get('NES', 0)
-                nes_str = f"{nes:.2f}" if isinstance(nes, (int, float)) else str(nes)
+                nes_str = format_nes(result.get('NES'), result.get('nes_status'))
                 lead = result.get('lead_genes', '')
                 lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
                 table_data.append([

@@ -135,6 +135,45 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **A maximally enriched Key Event is no longer reported as not enriched** (#117). GSEA
+  normalises an observed enrichment score by the mean of the *same-signed* tail of that gene
+  set's permutation null. When the null falls entirely on the other side of zero that tail is
+  empty, the normalisation is undefined, and gseapy substitutes `NES = 1.0` with `p = 1.0` —
+  the values a thoroughly unenriched gene set produces. The one case where every permutation
+  failed to reach the observed score was therefore printed as the null result, and nothing in
+  the table gave the reader a way to tell. On AOP 472 it hid "Increase, DNA damage" in
+  carboplatin at 48 h, which an independent implementation puts among the strongest calls in
+  the grid.
+
+  The condition is now read off the null distribution rather than off the reported values: the
+  size of the same-signed tail, not `NES == 1.0`. That matters because the failure is
+  continuous. A tail of one or two permutations still yields a plausible-looking NES and a
+  sound p-value, but the magnitude is a ratio against a sample of two and cannot be ranked or
+  thresholded on — and no check on the output values can find it. Results now carry a
+  `nes_status` of `ok`, `unstable_normalisation` or `beyond_permutation_resolution`, the
+  same-signed count that produced the call, and the raw `ES` so direction survives even where
+  the NES does not.
+
+  Where the tail is empty the NES is reported as undefined rather than as a number — it is
+  genuinely not normalisable — while the p-value becomes the resolution bound `1/permutations`
+  and the FDR its limit of zero, because no permutation was as extreme as the observation.
+  The cell reads as maximally significant, which is what it is, instead of as null.
+
+  Incidence rises with gene-set size, since a larger set tightens the null: this gets *more*
+  likely as Key Event curation improves. Across the AOP 472 grid (5 gene-set pools × 9
+  conditions, 315 cells) the six affected cells all carry 379–817 measured genes.
+
+- **A Key Event above the GSEA size ceiling is no longer reported as under-measured** (#120).
+  `gseapy.prerank` discards a gene set larger than `max_size` before computing anything, and
+  the exclusion accounting attributed every size-based drop to `min_size`. A Key Event with
+  1200 measured genes was reported — on the results page, on the network and in both reports —
+  as "excluded (fewer than 5 measured genes)", which points the reader at the opposite repair
+  from the one needed. Over-ceiling drops now have their own exclusion reason and accounting
+  clause, the log line names the real bound and the real gene count, and the ceiling itself is
+  a named constant (`Config.GSEA_MAX_KE_GENES`) rather than a literal, so a run can report
+  what it could not test. The value stays at 1000 rather than the Broad convention of 500:
+  three of the seven testable AOP 472 Key Events already exceed 500 measured genes.
+
 - **An unfiltered resource is no longer blamed on the bundled reference files** (#71). The
   disclosure added with #67 split its explanation on whether a resource appeared in the
   filterable list, which was the same thing as "has a bundled CSV fallback" only for as long

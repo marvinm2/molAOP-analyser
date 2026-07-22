@@ -34,6 +34,13 @@ KE_SUMMARY_ATTR = 'ke_summary'
 EXCLUDED_NO_MAPPING = 'no_mapping'
 EXCLUDED_UNRESOLVED_MAPPING = 'unresolved_mapping'
 EXCLUDED_TOO_FEW_GENES = 'too_few_genes'
+# Issue #120 — GSEA only. gseapy drops a gene set larger than ``max_size``
+# before computing anything, and the drop is invisible in its output. Folding
+# it into ``too_few_genes`` told the reader the best-covered Key Event in the
+# analysis was under-measured, and pointed the repair (curate more genes onto
+# it) in exactly the wrong direction. The Fisher path has no upper bound and
+# never sets this.
+EXCLUDED_TOO_MANY_GENES = 'too_many_genes'
 EXCLUDED_ERROR = 'error'
 
 
@@ -121,6 +128,14 @@ def format_ke_summary(summary: Optional[Dict[str, Any]]) -> str:
         clauses.append(
             f"{too_few} excluded (fewer than "
             f"{summary.get('min_ke_genes', Config.MIN_KE_GENES)} measured genes)"
+        )
+    too_many = summary.get('excluded_too_many_genes', 0)
+    if too_many:
+        ceiling = summary.get('max_ke_genes')
+        clauses.append(
+            f"{too_many} excluded (more than {ceiling} measured genes, above "
+            "the GSEA gene-set ceiling)" if ceiling
+            else f"{too_many} excluded (above the GSEA gene-set ceiling)"
         )
     no_mapping = summary.get('excluded_no_mapping', 0)
     if no_mapping:
@@ -542,6 +557,7 @@ def _build_ke_summary(
     excluded_reasons: Dict[str, str],
     min_ke_genes: int,
     unresolved_pathways_by_ke: Optional[Dict[str, List[str]]] = None,
+    max_ke_genes: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Assemble the tested/excluded KE accounting dict (issue #65).
 
@@ -572,8 +588,15 @@ def _build_ke_summary(
             1 for r in reasons if r == EXCLUDED_UNRESOLVED_MAPPING
         ),
         'excluded_too_few_genes': sum(1 for r in reasons if r == EXCLUDED_TOO_FEW_GENES),
+        # Issue #120 — GSEA's upper size bound. Absent (0) on every ORA run and
+        # on runs stored before the distinction existed, which keeps the clause
+        # out of the sentence rather than asserting a zero.
+        'excluded_too_many_genes': sum(
+            1 for r in reasons if r == EXCLUDED_TOO_MANY_GENES
+        ),
         'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
         'min_ke_genes': min_ke_genes,
+        'max_ke_genes': max_ke_genes,
         # Issue #81 — named so the reader can check them against the Builder
         # rather than being told, wrongly, that the Key Event is uncurated.
         'unresolved_pathways': unresolved_pathways,
