@@ -655,6 +655,24 @@ const cy = cytoscape({
             'border-style': 'dotted'
         }
     },
+    // Issue #117 follow-up — the GSEA gradient selector matches every
+    // `method = "gsea"` node, including Key Events that were never tested
+    // (`nes = null` → `nesColor(null)` → off-gradient plum). Ordered after the
+    // gradient rule, these re-assert the muted exclusion fills so an untested KE
+    // is not painted as the strongest result. Scoped to `[method="gsea"]` so
+    // legacy GSEA results still colour by gradient and ORA is untouched.
+    {
+        selector: 'node.no-genes[method = "gsea"]',
+        style: { 'background-color': '#cccccc' }
+    },
+    {
+        selector: 'node.unresolved-mapping[method = "gsea"]',
+        style: { 'background-color': '#f7e6d5' }
+    },
+    {
+        selector: 'node.too-few-genes[method = "gsea"]',
+        style: { 'background-color': '#e8e8e8' }
+    },
     {
         selector: 'node.gene',
         style: {
