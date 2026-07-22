@@ -1169,6 +1169,10 @@ def analyze():
                 wp_picker_data=wp_picker_data,  # Phase 999.4: pathway view picker (None when no mappings)
                 ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
                 background_overlap=background_overlap,  # Issue #69: ID-column sanity check
+                # Issue #103: rows the loader discarded for having no gene
+                # symbol. Reported next to the background so a slightly wrong
+                # ID column shows as a visible loss, not a plausible number.
+                dropped_rows=stats.get('dropped_unidentified_rows'),
             ),
         )
 
@@ -1340,6 +1344,14 @@ def generate_report():
             filename=request.form.get('filename', metadata.get('filename', 'unknown')),
             gene_count=int(request.form.get('gene_count', 0)),
             significant_genes=int(request.form.get('significant_genes', 0)),
+            # Issue #103: blank (or absent, from a page cached before the field
+            # existed) means the count was never recorded, which the report says
+            # rather than printing a zero it cannot vouch for.
+            dropped_rows=(
+                int(request.form['dropped_rows'])
+                if request.form.get('dropped_rows', '').strip().isdigit()
+                else None
+            ),
             aop_id=request.form.get('aop_id', ''),
             aop_label=request.form.get('aop_label', ''),
             logfc_threshold=float(request.form.get('logfc_threshold', 0.0)),
@@ -2635,6 +2647,9 @@ def batch_condition_results(batch_uuid_str, position):
                 # /analyze results page only — shared results and batch-condition
                 # re-renders are explicitly out of scope this phase.
                 wp_picker_data=None,
+                # Issue #103: NULL for conditions run before the count was
+                # persisted, which renders nothing rather than a false zero.
+                dropped_rows=cond.dropped_unidentified_rows,
             ),
         )
     finally:

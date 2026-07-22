@@ -114,3 +114,45 @@ def test_results_template_renders_from_builder_output_alone():
         html = render_template("results.html", **_minimal_batch_context())
 
     assert "Increase, Mitochondrial dysfunction" in html
+
+
+# ---------------------------------------------------------------------------
+# Issue #103 — the discarded symbol-less row count
+# ---------------------------------------------------------------------------
+
+def _render(**overrides):
+    """Render results.html from a batch-shaped context with overrides applied."""
+    from app import app
+
+    ctx = _minimal_batch_context()
+    ctx.update(overrides)
+    with app.test_request_context():
+        from flask import render_template
+        return render_template("results.html", **ctx)
+
+
+def test_dropped_rows_defaults_to_not_recorded():
+    """A caller that says nothing gets None — 'not recorded', not zero."""
+    assert _minimal_batch_context()["dropped_rows"] is None
+
+
+def test_discarded_rows_are_reported_next_to_the_background():
+    """The count the loader already had must be visible on the page (#103)."""
+    html = _render(background_size=12914, dropped_rows=875)
+
+    assert "12914 measured genes" in html
+    assert "875 rows had no gene symbol and were excluded" in html
+
+
+def test_single_discarded_row_reads_in_the_singular():
+    html = _render(dropped_rows=1)
+
+    assert "1 row had no gene symbol and was excluded" in html
+
+
+@pytest.mark.parametrize("value", [0, None])
+def test_nothing_is_claimed_when_nothing_was_dropped_or_recorded(value):
+    """Zero needs no clause, and an unrecorded count must not read as zero."""
+    html = _render(dropped_rows=value)
+
+    assert "had no gene symbol" not in html

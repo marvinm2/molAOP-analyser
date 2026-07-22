@@ -147,7 +147,13 @@
                     <span class="tooltiptext">The statistical test uses all genes in your dataset (not the entire genome) as background. This accounts for which genes were actually measured in your experiment.</span>
                 </span>.
             </p>
-            <p><strong>Background gene set size:</strong> {{ background_size }}</p>
+            {# Issue #103: the loader drops rows with no usable gene identifier
+               and counts them. Reporting the discard alongside the background
+               turns a silent loss (6% of a real DESeq2 table) into a visible
+               one. `dropped_rows` is None for runs recorded before the count
+               existed — say nothing rather than claim zero. #}
+            <p><strong>Background gene set size:</strong> {{ background_size }} measured genes{% if dropped_rows %}
+                <span style="color: #555;">({{ dropped_rows }} row{{ '' if dropped_rows == 1 else 's' }} had no gene symbol and {{ 'was' if dropped_rows == 1 else 'were' }} excluded)</span>{% endif %}</p>
             {# Issue #68: per-resource provenance. The old single line collapsed
                every non-API case into "Local reference files" and could not
                represent a mixed-resource run at all. #}
@@ -601,6 +607,11 @@
             <input type="hidden" name="filename" value="{{ metadata.get('filename', 'unknown') }}">
             <input type="hidden" name="gene_count" value="{{ background_size }}">
             <input type="hidden" name="significant_genes" value="{{ metadata.get('significant_genes', 0) }}">
+            {# Issue #103: the discarded symbol-less row count belongs in the
+               methods section next to the background size. Posted explicitly,
+               as with the fields below, so the report is right even when the
+               session has been lost. Empty means "not recorded". #}
+            <input type="hidden" name="dropped_rows" value="{{ dropped_rows if dropped_rows is not none else '' }}">
             <input type="hidden" name="aop_id" value="{{ metadata.get('aop_id', '') }}">
             <input type="hidden" name="aop_label" value="{{ metadata.get('aop_label', '') }}">
             <input type="hidden" name="logfc_threshold" value="{{ threshold }}">

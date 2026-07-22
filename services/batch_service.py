@@ -312,7 +312,7 @@ def _run_condition(
     )
 
     # Process gene expression (applies significance flags)
-    df_processed, _ = process_gene_expression(
+    df_processed, stats = process_gene_expression(
         df_raw, batch.logfc_threshold or 0.0, pval_threshold=batch.pval_cutoff
     )
 
@@ -461,6 +461,11 @@ def _run_condition(
     cond.ke_title_map_json = json.dumps(ke_title_map)
     cond.gene_count = total_genes
     cond.significant_genes = significant_genes
+    # Issue #103: rows this file lost to a missing gene identifier, counted
+    # before harmonisation because they never reached the analysis at all. A
+    # condition whose file is annotation-poor is otherwise indistinguishable
+    # from one that simply measured fewer genes.
+    cond.dropped_unidentified_rows = int(stats.get('dropped_unidentified_rows', 0))
     cond.status = 'complete'
     cond.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     db_session.commit()

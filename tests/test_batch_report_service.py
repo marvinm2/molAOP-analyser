@@ -140,3 +140,38 @@ class TestKeAccountingSection:
         build_cytoscape_network derives from FDR."""
         png = brs.render_ke_network_png(json.dumps(self._NETWORK_WITH_REASONS))
         assert png is not None and png[:4] == b'\x89PNG'
+
+
+class TestDroppedRowsNote:
+    """Issue #103: a condition's discarded symbol-less rows reach the report."""
+
+    def test_note_reads_in_the_plural(self):
+        cond = SimpleNamespace(dropped_unidentified_rows=875)
+
+        assert brs._dropped_rows_note(cond) == (
+            ' · 875 rows without a gene symbol were excluded'
+        )
+
+    def test_note_reads_in_the_singular(self):
+        cond = SimpleNamespace(dropped_unidentified_rows=1)
+
+        assert brs._dropped_rows_note(cond) == (
+            ' · 1 row without a gene symbol was excluded'
+        )
+
+    @pytest.mark.parametrize('value', [0, None])
+    def test_nothing_dropped_or_nothing_recorded_says_nothing(self, value):
+        """An unrecorded count must not be reported as "none dropped"."""
+        assert brs._dropped_rows_note(SimpleNamespace(dropped_unidentified_rows=value)) == ''
+
+    def test_condition_predating_the_field_does_not_break_the_report(self):
+        """The report is assembled from stand-in objects too — no attribute, no crash."""
+        assert brs._dropped_rows_note(SimpleNamespace()) == ''
+
+    def test_html_states_the_discard_for_the_condition(self):
+        conditions = _conditions()
+        conditions[0].dropped_unidentified_rows = 875
+
+        html = brs.generate_batch_html(_batch(), conditions, _comparison_data())
+
+        assert '875 rows without a gene symbol were excluded' in html

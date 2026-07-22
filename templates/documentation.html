@@ -199,6 +199,15 @@ CYP3A4         3.21             0.00001   0.0001
             <strong>Important:</strong> The background is NOT the entire human genome, but rather the genes you provide
             in your input file. This makes the test more appropriate for platform-specific data (e.g., RNA-seq, microarray).
         </div>
+
+        <p>
+            Rows whose gene identifier is blank or a missing-value placeholder
+            (<code>NA</code>, <code>NaN</code>, <code>null</code>, <code>-</code> and similar) cannot be matched to any
+            gene set, so they are discarded during loading and do not count towards the background. The number
+            discarded is reported next to the background size on the results page, in the batch summary and in the
+            generated report &mdash; a large figure usually means the wrong identifier column was chosen, or that the
+            file is poorly annotated.
+        </p>
     </div>
 
     <!-- Section 3: Interpreting Results -->

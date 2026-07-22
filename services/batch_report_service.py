@@ -67,6 +67,26 @@ def batch_method(batch) -> str:
     return (getattr(batch, 'method', None) or 'ora')
 
 
+def _dropped_rows_note(cond) -> str:
+    """Describe the rows a condition's file lost to a missing gene symbol (#103).
+
+    Args:
+        cond: ConditionRecord. ``dropped_unidentified_rows`` is NULL for
+            conditions run before the count was persisted.
+
+    Returns:
+        str: a leading-separator clause ready to append to the condition's
+        gene-count line, or '' when nothing was dropped or nothing was
+        recorded — an unrecorded count must not read as "none dropped".
+    """
+    dropped = getattr(cond, 'dropped_unidentified_rows', None)
+    if not dropped:
+        return ''
+    noun = 'row' if dropped == 1 else 'rows'
+    verb = 'was' if dropped == 1 else 'were'
+    return f' · {dropped:,} {noun} without a gene symbol {verb} excluded'
+
+
 def render_heatmap_png(comparison_data: dict) -> Optional[bytes]:
     """Render the cross-condition comparison heatmap as PNG bytes.
 
@@ -398,6 +418,7 @@ def generate_batch_html(batch, conditions, comparison_data: dict) -> str:
             <p class="section-description">
                 {meta_line}{' — ' if meta_line else ''}
                 {cond.significant_genes or 0:,} significant of {cond.gene_count or 0:,} genes
+                {_dropped_rows_note(cond)}
             </p>
             {f'<p class="note">Key Events: {ke_accounting}</p>' if ke_accounting else ''}
             {enrichment_html}
@@ -458,6 +479,10 @@ def _condition_report_data(batch, cond, enrichment: List[Dict]) -> ReportData:
         filename=cond.filename or cond.condition_label,
         gene_count=cond.gene_count or 0,
         significant_genes=cond.significant_genes or 0,
+        # Issue #103: NULL on conditions run before the count was persisted.
+        # getattr, as elsewhere in this module, so a plain stand-in object with
+        # only the fields a caller cares about still produces a report.
+        dropped_rows=getattr(cond, 'dropped_unidentified_rows', None),
         aop_id=batch.aop_id or '',
         aop_label=batch.aop_label or '',
         logfc_threshold=batch.logfc_threshold,
@@ -619,7 +644,8 @@ def generate_batch_pdf(batch, conditions, comparison_data: dict) -> bytes:
         story.append(Paragraph(f'Condition: {cond.condition_label}', heading_style))
         story.append(Paragraph(
             f"{meta_line}{' — ' if meta_line else ''}"
-            f"{cond.significant_genes or 0:,} significant of {cond.gene_count or 0:,} genes",
+            f"{cond.significant_genes or 0:,} significant of {cond.gene_count or 0:,} genes"
+            f"{_dropped_rows_note(cond)}",
             normal_style,
         ))
         # Issue #65: state the multiple-testing denominator for this condition.

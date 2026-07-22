@@ -114,6 +114,12 @@ class ReportData:
     resource_resolution_text: str = ''
     resource_warnings: Optional[List[str]] = None
 
+    # Issue #103: upload rows discarded for carrying no usable gene identifier.
+    # None means "not recorded" (a run from before the count existed) and is
+    # reported as such — distinct from a recorded zero, which is a real claim
+    # that every row had an identifier.
+    dropped_rows: Optional[int] = None
+
     # Issue #65: tested/excluded Key Event accounting from the enrichment run
     # (see enrichment_service.run_enrichment_analysis). Defaulted to None so
     # existing ReportData(...) constructions remain compatible; when None the
@@ -322,6 +328,11 @@ class ReportGenerator:
                 <div class="stat-item">
                     <label>Total Genes:</label>
                     <span>{report_data.gene_count:,}</span>
+                </div>
+                <div class="stat-item">
+                    <label>Rows Without Gene Symbol:</label>
+                    <span>{'not recorded' if report_data.dropped_rows is None
+                           else f'{report_data.dropped_rows:,} (excluded)'}</span>
                 </div>
                 <div class="stat-item">
                     <label>Significant Genes:</label>
@@ -1102,6 +1113,10 @@ class ReportGenerator:
             ['Minimum Mapping Confidence', report_data.min_confidence_label],  # Issue #60
             ['Filename', report_data.filename],
             ['Total Genes', f"{report_data.gene_count:,}"],
+            # Issue #103: the silent loss, made explicit next to the background.
+            ['Rows Without Gene Symbol',
+             'not recorded' if report_data.dropped_rows is None
+             else f"{report_data.dropped_rows:,} (excluded)"],
             ['Significant Genes', f"{report_data.significant_genes:,}"],
             ['Gene ID Type', report_data.id_type],
         ] + threshold_rows
