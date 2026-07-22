@@ -29,7 +29,17 @@
 <div class="card card--wide">
   <!-- Page title -->
   <h1>Comparison: {{ batch.batch_name or 'Batch Analysis' }}</h1>
-  <p class="compare-subtitle">{{ batch.aop_label }} &mdash; {{ conditions|length }} condition{{ 's' if conditions|length != 1 else '' }}</p>
+  {# Issue #76: say which statistic the page is showing. batch_method is 'ora'
+     for every batch created before the method selector existed. #}
+  <p class="compare-subtitle">
+    {{ batch.aop_label }} &mdash; {{ conditions|length }} condition{{ 's' if conditions|length != 1 else '' }}
+    &mdash;
+    {% if batch_method == 'gsea' %}
+      GSEA (rank-based) &mdash; cells show NES and FDR
+    {% else %}
+      Fisher's exact (over-representation) &mdash; cells show FDR
+    {% endif %}
+  </p>
 
   <!-- Top control bar: mode toggle, reference condition selector, condition colour legend -->
   <div class="compare-controls">
@@ -99,6 +109,17 @@
 
     <!-- Table panel -->
     <div id="tab-table" class="compare-tab-panel" style="display:none">
+      {# Issue #76: name the statistic in the cells so NES and FDR are not confused. #}
+      <p class="compare-genes-note">
+        {% if batch_method == 'gsea' %}
+          Cells show the normalised enrichment score (NES, signed) with the permutation
+          FDR beneath it. Shading marks FDR &lt; 0.05; an unshaded but consistently
+          signed NES across conditions is still a coordinated shift.
+        {% else %}
+          Cells show the Benjamini&ndash;Hochberg FDR from Fisher's exact test.
+          Shading marks FDR &lt; 0.05.
+        {% endif %}
+      </p>
       <div id="comparison-table-wrap"></div>
     </div>
 
@@ -170,6 +191,22 @@
   // ---------------------------------------------------------------------------
   const comparisonData = {{ comparison_data_json | safe }};
   const batchUuid = {{ batch.uuid | tojson }};
+
+  // Issue #76: GSEA batches are compared on the signed NES rather than on the
+  // ORA FDR columns. Matrices produced before #76 carry no 'method' key, which
+  // reads as ORA — the behaviour those batches were rendered with.
+  const isGsea = comparisonData && comparisonData.method === 'gsea';
+
+  /**
+   * The matrix the heatmap, delta mode and the trend arrows are driven from.
+   * NES for a GSEA batch, -log10(FDR) otherwise.
+   *
+   * @returns {Array<Array<number|null>>}
+   */
+  function valueMatrix() {
+    if (isGsea && Array.isArray(comparisonData.nes_matrix)) return comparisonData.nes_matrix;
+    return comparisonData.neg_log10_matrix;
+  }
 
   // ---------------------------------------------------------------------------
   // Global state
@@ -321,11 +358,13 @@
   /** Return a trend arrow for a KE row across the ordered conditions, or '' if not orderable. */
   function trendArrow(rowIdx) {
     if (!_trendEnabled) return '';
-    var row = comparisonData.neg_log10_matrix[rowIdx] || [];
+    // #76: follow the quantity the page is comparing on — NES under GSEA.
+    var row = valueMatrix()[rowIdx] || [];
     var vals = row.map(function (v) { return v === null || v === undefined ? 0 : v; });
     if (vals.length < 2) return '';
     var delta = vals[vals.length - 1] - vals[0];
-    var eps = 0.3;  // ~2x FDR change on the -log10 scale
+    // ~2x FDR change on the -log10 scale; a comparable NES step under GSEA.
+    var eps = isGsea ? 0.5 : 0.3;
     if (delta > eps) return '↗';
     if (delta < -eps) return '↘';
     return '↔';
@@ -438,15 +477,16 @@
   // ---------------------------------------------------------------------------
 
   /**
-   * Compute the delta -log10(FDR) matrix relative to a reference condition column.
-   * For each KE row: delta[ke][cond] = neg_log10[ke][cond] - neg_log10[ke][refIndex].
+   * Compute the delta matrix relative to a reference condition column.
+   * For each KE row: delta[ke][cond] = value[ke][cond] - value[ke][refIndex],
+   * where value is NES for a GSEA batch and -log10(FDR) otherwise (#76).
    * If either value is null the delta cell is null.
    *
    * @param {number} refIndex - 0-based column index of the reference condition.
    * @returns {Array<Array<number|null>>} Delta matrix (rows=KEs, cols=conditions).
    */
   function computeDeltaMatrix(refIndex) {
-    return comparisonData.neg_log10_matrix.map(function (row) {
+    return valueMatrix().map(function (row) {
       return row.map(function (val, colIdx) {
         var refVal = row[refIndex];
         if (val === null || refVal === null) return null;
@@ -470,7 +510,19 @@
     var zData, xLabels, colorscale, zmin, zmax, zmid, reversescale, hovertmpl;
     var conditionCount = comparisonData.condition_labels.length;
 
-    if (mode === 'absolute') {
+    if (mode === 'absolute' && isGsea) {
+      // GSEA (#76): colour on the signed NES with a diverging scale centred at
+      // zero, so a coordinated upward shift and a downward one are not both
+      // rendered as "significant". Server clamps NES to +/-3; match that here.
+      zData   = comparisonData.nes_matrix;
+      xLabels = comparisonData.condition_labels;
+      colorscale = 'RdBu';
+      reversescale = true; // red = positive NES (coordinated up-regulation)
+      zmin = -3;
+      zmax = 3;
+      zmid = 0;
+      hovertmpl = '<b>%{y}</b><br>%{x}: NES %{z:+.2f}<extra></extra>';
+    } else if (mode === 'absolute') {
       zData   = comparisonData.neg_log10_matrix;
       xLabels = comparisonData.condition_labels;
       colorscale = [
@@ -507,8 +559,16 @@
       zmin = undefined;
       zmax = undefined;
       zmid = 0;
-      hovertmpl = '<b>%{y}</b><br>%{x}: %{z:+.2f} (delta -log10 FDR)<extra></extra>';
+      hovertmpl = isGsea
+        ? '<b>%{y}</b><br>%{x}: %{z:+.2f} (delta NES)<extra></extra>'
+        : '<b>%{y}</b><br>%{x}: %{z:+.2f} (delta -log10 FDR)<extra></extra>';
     }
+
+    // Colourbar label follows the quantity actually plotted (#76).
+    var absoluteLabel = isGsea ? 'NES' : '-log10(FDR)';
+    var colorbarLabel = (mode === 'delta')
+      ? ('delta ' + absoluteLabel)
+      : absoluteLabel;
 
     var trace = {
       type: 'heatmap',
@@ -519,10 +579,16 @@
       connectgaps: false,
       hovertemplate: hovertmpl,
       showscale: true,
-      colorbar: { title: { text: mode === 'delta' ? 'delta -log10(FDR)' : '-log10(FDR)', font: { size: 12 } } }
+      colorbar: { title: { text: colorbarLabel, font: { size: 12 } } }
     };
 
-    if (mode === 'absolute') {
+    if (mode === 'absolute' && isGsea) {
+      // Diverging NES scale: fixed +/-3 domain centred on zero.
+      trace.zmin = zmin;
+      trace.zmax = zmax;
+      trace.zmid = zmid;
+      trace.reversescale = reversescale;
+    } else if (mode === 'absolute') {
       trace.zmin = zmin;
       trace.zmax = zmax;
     } else {
@@ -622,7 +688,8 @@
     });
     // Trend column (Feature D) — only when conditions form a numeric sequence.
     if (_trendEnabled) {
-      headerCells += '<th title="Trend of -log10(FDR) across conditions in order">Trend</th>';
+      headerCells += '<th title="Trend of ' + (isGsea ? 'NES' : '-log10(FDR)')
+        + ' across conditions in order">Trend</th>';
       subHeaderCells += '<th></th>';
     }
 
@@ -635,9 +702,29 @@
 
         var displayVal, sortVal, isSig, cellStyle = '', cellClass = '';
         var fdrVal = comparisonData.fdr_matrix[ke] ? comparisonData.fdr_matrix[ke][col] : null;
-        var neg10Val = comparisonData.neg_log10_matrix[ke] ? comparisonData.neg_log10_matrix[ke][col] : null;
+        var valRow = valueMatrix()[ke] || [];
+        var neg10Val = valRow[col] === undefined ? null : valRow[col];
+        var nesVal = (isGsea && comparisonData.nes_matrix[ke])
+          ? comparisonData.nes_matrix[ke][col] : null;
 
-        if (mode === 'absolute') {
+        if (mode === 'absolute' && isGsea) {
+          // GSEA (#76): NES carries the direction and magnitude, FDR the
+          // confidence — showing only one of them loses half the result.
+          if (nesVal === null || nesVal === undefined) {
+            displayVal = '&mdash;';
+            sortVal = 'Infinity';
+            isSig = false;
+          } else {
+            var fdrText = (fdrVal === null || fdrVal === undefined)
+              ? 'n/a' : fdrVal.toExponential(2);
+            displayVal = (nesVal >= 0 ? '+' : '') + nesVal.toFixed(2)
+              + '<span style="color:#777;font-size:11px;"> q=' + fdrText + '</span>';
+            // Sort on NES descending-friendly magnitude; keep raw NES so the
+            // column sorts by direction as displayed.
+            sortVal = String(nesVal);
+            isSig = (fdrVal !== null && fdrVal !== undefined && fdrVal < 0.05);
+          }
+        } else if (mode === 'absolute') {
           if (fdrVal === null || fdrVal === undefined) {
             displayVal = '&mdash;';
             sortVal = 'Infinity';
@@ -648,8 +735,8 @@
             isSig = fdrVal < 0.05;
           }
         } else {
-          // Delta mode: delta = neg_log10[ke][col] - neg_log10[ke][refIndex]
-          var refNeg10 = comparisonData.neg_log10_matrix[ke] ? comparisonData.neg_log10_matrix[ke][refIndex] : null;
+          // Delta mode: delta of the active value matrix (NES under GSEA).
+          var refNeg10 = valRow[refIndex] === undefined ? null : valRow[refIndex];
           if (neg10Val === null || neg10Val === undefined || refNeg10 === null || refNeg10 === undefined) {
             displayVal = '&mdash;';
             sortVal = 'Infinity';
@@ -1235,16 +1322,18 @@
       xValues = (deltaMatrix[rowIdx] || []).map(function (v) {
         return v === null ? 0 : v;
       });
-      xAxisTitle = 'Delta -log10(FDR)';
+      xAxisTitle = isGsea ? 'Delta NES' : 'Delta -log10(FDR)';
       thresholdX = 0;
       thresholdLabel = 'Reference';
     } else {
-      xValues = (comparisonData.neg_log10_matrix[rowIdx] || []).map(function (v) {
+      // #76: under GSEA the bar is the signed NES, so the reference line is
+      // zero (no coordinated shift) rather than the FDR cutoff.
+      xValues = (valueMatrix()[rowIdx] || []).map(function (v) {
         return v === null ? 0 : v;
       });
-      xAxisTitle = '-log10(FDR)';
-      thresholdX = 1.301;   // -log10(0.05)
-      thresholdLabel = 'FDR=0.05';
+      xAxisTitle = isGsea ? 'NES' : '-log10(FDR)';
+      thresholdX = isGsea ? 0 : 1.301;   // -log10(0.05)
+      thresholdLabel = isGsea ? 'NES=0' : 'FDR=0.05';
     }
 
     var condCount = comparisonData.condition_labels.length;

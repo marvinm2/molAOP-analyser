@@ -193,6 +193,17 @@ class BatchRecord(Base):
     aop_label = Column(String(500))
 
     # Shared analysis parameters
+    # Issue #76: enrichment method applied to every condition in the batch
+    # ('ora' or 'gsea'). NULL for rows written before #76 — coerced to 'ora'
+    # on read so pre-existing batches keep opening, exporting and comparing
+    # exactly as they did.
+    #
+    # The column deliberately lives here and not on ``batch_conditions``: the
+    # method is a batch-level parameter, like logfc_threshold, pval_cutoff,
+    # selected_resources and min_confidence. Cross-condition comparison is only
+    # meaningful when every condition was scored the same way, so a per-
+    # condition column could only ever encode an invalid state.
+    method = Column(String(20))
     logfc_threshold = Column(Float)
     pval_cutoff = Column(Float)
     # Issue #55: comma-separated gene-set resources used (e.g. "WikiPathways, GO_BP").
@@ -229,6 +240,19 @@ class BatchRecord(Base):
         back_populates='batch',
         order_by='ConditionRecord.position',
     )
+
+    def effective_method(self) -> str:
+        """Return the enrichment method this batch was run with.
+
+        Coerces NULL to ``'ora'`` (issue #76), the behaviour of every batch
+        created before the method column existed. Callers should use this
+        rather than reading ``.method`` directly so a legacy batch never
+        reaches a GSEA-only code path.
+
+        Returns:
+            ``'ora'`` or ``'gsea'``.
+        """
+        return self.method or 'ora'
 
 
 class ConditionRecord(Base):
@@ -314,10 +338,15 @@ def cleanup_expired_batches(session):
 def _ensure_method_column(engine) -> None:
     """Idempotent PRAGMA-then-ALTER migration for the 'method' column.
 
-    Adds ``method TEXT DEFAULT 'ora'`` to both ``experiments`` and
-    ``shared_results`` tables when the column is absent.  Safe to run on
-    every startup — the PRAGMA check makes the ALTER a no-op on databases
-    that already have the column (D-04, D-06).
+    Adds ``method TEXT DEFAULT 'ora'`` to the ``experiments``,
+    ``shared_results`` and ``batches`` tables when the column is absent.
+    Safe to run on every startup — the PRAGMA check makes the ALTER a no-op
+    on databases that already have the column (D-04, D-06, #76).
+
+    ``batches`` joined the list with issue #76, which gave batch runs a
+    method selector. Existing rows keep NULL, read back as ``'ora'`` by
+    :meth:`BatchRecord.effective_method`, so a batch created before the
+    change still opens, runs, exports and compares as ORA.
 
     Security note: both table names and the column literal are module-internal
     constants — no user-supplied input is interpolated into the SQL statements.
@@ -325,7 +354,7 @@ def _ensure_method_column(engine) -> None:
     Args:
         engine: SQLAlchemy engine bound to the target database.
     """
-    for table in ('experiments', 'shared_results'):
+    for table in ('experiments', 'shared_results', 'batches'):
         with engine.connect() as conn:
             result = conn.execute(text(f"PRAGMA table_info({table})"))
             existing_cols = {row[1] for row in result}

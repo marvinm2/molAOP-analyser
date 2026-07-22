@@ -10,6 +10,30 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Added
 
+- **Batch analysis can now run GSEA, not only Fisher/ORA** (#76). Batch mode existed to
+  compare conditions — compound, dose, timepoint — yet it was hardwired to the one method
+  that is worst suited to that job: over-representation asks whether a thresholded gene list
+  is unusually full of a Key Event's genes, and answers per condition in isolation. GSEA asks
+  whether a Key Event's genes shift coherently in the ranking, which is exactly the quantity
+  worth reading down a dose series. On a nine-condition platinum/AOP-472 dataset the two
+  disagree informatively: KE 1194 (DNA damage) reaches significance in 2 of 9 conditions by
+  ORA and 7 of 9 by GSEA, and KE 177 (mitochondrial dysfunction) is called *depleted* by ORA
+  while GSEA shows coordinated positive enrichment — small per-gene effects with a consistent
+  upward bias, which a threshold discards by construction. Getting that table before meant
+  running every condition as a separate single analysis and assembling NES and FDR by hand,
+  which also threw away the harmonised background that makes batch results comparable at all.
+
+  The batch form gains the same method selector as the single-analysis form (selecting GSEA
+  hides the thresholds, which it ignores), the method is stored on the batch rather than per
+  condition so every condition is scored identically, and the comparison view switches to
+  NES + FDR: the heatmap colours on the signed NES over a diverging scale centred at zero, so
+  a coordinated up-shift and a down-shift are no longer both rendered as "significant", and
+  the matrix keeps a sub-threshold NES rather than blanking it, because a consistent weak
+  signal across a dose series is itself the observation. `batches.method` is added by the
+  established idempotent PRAGMA-then-ALTER migration, and a NULL — every batch created before
+  this change — reads back as `ora`, so existing batches still open, run, export and compare
+  exactly as they did.
+
 - **The AOP picker can now be populated from the molAOP Builder** (#3). The Builder gained
   `GET /api/v1/aops` (builder #207), which returns whole AOPs — title, KE count, and mapping
   coverage split across WikiPathways / GO / Reactome — rather than the bare KE IDs that were

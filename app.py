@@ -1995,7 +1995,8 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
                               timepoints, id_col, fc_col, pval_col, aop_id,
                               logfc_threshold, pval_threshold, resources,
                               harmonised_genes, batch_name, owner, description,
-                              min_confidence=DEFAULT_MIN_CONFIDENCE):
+                              min_confidence=DEFAULT_MIN_CONFIDENCE,
+                              method='ora'):
     """Create the BatchRecord + ConditionRecords and launch run_batch in a thread.
 
     Shared by the interactive batch wizard (/batch/analyze) and the one-click
@@ -2013,6 +2014,8 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
         batch_name/owner/description: batch metadata.
         min_confidence: issue #60 minimum KE-mapping confidence ('all',
             'medium' or 'high'); applied to every condition in the batch.
+        method: issue #76 enrichment method ('ora' or 'gsea'); applied to
+            every condition so the comparison matrix stays comparable.
 
     Returns:
         The new BatchRecord primary key.
@@ -2039,6 +2042,7 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
             status='pending',
             aop_id=aop_id,
             aop_label=aop_label,
+            method=method,  # Issue #76
             logfc_threshold=logfc_threshold,
             pval_cutoff=pval_threshold,
             selected_resources=", ".join(resources),
@@ -2073,7 +2077,10 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
 
         session_db.commit()
         batch_id = batch.id
-        logger.info(f'_persist_and_launch_batch: BatchRecord {batch_id} created ({len(filenames)} conditions)')
+        logger.info(
+            f'_persist_and_launch_batch: BatchRecord {batch_id} created '
+            f'({len(filenames)} conditions, method={method})'
+        )
     except Exception:
         session_db.rollback()
         raise
@@ -2128,6 +2135,15 @@ def batch_analyze():
     pval_col = request.form.get('pval_col', '').strip()
     if not (id_col and fc_col and pval_col):
         return jsonify({'error': 'Column mapping (id_col, fc_col, pval_col) is required'}), 400
+
+    # Issue #76: enrichment method, applied to every condition in the batch.
+    # Whitelisted here exactly as /analyze does (T-14-01); a blank field is the
+    # pre-#76 behaviour, ORA.
+    method = (request.form.get('method') or 'ora').strip().lower()
+    if method not in ('ora', 'gsea'):
+        return jsonify({
+            'error': "Invalid method. Choose Fisher's exact or GSEA on the batch form."
+        }), 400
 
     try:
         logfc_threshold = float(request.form.get('logfc_threshold', '0.0'))
@@ -2227,6 +2243,7 @@ def batch_analyze():
             fc_col=fc_col,
             pval_col=pval_col,
             aop_id=aop_id,
+            method=method,  # Issue #76
             logfc_threshold=logfc_threshold,
             pval_threshold=pval_threshold,
             resources=resources,
@@ -2532,7 +2549,10 @@ def batch_compare(batch_uuid_str):
         )
 
         # Build comparison matrix while session is still open (conditions bound to session).
-        comparison_data = build_comparison_matrix(conditions)
+        # Issue #76: a GSEA batch is compared on NES, not on the ORA columns.
+        # effective_method() reads NULL (pre-#76 batches) as 'ora'.
+        batch_method = batch.effective_method()
+        comparison_data = build_comparison_matrix(conditions, method=batch_method)
         comparison_data_json = json.dumps(comparison_data)
 
         # Extract the first complete condition's network_json for the comparison network.
@@ -2552,6 +2572,7 @@ def batch_compare(batch_uuid_str):
             'compare.html',
             batch=batch,
             conditions=conditions,
+            batch_method=batch_method,
             comparison_data_json=comparison_data_json,
             network_json=json.dumps(first_network) if first_network else 'null',
         )
