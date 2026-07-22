@@ -410,7 +410,36 @@ def parse_gmt_reference_sets(gmt_text):
     return reference_sets
 
 
-def fetch_gmt_reference_sets(config, resource):
+def gmt_min_confidence_param(min_confidence):
+    """Translate our confidence vocabulary into the Builder's query param (#71).
+
+    The two vocabularies do not match. Ours is
+    :data:`helpers.VALID_MIN_CONFIDENCE` — ``("all", "medium", "high")``, where
+    ``all`` is a sentinel meaning "do not filter". The Builder's whitelist is
+    ``{high, medium, low}``, and ``all`` is **not in it**: forwarding it
+    verbatim returns HTTP 400 and loses the resource for the whole run. So
+    ``all`` becomes an omitted parameter, which under the post-builder#206
+    semantics is exactly equivalent (``low`` is also equivalent, but omitting
+    says what we mean).
+
+    Args:
+        min_confidence: a value from ``VALID_MIN_CONFIDENCE``. Anything
+            unrecognised is treated as ``all`` — an unfiltered gene set is the
+            safe failure here, since the alternative is a 400 that skips the
+            resource entirely.
+
+    Returns:
+        dict: query params for ``requests``; empty when no filtering applies.
+        The Builder matches case-insensitively (verified live 2026-07-22
+        against `High`/`high`/`HIGH`), so our lowercase values go through
+        unchanged.
+    """
+    if min_confidence in ("medium", "high"):
+        return {"min_confidence": min_confidence}
+    return {}
+
+
+def fetch_gmt_reference_sets(config, resource, min_confidence=DEFAULT_MIN_CONFIDENCE):
     """Fetch KE-to-gene reference sets for a resource from the Builder GMT export.
 
     Used for resources whose genes are resolved Builder-side and exposed via the
@@ -425,6 +454,19 @@ def fetch_gmt_reference_sets(config, resource):
     resource : str
         Resource key, one of :data:`GMT_RESOURCE_PATHS` (``"GO_BP"`` or
         ``"Reactome"``).
+    min_confidence : str
+        Issue #71 threshold, from :data:`helpers.VALID_MIN_CONFIDENCE`.
+        Forwarded to the Builder as ``?min_confidence=`` via
+        :func:`gmt_min_confidence_param`.
+
+        This became possible only with **molAOP-builder#206** (2026-07-22).
+        Before that the parameter selected a *single tier*, so passing
+        ``medium`` returned medium-confidence mappings and dropped every
+        high-confidence one — the opposite of what the name promises, and the
+        reason the Analyser disclosed the limitation instead of forwarding the
+        threshold. It now means at-or-above, and mappings with no recorded
+        confidence are always included, so a threshold can never silently
+        empty an export.
 
     Returns
     -------
@@ -445,15 +487,18 @@ def fetch_gmt_reference_sets(config, resource):
         raise ValueError(f"Unknown GMT resource: {resource!r}")
 
     url = f"{config.BUILDER_API_URL.rstrip('/')}/{GMT_RESOURCE_PATHS[resource]}"
+    params = gmt_min_confidence_param(min_confidence)
     session = _make_api_session()
-    response = session.get(url, timeout=config.BUILDER_API_TIMEOUT)
+    response = session.get(url, params=params, timeout=config.BUILDER_API_TIMEOUT)
     response.raise_for_status()
 
     reference_sets = parse_gmt_reference_sets(response.text)
     logger.info(
-        "Loaded %d KE gene sets for resource %s from GMT export %s",
+        "Loaded %d KE gene sets for resource %s from GMT export %s (min_confidence=%s%s)",
         len(reference_sets),
         resource,
         url,
+        min_confidence,
+        "" if params else ", sent unfiltered",
     )
     return reference_sets

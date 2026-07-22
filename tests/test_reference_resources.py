@@ -289,13 +289,18 @@ class TestConfidenceScopedCacheKeys:
         fake_cache.set.side_effect = lambda key, value, expire=None: store.__setitem__(key, value)
         monkeypatch.setattr(app, "_reference_cache", fake_cache)
 
-        # GMT exports carry no confidence field, so the sets are identical --
-        # but they must still be stored under distinct, threshold-scoped keys.
+        # Since #71 the threshold is forwarded to the Builder, so the three
+        # levels genuinely fetch different gene sets -- the threshold-scoped
+        # cache key stops a 'high' run being served the sets cached for 'all'.
         with patch.object(app, "fetch_gmt_reference_sets", return_value={"KE:1115": {"SOD1"}}) as fetch:
             app._load_gmt_resource_reference_sets("GO_BP", "all")
             app._load_gmt_resource_reference_sets("GO_BP", "high")
         assert fetch.call_count == 2
         assert len(store) == 2
+        # The threshold reaches the fetch, not just the cache key.
+        assert [c.kwargs.get("min_confidence") for c in fetch.call_args_list] == [
+            "all", "high"
+        ]
 
 
 class TestCachePreservesOriginalSource:
@@ -402,9 +407,16 @@ class TestResourceResolutionRecording:
 
 
 class TestConfidenceApplicabilityIsRecorded:
-    """Issue #67: the threshold only bites where mappings carry a confidence."""
+    """Issue #67/#71: the threshold only bites where it was actually applied."""
 
-    def test_gmt_resources_are_marked_unfiltered(self):
+    def test_gmt_resources_are_filtered_since_71(self):
+        """Was the inverse assertion until 2026-07-22.
+
+        Until molAOP-builder#206 the GMT `?min_confidence=` selected a single
+        tier, so forwarding the threshold would have dropped the *best*-evidenced
+        mappings; the Analyser disclosed the limitation instead. #206 made it a
+        real minimum and #71 forwards it, so all three resources now filter.
+        """
         wp = {"KE:1": {"A"}}
         go = {"KE:1": {"B"}}
         with patch.object(app, "_load_wikipathways_reference_sets", return_value=(wp, "api", [], {})), \
@@ -414,10 +426,20 @@ class TestConfidenceApplicabilityIsRecorded:
             )
         by_resource = {e["resource"]: e for e in resolution}
         assert by_resource["WikiPathways"]["confidence_applied"] is True
-        assert by_resource["GO_BP"]["confidence_applied"] is False
+        assert by_resource["GO_BP"]["confidence_applied"] is True
 
+        # And the run must stop disclosing a limitation it no longer has.
         warnings = app.resource_resolution_warnings(resolution, "high")
-        assert any("GO_BP" in w and "confidence field" in w for w in warnings)
+        assert not any("confidence field" in w for w in warnings), warnings
+
+    def test_a_gmt_resource_served_from_cache_of_a_live_fetch_still_counts(self):
+        """The filtering happened Builder-side before the response was cached."""
+        go = {"KE:1": {"B"}}
+        with patch.object(app, "_load_gmt_resource_reference_sets", return_value=(go, "cache(api)")):
+            _, _, resolution = app.load_cached_reference_sets(
+                ["GO_BP"], min_confidence="high"
+            )
+        assert resolution[0]["confidence_applied"] is True
 
     def test_csv_fallback_cannot_apply_the_threshold_either(self):
         """KE-WP.csv has no confidence column, so 'high' is a no-op there too."""

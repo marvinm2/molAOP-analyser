@@ -88,6 +88,67 @@ class TestFetchGmtReferenceSets:
         with pytest.raises(ValueError):
             fetch_gmt_reference_sets(self._config(url=""), "Reactome")
 
+    def _captured_params(self, min_confidence):
+        """Run a fetch and return the query params actually sent."""
+        mock_resp = MagicMock()
+        mock_resp.text = SAMPLE_GMT
+        mock_resp.raise_for_status = MagicMock()
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_resp
+
+        import services.api_service as api_svc
+        with patch.object(api_svc, "_make_api_session", return_value=mock_session):
+            fetch_gmt_reference_sets(
+                self._config(), "GO_BP", min_confidence=min_confidence
+            )
+        return mock_session.get.call_args.kwargs.get("params")
+
+    def test_threshold_is_forwarded_to_the_builder(self):
+        """Issue #71: the whole point — the GMT export does the filtering."""
+        assert self._captured_params("high") == {"min_confidence": "high"}
+        assert self._captured_params("medium") == {"min_confidence": "medium"}
+
+    def test_all_is_sent_as_an_omitted_parameter_not_forwarded(self):
+        """`all` is our sentinel and is NOT in the Builder's whitelist.
+
+        Forwarding it verbatim returns HTTP 400, which would skip the resource
+        for the whole run — a silently narrower analysis, not a visible error.
+        """
+        assert self._captured_params("all") == {}
+
+    def test_unrecognised_threshold_degrades_to_unfiltered(self):
+        """An unfiltered gene set beats a 400 that drops the resource."""
+        assert self._captured_params("bogus") == {}
+        assert self._captured_params(None) == {}
+
+
+class TestGmtMinConfidenceParam:
+    """Issue #71: the vocabulary mismatch that makes this translation necessary.
+
+    Ours is ("all", "medium", "high"); the Builder's whitelist is
+    {high, medium, low}. The overlap is partial in both directions, so the
+    mapping is stated explicitly rather than assumed.
+    """
+
+    def test_our_vocabulary_maps_cleanly(self):
+        from services.api_service import gmt_min_confidence_param
+
+        assert gmt_min_confidence_param("high") == {"min_confidence": "high"}
+        assert gmt_min_confidence_param("medium") == {"min_confidence": "medium"}
+        assert gmt_min_confidence_param("all") == {}
+
+    def test_never_emits_a_value_outside_the_builder_whitelist(self):
+        """Anything we send must be one the Builder accepts, or the run loses
+        the resource. Enumerated rather than spot-checked."""
+        from helpers import VALID_MIN_CONFIDENCE
+        from services.api_service import gmt_min_confidence_param
+
+        builder_whitelist = {"high", "medium", "low"}
+        for value in VALID_MIN_CONFIDENCE:
+            params = gmt_min_confidence_param(value)
+            if params:
+                assert params["min_confidence"] in builder_whitelist
+
 
 class TestFilterRecordsByConfidence:
     """Issue #60: minimum KE-mapping confidence filtering of raw records."""

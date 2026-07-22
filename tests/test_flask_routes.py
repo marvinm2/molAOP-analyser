@@ -1880,7 +1880,14 @@ class TestResourceProvenanceOnResultsPage:
         assert b'left out of this' in body
 
     def test_confidence_applicability_is_disclosed(self, authenticated_client):
-        """A 'high only' run over GMT resources is not filtered throughout."""
+        """An unfiltered resource is still disclosed — with an honest reason.
+
+        Since #71 a GMT resource is filtered on its live path, so this shape
+        (Reactome loaded but unfiltered) is what a run *recorded before #71*
+        replays as. The page must say the threshold was not applied without
+        blaming the bundled reference files: GO BP and Reactome have no bundled
+        fallback, so that explanation would be false — the #108 failure mode.
+        """
         resolution = [
             {'resource': 'WikiPathways', 'status': 'loaded', 'source': 'api',
              'ke_count': 1, 'confidence_applied': True, 'error': None},
@@ -1889,7 +1896,18 @@ class TestResourceProvenanceOnResultsPage:
         ]
         response = self._analyze(authenticated_client, resolution, min_confidence='high')
         assert response.status_code == 200
-        assert b'carries no confidence field' in response.data
+        assert b'was not applied to Reactome' in response.data
+        assert b'bundled' not in response.data
+
+    def test_csv_fallback_is_still_blamed_on_the_bundled_files(self, authenticated_client):
+        """WikiPathways *does* have a bundled fallback, so name it."""
+        resolution = [
+            {'resource': 'WikiPathways', 'status': 'loaded', 'source': 'cache(csv)',
+             'ke_count': 1, 'confidence_applied': False, 'error': None},
+        ]
+        response = self._analyze(authenticated_client, resolution, min_confidence='high')
+        assert response.status_code == 200
+        assert b'bundled reference files' in response.data
 
     def test_clean_run_shows_provenance_without_a_warning(self, authenticated_client):
         resolution = [

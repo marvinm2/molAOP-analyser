@@ -1458,27 +1458,43 @@ RESOURCE_SOURCE_LABELS = {
     'gmt': 'Builder GMT export',
 }
 
-# Issue #67 — the minimum-confidence threshold can only be applied where the
-# mappings carry a confidence field. That is the Builder's mapping API, which
-# serves WikiPathways; the GMT exports behind GO_BP/Reactome have no such
-# field, and neither does the bundled KE-WP.csv fallback. So applicability is a
-# function of BOTH the resource and where its gene sets came from.
-CONFIDENCE_FILTERABLE_RESOURCES = ('WikiPathways',)
+# Issue #67/#71 — the minimum-confidence threshold can only be applied where the
+# mappings carry a confidence field AND the path that served them honours it.
+#
+# All three resources now qualify. WikiPathways is filtered here, from the
+# Builder's mapping API. GO_BP and Reactome are filtered Builder-side: their GMT
+# exports gained real threshold semantics in molAOP-builder#206 (2026-07-22) and
+# the Analyser forwards `?min_confidence=` since #71. Before that the parameter
+# selected a single tier, so forwarding it would have dropped the
+# best-evidenced mappings — which is why this tuple held WikiPathways alone.
+#
+# The bundled KE-WP.csv fallback still carries no confidence column, so
+# applicability remains a function of BOTH the resource and where its gene sets
+# came from: a WikiPathways run served from the CSVs is still unfiltered.
+CONFIDENCE_FILTERABLE_RESOURCES = ('WikiPathways', 'GO_BP', 'Reactome')
 CONFIDENCE_FILTERABLE_SOURCES = ('api', 'cache(api)')
+
+# Resources that can fall back to reference files bundled in the image. Only
+# WikiPathways has one (data/KE-WP.csv + edges_wpid_to_gene.csv); a GMT resource
+# with no Builder is simply skipped. Kept separate from the filterable list so a
+# warning can attribute an unfiltered resource to the *right* cause.
+CSV_FALLBACK_RESOURCES = ('WikiPathways',)
 
 
 def _confidence_was_applicable(resource, source):
-    """Could the minimum-confidence threshold act on this resource? (#67)
+    """Could the minimum-confidence threshold act on this resource? (#67, #71)
 
     Args:
         resource: resource key from VALID_RESOURCES.
         source: where its gene sets came from ('api', 'cache(csv)', ...).
 
     Returns:
-        bool: True only when the mappings carry a confidence field — the
-        Builder mapping API's WikiPathways mappings. Everything else is a
-        documented no-op that the UI and reports must disclose rather than
-        imply a filter that never ran.
+        bool: True when the run's gene sets for this resource were actually
+        filtered — every resource served live (or from a cache of a live
+        response), since #71 made the GMT resources filterable too. False for
+        the bundled-CSV path, which carries no confidence column and is a
+        documented no-op the UI and reports must disclose rather than imply a
+        filter that never ran.
     """
     return (
         resource in CONFIDENCE_FILTERABLE_RESOURCES
@@ -1661,10 +1677,11 @@ def _load_gmt_resource_reference_sets(resource, min_confidence=DEFAULT_MIN_CONFI
 
     Args:
         resource: 'GO_BP' or 'Reactome'.
-        min_confidence: issue #60 threshold. The GMT exports carry no confidence
-            field, so filtering is a no-op for these resources — but the cache
-            key is still scoped by the threshold so entries can never leak
-            across levels.
+        min_confidence: issue #60 threshold, forwarded to the Builder's GMT
+            export as ``?min_confidence=`` since issue #71. The cache key is
+            scoped by the threshold, which now matters materially rather than
+            defensively: the three thresholds fetch three different gene sets,
+            so a shared key would serve a 'high' run the sets cached for 'all'.
 
     Returns:
         tuple: (reference_sets dict, source string) where source is 'api' or
@@ -1682,7 +1699,9 @@ def _load_gmt_resource_reference_sets(resource, min_confidence=DEFAULT_MIN_CONFI
         )
         return reference_sets, f"cache({original_source})"
 
-    reference_sets = fetch_gmt_reference_sets(Config, resource)
+    reference_sets = fetch_gmt_reference_sets(
+        Config, resource, min_confidence=min_confidence
+    )
     _reference_cache.set(
         cache_key,
         (reference_sets, "api"),
@@ -2019,24 +2038,30 @@ def resource_resolution_warnings(resolution, min_confidence=DEFAULT_MIN_CONFIDEN
         )
 
     if min_confidence != DEFAULT_MIN_CONFIDENCE:
-        # Two different reasons the threshold did nothing, worth telling apart:
-        # the resource has no confidence field at all, or it does but this run
-        # took a path that does not carry it (the bundled CSVs).
-        no_field = [
+        # Two different reasons the threshold did nothing, worth telling apart —
+        # and the reason must be attributed from the resource's own fallback
+        # path, not inferred from the filterable list. Since #71 every resource
+        # is filterable on its live path, so an unfiltered entry means either a
+        # bundled-CSV fallback (WikiPathways only) or a run recorded before #71.
+        # Blaming the bundled files for a GMT resource would be a false
+        # statement of the same kind #108 was about: GO_BP and Reactome have no
+        # bundled fallback, so they can never have been served from one.
+        unfiltered = [
             e['resource'] for e in resolution
             if e.get('status') == 'loaded' and not e.get('confidence_applied')
-            and e['resource'] not in CONFIDENCE_FILTERABLE_RESOURCES
         ]
         no_field_this_run = [
-            e['resource'] for e in resolution
-            if e.get('status') == 'loaded' and not e.get('confidence_applied')
-            and e['resource'] in CONFIDENCE_FILTERABLE_RESOURCES
+            r for r in unfiltered if r in CSV_FALLBACK_RESOURCES
         ]
-        if no_field:
+        unfiltered_unattributed = [
+            r for r in unfiltered if r not in CSV_FALLBACK_RESOURCES
+        ]
+        if unfiltered_unattributed:
             warnings.append(
-                f"The minimum mapping confidence filtered the Builder's curated "
-                f"mappings only. {', '.join(no_field)} carries no confidence field, "
-                f"so its gene sets are unfiltered."
+                f"The minimum mapping confidence was not applied to "
+                f"{', '.join(unfiltered_unattributed)}; those gene sets are "
+                f"unfiltered. Runs recorded before this became possible report "
+                f"it this way."
             )
         if no_field_this_run:
             warnings.append(
