@@ -1224,7 +1224,18 @@ def generate_report():
                 'description': request.form.get('description', '')
             }
             logger.info(f"Created metadata from form data: {metadata}")
-        
+
+        # Issue #74: the results page always posts the dataset identity, so the
+        # posted values win over the session's. Without this a report exported
+        # from a batch condition page carried the dataset name, stressor,
+        # dosing and owner of whatever single analysis the browser last ran —
+        # the page described one run and its PDF described another. Keyed on
+        # presence rather than truth so an intentionally blank field stays blank.
+        metadata = dict(metadata)
+        for field in ('dataset_id', 'stressor', 'dosing', 'owner', 'description'):
+            if field in request.form:
+                metadata[field] = request.form.get(field, '')
+
         # Extract report data from form/session
         try:
             enrichment_results_str = request.form.get('enrichment_results', '[]')

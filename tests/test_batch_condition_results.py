@@ -58,13 +58,14 @@ def _gene(symbol, log2fc, significant, pvalue_adj=None):
 
 
 def _seed(db_manager, *, selected_resources='WikiPathways, GO_BP, Reactome',
-          resolution=_RESOLUTION, min_confidence='all'):
+          resolution=_RESOLUTION, min_confidence='all', pval_cutoff=0.05):
     """Create one complete batch with a single complete condition."""
     session = db_manager.get_session()
     try:
         batch = BatchRecord(
             uuid='22222222-2222-2222-2222-222222222222', status='complete',
-            aop_id='AOP:1', aop_label='Test AOP', logfc_threshold=1.0, pval_cutoff=0.05,
+            aop_id='AOP:1', aop_label='Test AOP', logfc_threshold=1.0,
+            pval_cutoff=pval_cutoff,
             selected_resources=selected_resources,
             min_confidence=min_confidence,
             resource_resolution=json.dumps(resolution) if resolution else None,
@@ -220,6 +221,16 @@ class TestRunSettingsProvenance:
         assert _hidden_field(html, 'fc_column') == 'logFC'
         assert _hidden_field(html, 'pval_column') == 'adj.P.Val'
 
+    def test_pvalue_cutoff_posted_to_the_report_is_the_batch_cutoff(
+        self, condition_client
+    ):
+        """The field was the literal 0.05, so a stricter batch exported a
+        report claiming a cutoff it had never been run at."""
+        client, uuid = condition_client(pval_cutoff=0.01)
+        html = client.get(f'/batch/{uuid}/condition/0').get_data(as_text=True)
+        assert _metadata_value(html, 'P-value Cutoff') == '0.01'
+        assert _hidden_field(html, 'pval_cutoff') == '0.01'
+
 
 class TestConditionMethod:
     """The page must render and export the method the batch actually ran."""
@@ -313,3 +324,30 @@ class TestReportResourceProvenance:
     def test_absent_field_and_empty_session_is_not_wikipathways(self, flask_client):
         report = self._capture(flask_client, dict(self._BASE_FORM))
         assert report.selected_resources == 'Not recorded'
+
+    def test_posted_dataset_identity_wins_over_the_session(self, flask_client):
+        """The identity fields leaked exactly as the resource list did.
+
+        The generator preferred ``session['experiment_metadata']`` whenever it
+        was non-empty, so a report exported from a condition page named the
+        dataset, stressor, dosing and owner of the last single analysis run in
+        the same browser session.
+        """
+        with flask_client.session_transaction() as sess:
+            sess['experiment_metadata'] = {
+                'dataset_id': 'PREVIOUS RUN',
+                'stressor': 'Previous stressor',
+                'dosing': 'Previous dosing',
+                'owner': 'Someone else',
+                'selected_resources': 'GO_BP',
+            }
+        form = dict(
+            self._BASE_FORM, selected_resources='WikiPathways',
+            dataset_id='THIS CONDITION', stressor='Cisplatin',
+            dosing='10uM, 24hr', owner='Batch owner',
+        )
+        report = self._capture(flask_client, form)
+        assert report.metadata['dataset_id'] == 'THIS CONDITION'
+        assert report.metadata['stressor'] == 'Cisplatin'
+        assert report.metadata['dosing'] == '10uM, 24hr'
+        assert report.metadata['owner'] == 'Batch owner'

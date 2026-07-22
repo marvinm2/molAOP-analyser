@@ -47,10 +47,10 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   The same page was misstating two more of the run's settings, both of which travel into a
   methods section together with the resources. The mapping-confidence threshold read *"All
   mappings"* on every condition page, even one run at *"High only"* — and even directly above
-  the warning banner that the stricter threshold had raised. And the column mapping shown on
-  an exported report was whatever the browser session last held rather than the columns the
-  batch was run on. Both now come from the batch record, as does the enrichment method, which
-  the page had hardcoded to over-representation.
+  the warning banner that the stricter threshold had raised. And a report exported from a
+  condition page reported no column mapping and a p-value cutoff of `0.05` whatever the batch
+  had actually been run at. All of these now come from the batch record, as does the
+  enrichment method, which the page had hardcoded to over-representation.
 
   **A report exported from a condition page reported the wrong resources too**, which is the
   form the claim is most likely to be quoted in. The report form posted no resource list at
@@ -61,6 +61,11 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   name: a run with nothing recorded reports *"Not recorded"*. The same invented default is
   gone from the stored-experiment JSON. It remains in the **batch report** (the multi-
   condition PDF), which is not covered by this change.
+
+  The dataset identity leaked the same way: the report generator preferred the browser
+  session over the values the page posted, so a PDF exported from a condition page carried
+  the dataset name, stressor, dosing and owner of whatever single analysis had last been run
+  in that session, under a page header naming the condition. The posted values now win.
 
 - **Hub genes on a batch condition page show their p-value** (#75). The hub-gene panel reads
   its "Adj. p-value" from the per-gene data stored with each condition, and the batch runner
