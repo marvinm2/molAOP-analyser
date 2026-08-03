@@ -50,7 +50,7 @@ jobs:
         isort --check-only --diff . || echo "Import sorting issues found"
 
     - name: Upload lint results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: lint-reports
@@ -82,7 +82,7 @@ jobs:
         pip-audit -r requirements.txt || true
 
     - name: Upload security reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: always()
       with:
         name: security-reports
