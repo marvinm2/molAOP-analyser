@@ -75,7 +75,7 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   with no recoverable prior state.
 
   `scripts/backup_db.py` uses SQLite's Online Backup API, which is safe while the app is
-  writing, and runs as the Swarm cron job `cronjobs_molaop-analyser-backup` (daily 03:00 UTC,
+  writing, and runs as the Swarm cron job `cronjobs_molaop-analyser-backup` (daily 03:30 UTC,
   seven-day retention) off this repo's own image — the same pattern as the Builder's, so the
   backup logic stays versioned with the schema it belongs to. It reads the database file
   directly on GlusterFS rather than exec'ing into the running container, so it is
