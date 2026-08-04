@@ -67,6 +67,30 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   precomputed snapshot, which had gone four months without a refresh and was undercounting
   (AOP 625: 15 KEs of 18) until builder #207 regenerated it.
 
+- **Nightly backup of the deployed database** (#114). `/data/molAOP_analyser.db` holds
+  shared-result links and batch history — state that has survived redeploys by design since
+  2026-07-21 — and nothing copied it anywhere. GlusterFS replica 2 is not a backup: it
+  protects against a node dying, not against deletion, corruption or a bad schema migration,
+  because both replicas take the same write. The service had taken three additive migrations
+  with no recoverable prior state.
+
+  `scripts/backup_db.py` uses SQLite's Online Backup API, which is safe while the app is
+  writing, and runs as the Swarm cron job `cronjobs_molaop-analyser-backup` (daily 03:30 UTC,
+  seven-day retention) off this repo's own image — the same pattern as the Builder's, so the
+  backup logic stays versioned with the schema it belongs to. It reads the database file
+  directly on GlusterFS rather than exec'ing into the running container, so it is
+  node-independent.
+
+  Three of its checks exist because the obvious ones pass on the failure they are meant to
+  catch. SQLite treats a zero-length file as a valid empty database, so `integrity_check`
+  returns `ok` on an aborted backup — a byte floor runs first. A structurally valid database
+  with no rows is not a backup of *this* database — `experiments` and `batches` must be
+  non-empty. And `Connection.backup()` retries a locked source *forever* rather than honouring
+  the connection timeout, so the read lock is taken separately under a bounded wait: a job
+  that hangs would, with `skip-running=true`, silently suppress every run after it. Any check
+  that fails deletes the partial file, so a failed run never leaves something that sorts as
+  the newest backup.
+
 - Repository tooling brought in line with the molAOP Builder: CI workflow (test matrix,
   flake8, coverage, startup smoke test), code-quality workflow (ruff/black/isort, bandit,
   pip-audit), Dependabot, CODEOWNERS, issue and pull-request templates, `LICENSE` (GPL-2.0),
