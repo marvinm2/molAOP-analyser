@@ -8,6 +8,34 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The demo datasets were unusable: "Confirm Column Selection" did nothing.** Picking a
+  dataset on `/demos` rendered the preview correctly, and then the button below it was dead —
+  no error, no swap, nothing. The demo path was the *only* way into the tool that broke this
+  way; uploading your own file worked throughout, which is why it survived so long.
+
+  `/preview` sweeps `uploads/` of anything older than `Config.UPLOAD_RETENTION_HOURS` before
+  it resolves the requested file, and the demo copy was made with `shutil.copy2` — which
+  preserves the source mtime. A demo file shipped in `data/` therefore arrived in `uploads/`
+  carrying the mtime of whenever that file was last written, already far outside the retention
+  window. The first request rendered fine (the copy existed for the length of that request);
+  the second request — the Confirm button — swept it away *before* looking for it and answered
+  `400 File not found`. HTMX does not swap on a 4xx, so the page simply sat there.
+
+  The copy is now made with `shutil.copy` plus an explicit `os.utime`, so the retention clock
+  starts at the copy rather than at the shipped file's age. The same trap hit the guided tour
+  (which preloads a demo dataset) and any second `/preview` render such as "Update Plot".
+  Batch demo copies use `copy2` too but are unaffected — batch directories expire from
+  database timestamps, not mtime.
+
+  Worth noting how the timing hid this in production: `COPY` carries the build context's
+  mtimes into the image, so a freshly built image has fresh demo files and the demo flow works
+  — until the image is a day old, at which point every demo click starts failing. The
+  regression test ages the source file deliberately rather than trusting it, because a fresh
+  git checkout stamps `data/` with the checkout time and would let the old behaviour pass on
+  CI.
+
 ### Added
 
 - **Batch analysis can now run GSEA, not only Fisher/ORA** (#76). Batch mode existed to

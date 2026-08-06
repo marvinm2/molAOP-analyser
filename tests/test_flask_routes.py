@@ -68,6 +68,59 @@ class TestFlaskRoutes:
             assert b'Preview top 5 rows' in response.data
             assert b'Gene Symbol / ID column' in response.data
     
+    def test_demo_copy_survives_the_next_request(self, flask_client):
+        """A demo dataset must not land in uploads/ already expired (#demo-preview).
+
+        /preview sweeps uploads/ by mtime (Config.UPLOAD_RETENTION_HOURS) *before*
+        it resolves the requested file. The demo copy was made with shutil.copy2,
+        which carries the source mtime across, so a demo file shipped in data/ long
+        ago arrived in uploads/ older than the retention window — and the very next
+        request, the user pressing "Confirm Column Selection" below the preview,
+        swept it away and answered 400 "File not found". The retention clock has to
+        start at the copy, not at whenever the shipped file was last written.
+
+        The source mtime is aged deliberately rather than trusted: a fresh git
+        checkout stamps data/ with the checkout time, which would let the old
+        copy2 behaviour pass this test on CI.
+        """
+        import os
+        import time
+        from pathlib import Path
+        from config import Config
+
+        source = Path('data') / 'GSE90122_TO90137.tsv'
+        dest = Path(Config.UPLOAD_FOLDER) / source.name
+        original_times = (os.path.getatime(source), os.path.getmtime(source))
+        stale = time.time() - (Config.UPLOAD_RETENTION_HOURS + 24) * 3600
+        os.utime(source, (stale, stale))
+
+        try:
+            first = flask_client.post('/preview', data={'demo_file': source.name})
+            assert first.status_code == 200
+
+            age_seconds = time.time() - os.path.getmtime(dest)
+            assert age_seconds < 3600, (
+                f"Demo copy landed with a {age_seconds / 3600:.1f}h-old mtime; it must "
+                f"be stamped at copy time or the uploads sweep expires it immediately."
+            )
+
+            # The follow-up request the Confirm button makes.
+            second = flask_client.post('/preview', data={
+                'filename': source.name,
+                'columns_confirmed': 'true',
+                'id_column': 'GENE_SYMBOL',
+                'fc_column': 'logFC',
+                'pval_column': 'P.Value',
+            })
+            assert second.status_code == 200, (
+                f"Confirm Column Selection returned {second.status_code}: "
+                f"{second.data[:200]!r}"
+            )
+        finally:
+            os.utime(source, original_times)
+            if dest.exists():
+                dest.unlink()
+
     def test_preview_route_missing_file(self, flask_client):
         """Test preview route with missing file."""
         response = flask_client.post('/preview', data={})
