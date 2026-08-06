@@ -213,6 +213,12 @@
     const methodMirror = document.getElementById('method-mirror');
     const pvalMirror = document.getElementById('pval-mirror');
     const pvalInput = document.getElementById('pval_threshold');
+    // The log2FC box needs the same mirror as the p-value box. Without it,
+    // typing a custom threshold and pressing "Run Enrichment Analysis" without
+    // first pressing "Update Plot" ran the analysis on the *previous* threshold
+    // while the box on screen showed the new one — wrong numbers, no error.
+    const logfcMirror = document.getElementById('logfc-mirror');
+    const logfcInput = document.getElementById('logfc_threshold');
 
     function applyMethod() {
         const selected = document.querySelector('input[name="method"]:checked');
@@ -221,12 +227,18 @@
         wrapper.querySelectorAll('input').forEach(i => { i.disabled = isGsea; });
         if (methodMirror && selected) methodMirror.value = selected.value;
         if (pvalMirror && pvalInput) pvalMirror.value = pvalInput.value;
+        if (logfcMirror && logfcInput) logfcMirror.value = logfcInput.value;
     }
 
     radios.forEach(r => r.addEventListener('change', applyMethod));
     if (pvalInput) {
         pvalInput.addEventListener('input', () => {
             if (pvalMirror) pvalMirror.value = pvalInput.value;
+        });
+    }
+    if (logfcInput) {
+        logfcInput.addEventListener('input', () => {
+            if (logfcMirror) logfcMirror.value = logfcInput.value;
         });
     }
     applyMethod();
@@ -409,6 +421,63 @@ function setPercentageThreshold(percentage) {
         return filterModeInput.value === 'recommended' ? 'recommended' : 'all';
     }
 
+    /**
+     * Mirror the AOP picker into #volcanoForm so it survives "Update Plot".
+     *
+     * The picker lives in #enrichmentForm, but the threshold controls submit
+     * #volcanoForm — the same split that made the resource checkboxes (#55) and
+     * the confidence select (#60) need mirrors. Without one, /preview re-rendered
+     * the picker empty and the recommended-AOP auto-select below treated that as
+     * "never chosen", silently replacing a manual pick with the demo's AOP on
+     * every threshold change. The label is mirrored too because only the browser
+     * knows it: the server has the AOP id, not its display text.
+     *
+     * Called from every place that mutates the picker rather than on submit,
+     * because the hidden input is set by script and never fires a change event.
+     *
+     * The hidden inputs alone are not enough: anything that sets the picker
+     * without going through those call sites (tour.js's preselectPxrAop, say)
+     * would leave them stale. So the values are also written into the request
+     * at htmx:configRequest below, which is authoritative whoever set them.
+     */
+    function aopMirrorValues() {
+        const values = {
+            aop_selection: hiddenInput.value,
+            aop_label: searchInput.value
+        };
+        if (filterModeInput) values.aop_filter_mode = filterModeInput.value;
+        return values;
+    }
+
+    function syncAopMirror() {
+        const volcanoForm = document.getElementById('volcanoForm');
+        if (!volcanoForm) return;  // not mounted until columns are confirmed
+        volcanoForm.querySelectorAll('input[data-aop-mirror]').forEach(el => el.remove());
+        Object.entries(aopMirrorValues()).forEach(([name, value]) => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = name;
+            hidden.value = value;
+            hidden.setAttribute('data-aop-mirror', '');
+            volcanoForm.appendChild(hidden);
+        });
+    }
+
+    // Authoritative sync: htmx has already gathered the form's parameters by
+    // this point, and mutating evt.detail.parameters is its supported extension
+    // point — so this lands the *current* picker state no matter which code path
+    // set it, and regardless of listener ordering. The hidden inputs above stay
+    // for the non-htmx fallback submit.
+    (function attachAopConfigSync() {
+        const volcanoForm = document.getElementById('volcanoForm');
+        if (!volcanoForm) return;
+        volcanoForm.addEventListener('htmx:configRequest', function (evt) {
+            Object.entries(aopMirrorValues()).forEach(([name, value]) => {
+                evt.detail.parameters[name] = value;
+            });
+        });
+    })();
+
     function applyRecommendedFilter(aops) {
         if (getFilterMode() !== 'recommended' || recommendedAops.length === 0) return aops;
         // Recommended set may include 'NETWORK:kidney' which is not a standard AOP:N id —
@@ -535,6 +604,7 @@ function setPercentageThreshold(percentage) {
                 hiddenInput.value = aop.aop_id;
                 searchInput.value = formatLabel(aop);
                 suggestions.hidden = true;
+                syncAopMirror();
             });
 
             suggestions.appendChild(li);
@@ -608,6 +678,7 @@ function setPercentageThreshold(percentage) {
         filterBtn.addEventListener('click', function () {
             filterModeInput.value = (getFilterMode() === 'all') ? 'recommended' : 'all';
             syncLabel();
+            syncAopMirror();
             // Refresh the dropdown so the new mode applies.
             fetchSuggestions(searchInput.value || '');
         });
@@ -634,10 +705,15 @@ function setPercentageThreshold(percentage) {
                     if (match && !hiddenInput.value) {
                         hiddenInput.value = match.aop_id;
                         searchInput.value = formatLabel(match);
+                        syncAopMirror();
                     }
                 })
                 .catch(function () { /* silent: user can still pick manually */ });
         }
     }
+
+    // Seed the mirror from whatever the server just rendered, so a re-render
+    // that happens before the user touches the picker still carries it forward.
+    syncAopMirror();
 })();
 </script>

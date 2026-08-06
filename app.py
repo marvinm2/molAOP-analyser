@@ -716,6 +716,20 @@ def preview():
             if request.form.get('min_confidence', '').strip().lower() in VALID_MIN_CONFIDENCE
             else DEFAULT_MIN_CONFIDENCE
         ),
+        # Preserve the chosen AOP and the recommended/all filter mode across HTMX
+        # re-renders, the same way resources (#55) and min_confidence (#60) are.
+        # Without this the picker re-rendered with no value, and the
+        # recommended-AOP auto-select in _single_analysis_scripts.html read that
+        # empty picker as "never chosen" and overwrote the user's pick with the
+        # demo's AOP on every "Update Plot". The label rides along because only
+        # the browser knows it — the server has the id, not the display text.
+        selected_aop=request.form.get('aop_selection', '').strip(),
+        selected_aop_label=request.form.get('aop_label', '').strip(),
+        aop_filter_mode=(
+            request.form.get('aop_filter_mode', '').strip().lower()
+            if request.form.get('aop_filter_mode', '').strip().lower() in VALID_AOP_FILTER_MODES
+            else DEFAULT_AOP_FILTER_MODE
+        ),
     )
 
     # HTMX swaps in just the partial — no full-page reload, no scroll-to-top.
@@ -1448,6 +1462,12 @@ REFERENCE_CACHE_KEY = "reference_sets_v1"
 # collide, then merged (union per KE) for enrichment.
 VALID_RESOURCES = ("WikiPathways", "GO_BP", "Reactome")
 DEFAULT_RESOURCES = ("WikiPathways",)
+
+# The /demos CTA sends recommended_aops, which puts the AOP picker into
+# "recommended" mode with a "Show all AOPs" toggle. The mode has to round-trip
+# through /preview or the toggle snaps back on every HTMX re-render.
+VALID_AOP_FILTER_MODES = ("recommended", "all")
+DEFAULT_AOP_FILTER_MODE = "recommended"
 _GMT_RESOURCE_CACHE_KEYS = {
     "GO_BP": "reference_sets_go_v1",
     "Reactome": "reference_sets_reactome_v1",

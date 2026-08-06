@@ -400,7 +400,7 @@
         <input type="hidden" name="fc_column" value="{{ selected_columns.fc }}">
         <input type="hidden" name="pval_column" value="{{ selected_columns.pval }}">
         <input type="hidden" name="pval_adj_column" value="{{ selected_columns.pval_adj or '' }}">
-        <input type="hidden" name="logfc_threshold" value="{{ logfc_threshold or '' }}">
+        <input type="hidden" name="logfc_threshold" id="logfc-mirror" value="{{ logfc_threshold or '' }}">
         <input type="hidden" name="method" id="method-mirror" value="{{ method or 'ora' }}">
         <input type="hidden" name="pval_threshold" id="pval-mirror" value="{{ pval_threshold or '0.05' }}">
 
@@ -428,14 +428,20 @@
                 <span class="aop-filter-toggle__label" id="aop_filter_label">Showing recommended AOPs for this demo</span>
                 <button type="button" class="aop-filter-toggle__btn" id="aop_filter_btn">Show all AOPs</button>
             </div>
-            <input type="hidden" name="aop_filter_mode" id="aop_filter_mode" value="recommended">
+            <input type="hidden" name="aop_filter_mode" id="aop_filter_mode"
+                   value="{{ aop_filter_mode or 'recommended' }}">
             {% endif %}
             <div class="typeahead-wrapper" style="position: relative;"
                  data-tour-target="aop-picker">
+                {# The picker must re-render with whatever was chosen before the swap.
+                   Rendering it empty is what let the recommended-AOP auto-select
+                   overwrite a manual pick on every "Update Plot". #}
                 <input type="text" id="aop_search" placeholder="Search AOPs by name or ID..."
                        autocomplete="off" class="wide-dropdown"
+                       value="{{ selected_aop_label or '' }}"
                        style="width: 100%; padding: 10px; font-size: 14px; box-sizing: border-box;">
-                <input type="hidden" id="aop_selection" name="aop_selection" required>
+                <input type="hidden" id="aop_selection" name="aop_selection"
+                       value="{{ selected_aop or '' }}" required>
                 <ul id="aop_suggestions" class="typeahead-dropdown" hidden></ul>
             </div>
         </div>

@@ -10,6 +10,43 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **Choosing an AOP and then touching a threshold silently reverted you to the demo's AOP.**
+  On a demo dataset: press "Show all AOPs", pick something other than the recommended one,
+  then click any log2FC quick button or "Update Plot" — and the picker snapped back to
+  `AOP:DEMO` with the filter toggle back on "recommended". The threshold buttons auto-submit,
+  so this happened without the user knowingly pressing anything, and the analysis then ran
+  against an AOP they had not chosen.
+
+  The threshold controls submit `#volcanoForm`; the AOP picker lives in `#enrichmentForm`.
+  That split is why the resource checkboxes (#55) and the confidence select (#60) each needed
+  a mirror — `aop_selection` and `aop_filter_mode` never got one, so they were not posted,
+  `/preview` had nothing to echo, and the picker re-rendered with no value. The
+  recommended-AOP auto-select then read the empty picker as "never chosen" and overwrote the
+  pick, doing precisely what its own comment promised it would not:
+
+  ```js
+  // Only kicks in when the picker is empty (so we never clobber a manual selection …)
+  if (recommendedAops.length === 1 && !hiddenInput.value && !searchInput.value) {
+  ```
+
+  The guard was correct in intent and could never hold, because after a swap the picker was
+  always empty. Fixed by mirroring the selection, its label and the filter mode into
+  `#volcanoForm`, and having `/preview` round-trip all three. Only the browser knows the
+  display label — the server has the id — so the label rides along with it.
+
+  The mirror is written both as hidden inputs and, authoritatively, into
+  `evt.detail.parameters` on `htmx:configRequest`. Hidden inputs alone were not enough: they
+  are only refreshed at the call sites that mutate the picker, so any other path that sets it
+  (`tour.js`'s `preselectPxrAop`, for one) left them stale. This was caught by testing that
+  path rather than reasoning about it.
+
+- **A custom log2FC threshold was ignored unless you pressed "Update Plot" first.** The
+  threshold inputs are in `#volcanoForm` and the Analyse button is in `#enrichmentForm`;
+  `pval_threshold` had a hidden `#pval-mirror` kept in sync on every keystroke, `logfc_threshold`
+  had no mirror at all. Typing `2.5` into Custom and pressing "Run Enrichment Analysis"
+  therefore ran on the *previous* threshold while the box on screen read `2.5` — wrong numbers,
+  no error, nothing on the results page to reveal it. Given the same mirror the p-value box has.
+
 - **The demo datasets were unusable: "Confirm Column Selection" did nothing.** Picking a
   dataset on `/demos` rendered the preview correctly, and then the button below it was dead —
   no error, no swap, nothing. The demo path was the *only* way into the tool that broke this
