@@ -788,6 +788,112 @@ class TestDemosPage:
             assert b'<script id="recommended-aops-data"' in response.data
             assert b'AOP:1' in response.data
 
+    def test_preview_echoes_the_chosen_aop_back(self, flask_client):
+        """/preview must re-render the AOP picker with the choice it was given.
+
+        "Update Plot" submits #volcanoForm, but the AOP picker lives in
+        #enrichmentForm, so the choice is mirrored across and posted here. If
+        /preview drops it, the picker re-renders empty — and the recommended-AOP
+        auto-select in _single_analysis_scripts.html reads an empty picker as
+        "never chosen" and overwrites the user's pick with the demo's AOP. That
+        made a manually selected AOP silently revert on every threshold change,
+        which is the whole reason the round-trip exists. Same contract as
+        selected_resources (#55) and min_confidence (#60).
+        """
+        import pandas as pd
+        from unittest.mock import patch
+
+        mock_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FoldChange': [2.5, -1.2, 0.8],
+            'padj': [0.001, 0.05, 0.3],
+        })
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
+             patch('pandas.read_csv', return_value=mock_df):
+            response = flask_client.post('/preview', data={
+                'demo_file': 'GSE90122_TO90137.tsv',
+                'recommended_aops': 'AOP:1',
+                'columns_confirmed': 'true',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+                # What the mirror posts after the user picks a different AOP
+                # and flips the picker to "all".
+                'aop_selection': 'AOP:37',
+                'aop_label': 'AOP:37: Some other pathway (5 KEs)',
+                'aop_filter_mode': 'all',
+            })
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert 'id="aop_selection"' in body
+        assert 'value="AOP:37"' in body, "chosen AOP was not echoed into the picker"
+        assert 'AOP:37: Some other pathway' in body, "picker label was not echoed back"
+        assert 'id="aop_filter_mode"' in body
+        assert 'value="all"' in body, "filter mode reverted to 'recommended'"
+
+    def test_preview_rejects_a_junk_aop_filter_mode(self, flask_client):
+        """An unrecognised filter mode falls back to 'recommended', never renders raw."""
+        import pandas as pd
+        from unittest.mock import patch
+
+        mock_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FoldChange': [2.5, -1.2, 0.8],
+            'padj': [0.001, 0.05, 0.3],
+        })
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
+             patch('pandas.read_csv', return_value=mock_df):
+            response = flask_client.post('/preview', data={
+                'demo_file': 'GSE90122_TO90137.tsv',
+                'recommended_aops': 'AOP:1',
+                'columns_confirmed': 'true',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+                'aop_filter_mode': 'nonsense',
+            })
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert 'nonsense' not in body
+        assert 'id="aop_filter_mode"' in body
+        assert 'value="recommended"' in body
+
+    def test_enrichment_form_carries_a_logfc_mirror(self, flask_client):
+        """The log2FC box needs the same hidden mirror the p-value box has.
+
+        The threshold inputs live in #volcanoForm; the Analyse button is in
+        #enrichmentForm. p-value has #pval-mirror kept in sync on input, log2FC
+        had no mirror at all — so typing a custom threshold and pressing "Run
+        Enrichment Analysis" without first pressing "Update Plot" ran the
+        analysis on the previous threshold while the box showed the new one.
+        This asserts the hook the sync attaches to exists.
+        """
+        import pandas as pd
+        from unittest.mock import patch
+
+        mock_df = pd.DataFrame({
+            'Gene_Symbol': ['BRCA1', 'TP53', 'EGFR'],
+            'log2FoldChange': [2.5, -1.2, 0.8],
+            'padj': [0.001, 0.05, 0.3],
+        })
+        with patch('os.path.exists', side_effect=uploaded_file_exists), \
+             patch('pandas.read_csv', return_value=mock_df):
+            response = flask_client.post('/preview', data={
+                'demo_file': 'GSE90122_TO90137.tsv',
+                'columns_confirmed': 'true',
+                'id_column': 'Gene_Symbol',
+                'fc_column': 'log2FoldChange',
+                'pval_column': 'padj',
+            })
+
+        assert response.status_code == 200
+        body = response.data.decode()
+        assert 'id="pval-mirror"' in body     # control: the mirror that already worked
+        assert 'id="logfc-mirror"' in body    # the one that was missing
+        assert "getElementById('logfc-mirror')" in body, "mirror element exists but nothing syncs it"
+
     def test_preview_without_recommended_aops_hides_filter_toggle(self, flask_client):
         """POST /preview WITHOUT recommended_aops (upload-your-own path) hides the toggle (D-07)."""
         import pandas as pd
