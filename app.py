@@ -550,9 +550,18 @@ def preview():
         filename = requested.name
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-        # Copy demo file from data directory to uploads directory
+        # Copy demo file from data directory to uploads directory.
+        # NOT copy2: that preserves the source mtime, and the shipped demo files
+        # are years older than Config.UPLOAD_RETENTION_HOURS. The copy would land
+        # already "expired", so the very next /preview request — the user pressing
+        # "Confirm Column Selection" — swept it away in cleanup_old_uploads() above
+        # and 400'd with "File not found". shutil.copy stamps the copy with now;
+        # the explicit os.utime states that the retention clock must start at the
+        # copy, so a future switch back to a metadata-preserving copy can't
+        # silently reintroduce this.
         import shutil
-        shutil.copy2(str(requested), filepath)
+        shutil.copy(str(requested), filepath)
+        os.utime(filepath, None)
         logger.info(f"Copied demo file {demo_filename} to {filepath}")
 
         # Seed a meaningful default dataset_id from the demo file stem when the
