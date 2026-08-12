@@ -8,6 +8,53 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+### Changed
+
+- **GSEA q-values are now computed here rather than taken from gseapy (#122).** This is a
+  larger claim than the tool made before, so it is stated plainly: the FDR column is no
+  longer a pass-through. A `fdr_source` column travels with every row, the results table
+  and both reports render it, and where the recomputation could not run the row keeps
+  gseapy's number and says so instead of being presented alongside recomputed ones.
+
+  The reason is that a GSEA q-value is not a property of its own row. It is a ratio of tail
+  fractions taken over pools shared by every Key Event in the run, so one Key Event's number
+  can move another's. When a Key Event's observed enrichment score beats every permutation,
+  gseapy cannot normalise it and substitutes NES = 1.0; #121 repaired that row's own values
+  but could not touch anybody else's, because `gsea_fdr` had already run inside the Rust
+  extension. The substituted value lands in the **observed** NES vector — the denominator
+  every other Key Event's q is divided by.
+
+  The bias is one-sided and derivable rather than random. With h = #{genuine NES ≥ NES\*} and
+  p = #{genuine NES ≥ 0}, injecting one fabricated 1.0 leaves h alone and raises p when
+  NES\* > 1.0 (q **inflated**, conservative), and raises both when 0 ≤ NES\* ≤ 1.0 (q
+  **deflated**, anti-conservative). Negatively-enriched Key Events are untouched: a
+  fabricated +1.0 never enters the negative pool.
+
+  Measured on a six-Key-Event fixture containing one degenerate Key Event, a genuine
+  non-degenerate neighbour at NES 1.03 moved from q = 0.364 to q = 0.273 — a 25% shift
+  caused entirely by a different Key Event's substituted score, and in the direction the
+  derivation predicts. On a run with no degenerate Key Event the recomputation reproduces
+  gseapy's q-values exactly; that is asserted to ~1e-12 in
+  `tests/test_gsea_service.py::TestPooledNullFdr` against gseapy's own `gsea_fdr`, and it
+  is the check that makes the change reviewable.
+
+  `recompute_pooled_fdr` is a transcription of gseapy's `normalize` and `gsea_fdr`, not an
+  independent derivation — the point is to remove one contaminating value from the pools,
+  so everything else must stay comparable to the implementation it replaces. Degenerate Key
+  Events are counted at **±infinity** rather than excluded, which is what #122 proposed:
+  excluding drops a Key Event that genuinely belongs in the observed distribution and so
+  deflates the denominator for everyone else — the same class of error, smaller and
+  opposite-signed. The observed score beat every permutation, so the normalised score is
+  unbounded on that side and counting it at every same-signed threshold is the faithful
+  limit, inventing no magnitude. Under that treatment the degenerate Key Event's own q comes
+  out as 0.0, which is the limit #117 already writes into the row by hand — the two agree
+  rather than having to be reconciled. `DEGENERATE_EXCLUDE` implements the other choice so
+  the two can be compared on real data.
+
+  The ±infinity is used inside the pooling only. The reported NES for such a Key Event stays
+  NaN: the score is not normalisable, and printing an infinity in a results table would be a
+  magnitude claim the data does not support.
+
 ### Fixed
 
 - **Choosing an AOP and then touching a threshold silently reverted you to the demo's AOP.**
