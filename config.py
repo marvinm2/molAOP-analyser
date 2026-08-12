@@ -9,6 +9,33 @@ from typing import Optional
 from datetime import datetime, timezone
 import zoneinfo
 
+# The one place the application version is written down.
+#
+# Until now there was none at all: nothing in the running service said which
+# release it was, so "is the fix live?" could only be answered by comparing image
+# digests. That is answerable for an operator with cluster access and not
+# answerable at all for someone holding an archived copy and wondering which
+# version produced their results. tests/test_app_version.py pins this to the
+# newest released heading in CHANGELOG.md, where a release is actually declared,
+# so a release that forgets to bump it fails the build.
+__version__ = "4.0.0"
+
+
+def get_build_ref() -> str:
+    """Identify the running build, not just its released version.
+
+    A semantic version cannot distinguish two deployments of the same release,
+    which is what "is the latest code live?" actually asks. The Docker build
+    bakes the commit SHA in as ``MOLAOP_IMAGE_SHA`` (``Dockerfile:33-34``), which
+    ``report_service.get_software_versions`` already reports in generated
+    reports; this exposes the same value on ``/health``.
+
+    Outside a built image there is no SHA, so this returns "unknown" rather than
+    a fabricated stand-in — an unidentifiable deployment that looks identified is
+    worse than one that admits it.
+    """
+    return os.environ.get("MOLAOP_IMAGE_SHA") or "unknown"
+
 
 def resolve_secret_key():
     """Resolve Flask's SECRET_KEY from the environment.

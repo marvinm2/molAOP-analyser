@@ -37,6 +37,10 @@ jobs:
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=sha-
+            # The tag verbatim, e.g. v5.0.0. The semver rules below strip the
+            # leading v (5.0.0, 5.0), so without this no image tag matched the
+            # git tag a Zenodo record cites — they differed by one character.
+            type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 

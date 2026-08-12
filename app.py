@@ -18,7 +18,9 @@ from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 
-from config import Config, ExperimentMetadata
+from sqlalchemy import text as sa_text
+
+from config import Config, ExperimentMetadata, __version__, get_build_ref
 from validation import validate_form_data, validate_file_upload, log_validation_error
 from helpers import (
     DEFAULT_MIN_CONFIDENCE,
@@ -249,6 +251,53 @@ def extract_metadata_from_request() -> Optional[ExperimentMetadata]:
     except Exception as e:
         logger.warning(f"Failed to create metadata object: {e}")
         return None
+
+
+@app.route('/health')
+def health():
+    """Report what this deployment is, and whether its database answers.
+
+    The service had no health endpoint at all, so nothing it served identified
+    which release was running. That is a gap for an operator — the sibling
+    Builder exposes the same route and the cluster docs assume one — but it
+    matters more for a citable archive: someone holding a DOI'd copy and a set of
+    results had no way to ask a running instance which version produced them.
+
+    Deliberately shallow. It reports the version, the build ref and one SQLite
+    round-trip, and does **not** probe the Builder API or the AOP-Wiki SPARQL
+    endpoint. Both are optional upstreams the analyser is designed to degrade
+    past (see the fallback tiers in ``services/aop_discovery_service.py``), so
+    reporting the service unhealthy because a third party is slow would make this
+    endpoint lie in the direction that causes pages. It is also a public,
+    unauthenticated route, and a health check that reaches out to two external
+    hosts on every request is a lever for someone else to pull.
+
+    Returns:
+        flask.Response: JSON with ``status``, ``version``, ``build`` and
+        ``database``. 200 when the database answers, 503 when it does not — the
+        status code matters because that is what a load balancer reads.
+    """
+    database_ok = True
+    try:
+        # A real round-trip, not just "is the object configured". An unopenable
+        # or unwritable database file is the failure this is here to catch, and
+        # it only surfaces when a statement actually executes.
+        session = db_manager.get_session()
+        try:
+            session.execute(sa_text("SELECT 1"))
+        finally:
+            session.close()
+    except Exception as exc:
+        database_ok = False
+        logger.error("Health check: database round-trip failed: %s", exc)
+
+    payload = {
+        "status": "healthy" if database_ok else "unhealthy",
+        "version": __version__,
+        "build": get_build_ref(),
+        "database": database_ok,
+    }
+    return jsonify(payload), (200 if database_ok else 503)
 
 
 @app.route('/')
