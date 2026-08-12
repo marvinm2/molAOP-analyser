@@ -3,6 +3,7 @@
 [![CI/CD Pipeline](https://github.com/marvinm2/molAOP-analyser/actions/workflows/ci.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/ci.yml)
 [![Code Quality](https://github.com/marvinm2/molAOP-analyser/actions/workflows/code-quality.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/code-quality.yml)
 [![Publish Docker image](https://github.com/marvinm2/molAOP-analyser/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/docker-publish.yml)
+[![Software DOI](https://zenodo.org/badge/1024497140.svg)](https://zenodo.org/badge/latestdoi/1024497140)
 
 This web application allows users to upload or select gene expression datasets and perform Key Event (KE) enrichment analysis in the context of Molecular Adverse Outcome Pathways (AOPs). The results are visualized in interactive tables and network diagrams with comprehensive reporting capabilities.
 
@@ -115,7 +116,27 @@ The backend is organized into modular services under `services/`:
 
 - Python 3.14+
 - pip (Python package manager)
+- **System libraries** (see below) — `pip install` alone is not enough
 - Optionally: Docker and Docker Compose
+
+PDF report generation uses WeasyPrint, which binds to Cairo, Pango and GDK-PixBuf at
+**import** time, and SciPy builds against OpenBLAS and a Fortran compiler. Without these the
+install appears to succeed and the application fails when it first tries to import the report
+service. These are the same packages `Dockerfile:5-19` installs, which is why the container
+works and a bare `pip install` on a clean machine does not:
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y build-essential gfortran libopenblas-dev libffi-dev libssl-dev \
+    libcairo2 libcairo2-dev libpango-1.0-0 libpango1.0-dev \
+    libgdk-pixbuf-2.0-0 libgdk-pixbuf-2.0-dev shared-mime-info
+
+# macOS (Homebrew)
+brew install cairo pango gdk-pixbuf libffi openblas gcc
+```
+
+If you only need the enrichment analysis and not PDF export, the missing libraries surface as
+an import error from `services/report_service.py`; everything else works.
 
 ### Local Development Setup
 
@@ -130,6 +151,8 @@ source venv/bin/activate        # Linux/macOS
 # venv\Scripts\activate         # Windows
 
 # 3. Install dependencies
+#    requirements.txt is a generated, fully pinned lock (pip-compile) — do not
+#    hand-edit it; edit requirements.in and regenerate. See CLAUDE.md.
 pip install -r requirements.txt
 
 # 4. Run the application
@@ -137,6 +160,27 @@ python app.py
 ```
 
 The app will be available at <http://localhost:5000>.
+
+### Running the tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest                 # whole suite
+pytest --no-cov -q     # faster, skips the coverage gate
+```
+
+### What the application needs from the network
+
+The analyser is a client of two external services, and degrades rather than failing when
+either is unreachable:
+
+| Service | Used for | If unreachable |
+|---|---|---|
+| [molAOP Builder](https://molaop-builder.vhp4safety.nl) REST API | approved KE → pathway mappings, the primary source of gene sets | falls back to the disk cache, then to the bundled `data/KE-WP.csv` snapshot; the provenance line on the results page records which was used |
+| AOP-Wiki RDF SPARQL endpoint | AOP discovery and Key Event metadata | four-tier fallback — disk cache, then Builder `/api/v1/aops`, then a small hardcoded list |
+
+Neither needs credentials. The Builder's public API is rate-limited to 100 requests per hour
+per IP, so a test run that exercises AOP discovery repeatedly can be throttled.
 
 ### Docker Compose (Recommended)
 
@@ -328,3 +372,55 @@ The application reads configuration from `config.py`. Key settings:
 - `MAX_CONTENT_LENGTH`: Upload size limit (default 10 MB)
 - `UPLOAD_FOLDER`: Directory for temporary file storage
 - `SECRET_KEY`: Flask session secret (set via environment variable in production)
+
+## How to cite
+
+Cite the **software** if you ran the analyser or are describing the method — see the
+*Software DOI* badge at the top, which is a concept DOI and always resolves to the newest
+version. For a reproducible citation, take the version DOI of the release you actually used
+from the Zenodo record. `CITATION.cff` in the repository root carries the machine-readable
+form.
+
+An analysis run with this tool also rests on data you did not produce, and those want citing
+separately:
+
+| If your analysis used… | Also cite |
+|---|---|
+| KE → pathway mappings (i.e. any enrichment result) | the molAOP Builder **dataset**, [10.5281/zenodo.20184643](https://doi.org/10.5281/zenodo.20184643) |
+| Key Event or AOP structure | [AOP-Wiki](https://aopwiki.org/) (content CC BY-SA 4.0) |
+| WikiPathways gene sets | [WikiPathways](https://www.wikipathways.org/) |
+| GO or Reactome gene sets | [Gene Ontology](https://geneontology.org/) / [Reactome](https://reactome.org/) |
+| a bundled demo dataset | NCBI GEO [GSE90122](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE90122) — see [`data/README.md`](data/README.md) |
+
+Reporting a q-value from the GSEA path is a claim about a statistic this tool computes
+itself, not one it passes through from `gseapy` — the pooled-null FDR is recomputed here (see
+the `[Unreleased]` entry for #122 in [`CHANGELOG.md`](CHANGELOG.md)). Worth a sentence in the
+methods if you report GSEA q-values.
+
+## License
+
+Copyright (C) 2026 Marvin Martens
+
+This program is free software; you can redistribute it and/or modify it under the terms of
+the GNU General Public License **version 2** as published by the Free Software Foundation.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the [`LICENSE`](LICENSE) file for the full text.
+
+SPDX identifier: `GPL-2.0-only`. Version 2 only, not "or any later version" — no source file
+in this repository carries the "or later" clause.
+
+**The bundled data is licensed separately** and is not covered by the GPL. See
+[`data/README.md`](data/README.md) for the origin and licence of each file: the WikiPathways
+network is CC0, the demo expression datasets derive from NCBI GEO, and the KE → pathway
+mapping snapshot comes from the molAOP Builder.
+
+## Acknowledgements
+
+Part of the [VHP4Safety](https://www.vhp4safety.nl) project, funded by the Dutch Research
+Council (NWO) under the *Netherlands Research Agenda: Research on Routes by Consortia*
+programme, grant NWA-ORC 1292.19.272.
+
+Built on [AOP-Wiki](https://aopwiki.org/), [WikiPathways](https://www.wikipathways.org/),
+[Gene Ontology](https://geneontology.org/) and [Reactome](https://reactome.org/), and on the
+mappings curated in the [molAOP Builder](https://github.com/marvinm2/molAOP-builder).

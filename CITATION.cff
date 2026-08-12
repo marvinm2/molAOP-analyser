@@ -1,0 +1,45 @@
+# Read by GitHub's "Cite this repository" widget, cffconvert and Software Heritage.
+#
+# Zenodo does NOT read this file: when .zenodo.json is present it is used alone and
+# CITATION.cff is ignored entirely. The two must therefore be kept in agreement by
+# hand — tests/test_app_version.py asserts that `version` here equals the version the
+# code reports, and that .zenodo.json parses.
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata below. An enrichment
+  result also rests on the Key Event to pathway mappings produced by the Molecular AOP
+  Builder, published separately as 10.5281/zenodo.20184643 — cite that too when you
+  report enrichment results.
+type: software
+title: >-
+  Molecular AOP Analyser: Key Event enrichment of gene-expression data against
+  molecular Adverse Outcome Pathways
+abstract: >-
+  A web application for Key Event enrichment analysis of gene-expression data in the
+  context of molecular Adverse Outcome Pathways. Offers Fisher's exact test
+  (over-representation, both tails) and GSEA (threshold-free, direction-aware), each
+  with Benjamini-Hochberg FDR correction, and presents results as an interactive
+  Cytoscape network of the AOP, a ranked enrichment table, hub genes, an embedded
+  WikiPathways diagram and PDF/HTML reports. A batch mode compares up to ten datasets
+  across conditions.
+authors:
+  - family-names: Martens
+    given-names: Marvin
+    orcid: https://orcid.org/0000-0003-2230-0840
+    affiliation: Department of Translational Genomics, Maastricht University
+version: 4.0.0
+license: GPL-2.0-only
+repository-code: https://github.com/marvinm2/molAOP-analyser
+url: https://molaop-analyser.vhp4safety.nl
+keywords:
+  - adverse outcome pathway
+  - AOP
+  - Key Event
+  - enrichment analysis
+  - GSEA
+  - transcriptomics
+  - toxicology
+  - WikiPathways
+  - pathway analysis
+  - FAIR data
+  - new approach methodologies
