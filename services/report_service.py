@@ -21,6 +21,7 @@ from io import BytesIO
 import pandas as pd
 
 from services.gsea_service import (
+    FDR_GSEAPY,
     NES_BEYOND_RESOLUTION,
     NES_UNDIAGNOSED,
     NES_UNSTABLE,
@@ -147,6 +148,44 @@ def format_pvalue(
         return f"{text} (coarse; do not threshold)"
     if status == NES_UNDIAGNOSED:
         return f"{text} (null not inspected)"
+    return text
+
+
+def format_fdr(fdr: Any, source: Optional[str] = None) -> str:
+    """Render a GSEA q-value, saying whose it is (issue #122).
+
+    Unlike the NES and the nominal p-value, a GSEA q-value is not a property of
+    its own row: it is a ratio of tail fractions taken over pools shared by every
+    Key Event in the run. So a Key Event whose observed score beat every
+    permutation — which gseapy cannot normalise, and for which it substitutes a
+    placeholder — moves the q-values of Key Events it has nothing to do with.
+    This module recomputes the pooled statistic from the captured permutation
+    nulls with those terms counted at their limit instead
+    (``gsea_service.recompute_pooled_fdr``).
+
+    The qualifier is attached only when that recomputation did *not* happen, for
+    two reasons. Recomputed is the normal case, and annotating every row with the
+    normal case trains readers to ignore the annotation. And the un-recomputed
+    case is the one carrying a caveat: those q-values are gseapy's own, pooled
+    against a distribution that may contain a substituted score.
+
+    Args:
+        fdr: The q-value.
+        source: The row's ``fdr_source``. Results stored before #122 do not carry
+            one and render exactly as they always did — a stored result cannot be
+            retro-labelled with a provenance nobody recorded.
+
+    Returns:
+        str: the formatted cell text.
+    """
+    if fdr is None or (isinstance(fdr, float) and math.isnan(fdr)):
+        text = 'n/a'
+    elif isinstance(fdr, (int, float)):
+        text = f"{fdr:.2e}" if fdr < 0.001 else f"{fdr:.4f}"
+    else:
+        text = str(fdr)
+    if source == FDR_GSEAPY:
+        return f"{text} (gseapy's pooled q; null not inspected)"
     return text
 
 
@@ -586,6 +625,9 @@ class ReportGenerator:
                     result.get('p_value'), result.get('nes_status'),
                     result.get('p_value_resolution'),
                 )
+                # Issue #122: the q-value is pooled across Key Events, so it
+                # carries its own provenance rather than the row's NES status.
+                gsea_fdr_str = format_fdr(adj_pval, result.get('fdr_source'))
                 lead = result.get('lead_genes', '')
                 # Export carries the FULL untruncated gene list.
                 lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
@@ -595,7 +637,7 @@ class ReportGenerator:
                 <td>{title}</td>
                 <td>{nes_str}</td>
                 <td>{gsea_pval_str}</td>
-                <td>{adj_pval_str}</td>
+                <td>{gsea_fdr_str}</td>
                 <td>{ke_size}</td>
                 <td>{lead_str}</td>
             </tr>
@@ -1064,10 +1106,14 @@ class ReportGenerator:
                     result.get('p_value'), result.get('nes_status'),
                     result.get('p_value_resolution'),
                 )
+                # Issue #122: the q-value is pooled across Key Events, so it
+                # carries its own provenance rather than the row's NES status.
+                gsea_fdr_str = format_fdr(fdr, result.get('fdr_source'))
                 lead = result.get('lead_genes', '')
                 lead_str = ', '.join(lead) if isinstance(lead, (list, tuple)) else (lead or '')
                 table_data.append([
-                    result.get('KE', 'N/A'), title, nes_str, gsea_pval_str, fdr_str,
+                    result.get('KE', 'N/A'), title, nes_str, gsea_pval_str,
+                    gsea_fdr_str,
                     str(result.get('total_KE_genes_in_dataset', 0)), lead_str,
                 ])
             else:

@@ -17,6 +17,10 @@ from services.enrichment_service import (
     format_ke_summary,
 )
 from services.gsea_service import (
+    DEGENERATE_EXCLUDE,
+    DEGENERATE_INFINITY,
+    FDR_GSEAPY,
+    FDR_RECOMPUTED,
     MIN_SAME_SIGNED_NULL,
     NES_BEYOND_RESOLUTION,
     NES_OK,
@@ -24,8 +28,10 @@ from services.gsea_service import (
     NES_UNSTABLE,
     _build_ranking,
     _capture_prerank_summaries,
+    _null_summaries,
     _null_tail_sizes,
     apply_null_diagnostics,
+    recompute_pooled_fdr,
     run_gsea_analysis,
 )
 
@@ -151,8 +157,9 @@ class TestRunGseaAnalysis:
         result = run_gsea_analysis(df, reference_sets, ke_list, ke_title_map)
 
         expected_cols = ['KE', 'Title', 'NES', 'nes_status', 'ES', 'p_value',
-                         'p_value_resolution', 'FDR', 'null_same_signed_n',
-                         'lead_genes', 'total_KE_genes_in_dataset']
+                         'p_value_resolution', 'FDR', 'fdr_source',
+                         'null_same_signed_n', 'lead_genes',
+                         'total_KE_genes_in_dataset']
         assert list(result.columns) == expected_cols
 
     def test_min_size_filter(self, caplog):
@@ -344,6 +351,212 @@ class TestOneSignedNull:
             "null diagnostics were not captured — the gseapy entry point this "
             "wraps has probably been renamed"
         )
+
+
+class _Summary:
+    """Stand-in for gseapy's ``GSEASummary`` — term, observed ES, null ES."""
+
+    def __init__(self, term, es, esnull):
+        self.term, self.es, self.esnull = term, es, esnull
+
+
+def _healthy_summaries(n_perm=40, seed=0):
+    """Four terms whose permutation nulls straddle zero, so none is degenerate.
+
+    Deterministic by construction: the null for each term is a fixed symmetric
+    ladder rather than a draw, so the pooled distribution — and therefore every
+    q-value computed from it — is identical on every run and on every platform.
+    """
+    step = np.linspace(-0.6, 0.6, n_perm)
+    return [
+        _Summary('KE:STRONG', 0.62, step * 1.0),
+        _Summary('KE:MID', 0.24, step * 0.9),
+        _Summary('KE:WEAK', 0.08, step * 1.1),
+        _Summary('KE:DOWN', -0.31, step * 0.95),
+    ]
+
+
+class TestPooledNullFdr:
+    """Issue #122 — the fabricated NES contaminating everybody else's q."""
+
+    def test_matches_gseapy_exactly_when_no_term_is_degenerate(self):
+        """The transcription must be a transcription, not a second opinion.
+
+        This is the check that makes the whole change reviewable: with no
+        degenerate term there is nothing to remove from the pools, so the
+        recomputation has to land on gseapy's own numbers. Any drift here means
+        the rewrite changed the statistic rather than repairing its input, and
+        every q-value the tool reports would be quietly its own invention.
+        """
+        from gseapy.algorithm import gsea_fdr, normalize
+
+        summaries = _healthy_summaries()
+        es = np.array([s.es for s in summaries], dtype=float)
+        esnull = np.vstack([np.asarray(s.esnull, dtype=float) for s in summaries])
+
+        nes, nesnull = normalize(es, esnull)
+        expected = gsea_fdr(nes, nesnull)
+
+        got = recompute_pooled_fdr(summaries)
+
+        assert set(got) == {s.term for s in summaries}
+        for term, want in zip([s.term for s in summaries], expected):
+            assert got[term] == pytest.approx(min(want, 1.0), abs=1e-12), (
+                f"{term}: recomputed q diverged from gseapy's own on a run with "
+                f"no degenerate term"
+            )
+
+    def test_substituted_nes_biases_other_terms_in_both_directions(self):
+        """The defect, reproduced against gseapy's real gsea_fdr.
+
+        A fifth term whose null lies entirely below zero while its observed ES
+        is positive is the degenerate case: gseapy cannot normalise it and the
+        Rust path substitutes NES = 1.0. That fabricated value lands in the
+        *observed* vector, which is the denominator every other term's q is
+        divided by — so it moves terms it has nothing to do with, and the
+        direction depends on which side of 1.0 they sit.
+        """
+        from gseapy.algorithm import gsea_fdr, normalize
+
+        summaries = _healthy_summaries() + [
+            _Summary('KE:DEGENERATE', 0.71, np.linspace(-0.9, -0.2, 40)),
+        ]
+        es = np.array([s.es for s in summaries], dtype=float)
+        esnull = np.vstack([np.asarray(s.esnull, dtype=float) for s in summaries])
+
+        with np.errstate(invalid='ignore', divide='ignore'):
+            nes, nesnull = normalize(es, esnull)
+        # Model the Rust path exactly: the unnormalisable observed score becomes
+        # 1.0, and that is what gseapy pools.
+        nes = np.where(np.isfinite(nes), nes, 1.0)
+        nes[-1] = 1.0
+        contaminated = dict(zip([s.term for s in summaries], gsea_fdr(nes, nesnull)))
+
+        repaired = recompute_pooled_fdr(summaries)
+
+        # Something actually moved — otherwise the fixture is not exercising
+        # the defect and the direction assertions below are vacuous.
+        moved = [t for t in repaired if repaired[t] != pytest.approx(
+            min(contaminated[t], 1.0), abs=1e-12)]
+        assert moved, "the fabricated NES changed nobody's q — fixture is inert"
+
+        for term in ('KE:STRONG', 'KE:MID', 'KE:WEAK'):
+            observed_nes = nes[[s.term for s in summaries].index(term)]
+            gseapy_q = min(contaminated[term], 1.0)
+            if observed_nes > 1.0:
+                assert gseapy_q >= repaired[term], (
+                    f"{term} sits above NES 1.0, where the fabricated value "
+                    f"inflates q; the repair must not raise it further"
+                )
+            else:
+                assert gseapy_q <= repaired[term], (
+                    f"{term} sits at or below NES 1.0, where the fabricated "
+                    f"value deflates q; the repair must not lower it further"
+                )
+
+    def test_degenerate_term_lands_on_the_zero_limit(self):
+        """The infinity treatment must reproduce #117's hand-written limit.
+
+        ``apply_null_diagnostics`` writes FDR = 0.0 for a term whose observed ES
+        beat every permutation. If the recomputation disagreed, the two repairs
+        would be fighting each other and the row would carry whichever ran last.
+        """
+        summaries = _healthy_summaries() + [
+            _Summary('KE:DEGENERATE', 0.71, np.linspace(-0.9, -0.2, 40)),
+        ]
+
+        got = recompute_pooled_fdr(summaries, degenerate=DEGENERATE_INFINITY)
+
+        assert got['KE:DEGENERATE'] == 0.0
+
+    def test_excluding_degenerate_terms_is_available_and_differs(self):
+        """#122's own proposal, kept as a comparison rather than as the default.
+
+        Excluding drops a term that genuinely belongs in the observed
+        distribution, so it deflates the denominator for everyone else — the
+        same class of error, smaller and opposite-signed. Shipping both is what
+        lets the difference be measured on real data instead of argued about.
+        """
+        summaries = _healthy_summaries() + [
+            _Summary('KE:DEGENERATE', 0.71, np.linspace(-0.9, -0.2, 40)),
+        ]
+
+        infinity = recompute_pooled_fdr(summaries, degenerate=DEGENERATE_INFINITY)
+        excluded = recompute_pooled_fdr(summaries, degenerate=DEGENERATE_EXCLUDE)
+
+        assert 'KE:DEGENERATE' in infinity
+        assert 'KE:DEGENERATE' not in excluded
+        assert any(
+            infinity[t] != pytest.approx(excluded[t], abs=1e-12)
+            for t in excluded
+        ), "the two treatments produced identical pools — one of them is wrong"
+
+    def test_ragged_nulls_decline_rather_than_pool_mismatched_material(self, caplog):
+        """Unequal null widths mean two runs were captured together (#117's lock)."""
+        summaries = [
+            _Summary('KE:A', 0.5, np.linspace(-0.5, 0.5, 40)),
+            _Summary('KE:B', 0.4, np.linspace(-0.5, 0.5, 25)),
+        ]
+
+        with caplog.at_level(logging.ERROR, logger="services.gsea_service"):
+            assert recompute_pooled_fdr(summaries) == {}
+        assert any('not rectangular' in r.getMessage() for r in caplog.records)
+
+    def test_unreadable_summaries_leave_gseapy_in_charge(self):
+        """No nulls means no recomputation — never a fabricated q of its own."""
+        assert recompute_pooled_fdr([]) == {}
+        assert recompute_pooled_fdr([_Summary('KE:X', 'not a number', [0.1])]) == {}
+
+    def test_rejects_an_unknown_degenerate_treatment(self):
+        """A typo in the mode must not silently select a default."""
+        with pytest.raises(ValueError, match='degenerate must be'):
+            recompute_pooled_fdr(_healthy_summaries(), degenerate='drop')
+
+    def test_every_row_says_whose_q_value_it_carries(self):
+        """`fdr_source` is the provenance #122's third criterion asks for."""
+        res = pd.DataFrame({
+            'KE': ['KE:1', 'KE:2'],
+            'NES': [1.5, 0.9],
+            'p_value': [0.01, 0.4],
+            'FDR': [0.30, 0.44],
+        })
+
+        out = apply_null_diagnostics(
+            res, {'KE:1': 400, 'KE:2': 400}, 1000,
+            recomputed_fdr={'KE:1': 0.11},
+        )
+
+        assert out.iloc[0]['FDR'] == 0.11
+        assert out.iloc[0]['fdr_source'] == FDR_RECOMPUTED
+        # Untouched rows keep gseapy's number and say so, rather than being
+        # presented as recomputed alongside rows that actually were.
+        assert out.iloc[1]['FDR'] == 0.44
+        assert out.iloc[1]['fdr_source'] == FDR_GSEAPY
+
+    def test_no_recomputation_labels_the_whole_run_as_gseapy(self):
+        """The pre-#122 path still works and does not claim to be the new one."""
+        res = pd.DataFrame({
+            'KE': ['KE:1'], 'NES': [1.0], 'p_value': [1.0], 'FDR': [0.44],
+        })
+
+        out = apply_null_diagnostics(res, {'KE:1': 400}, 1000)
+
+        assert out.iloc[0]['FDR'] == 0.44
+        assert out.iloc[0]['fdr_source'] == FDR_GSEAPY
+
+    def test_null_summaries_keep_the_arrays_the_tail_count_throws_away(self):
+        """#117 reduced each null to an integer; #122 needs the distribution."""
+        got = _null_summaries([
+            _Summary('KE:OK', 0.3, [-0.5, 0.4, np.inf]),
+            _Summary('KE:BROKEN', 'x', [0.1]),
+        ])
+
+        assert 'KE:BROKEN' not in got
+        es, null = got['KE:OK']
+        assert es == 0.3
+        # The non-finite entry is dropped, not carried into a pooled sort where
+        # it would land at the top of the distribution.
+        assert null.tolist() == [-0.5, 0.4]
 
 
 class TestMaxSizeExclusion:

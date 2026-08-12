@@ -138,8 +138,21 @@
                             'ES': 'ES',
                             'nes_status': 'NES status',
                             'p_value_resolution': 'P-value resolution',
+                            'fdr_source': 'FDR source',
                             'null_same_signed_n': 'Same-signed permutations',
                             'lead_genes': 'Lead Edge Genes'
+                        } %}
+                        {# Issue #122: the q-value is pooled across Key Events, so a
+                           Key Event whose score gseapy could not normalise used to move
+                           everybody else's. This column says whose number the row
+                           carries. #}
+                        {% set fdr_source_labels = {
+                            'recomputed': 'recomputed',
+                            'gseapy': "gseapy's own"
+                        } %}
+                        {% set fdr_source_titles = {
+                            'recomputed': 'Computed here from the captured permutation nulls. GSEA pools the null across Key Events, and a Key Event whose observed score beat every permutation cannot be normalised — gseapy substitutes a placeholder that then enters the pool every other q-value is divided by. This q-value was computed with those Key Events counted at their limit instead of at a substituted value (issue #122).',
+                            'gseapy': "gseapy's own q-value, unmodified. The permutation nulls could not be read for this run, so the pooled distribution behind this number may contain a substituted score for a Key Event that beat every permutation. Compare the NES status column."
                         } %}
                         {# Issue #117: a NES is only a magnitude when the permutation
                            null had a usable same-signed tail. These labels say which
@@ -189,6 +202,8 @@
                             <td>{{ "%.2f"|format(val) if val is not none else '—' }}</td>
                         {% elif col == 'nes_status' %}
                             <td title="{{ nes_status_titles.get(val, '') }}">{{ nes_status_labels.get(val, val) }}</td>
+                        {% elif col == 'fdr_source' %}
+                            <td title="{{ fdr_source_titles.get(val, '') }}">{{ fdr_source_labels.get(val, val) }}</td>
                         {% elif col == 'ES' %}
                             <td>{{ "%.3f"|format(val) if val is not none else '—' }}</td>
                         {% elif col == 'p_value_resolution' %}

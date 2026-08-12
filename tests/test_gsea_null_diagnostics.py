@@ -379,6 +379,28 @@ class TestPValueIsCoarseOnAShortTail:
         assert 'not inspected' in format_pvalue(0.4, NES_UNDIAGNOSED)
         assert 'not inspected' in format_nes(1.2, NES_UNDIAGNOSED)
 
+    def test_report_says_whose_qvalue_it_is_printing(self):
+        """Issue #122 — the report is the artefact that leaves the tool.
+
+        A reader holding only the PDF has no provenance column to consult, so
+        the caveat has to travel with the number. It is attached to the
+        un-recomputed case only: recomputed is now the normal path, and
+        annotating the normal path teaches readers to skip the annotation.
+        """
+        from services.gsea_service import FDR_GSEAPY, FDR_RECOMPUTED
+        from services.report_service import format_fdr
+
+        assert format_fdr(0.0412, FDR_RECOMPUTED) == '0.0412'
+        assert 'gseapy' in format_fdr(0.0412, FDR_GSEAPY)
+        assert 'null not inspected' in format_fdr(0.0412, FDR_GSEAPY)
+        # A result stored before #122 carries no source and must render exactly
+        # as it always did — it cannot be retro-labelled with a provenance
+        # nobody recorded at the time.
+        assert format_fdr(0.0412) == '0.0412'
+        assert format_fdr(0.0004) == '4.00e-04'
+        assert format_fdr(None) == 'n/a'
+        assert format_fdr(float('nan')) == 'n/a'
+
     def test_no_source_still_claims_the_pvalue_stands(self):
         """The retracted sentence must not survive anywhere it was written."""
         import pathlib

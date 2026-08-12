@@ -11,7 +11,7 @@ import math
 import logging
 import threading
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Set
+from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -86,6 +86,62 @@ NES_UNSTABLE = 'unstable_normalisation'
 #: collapsing the second into the first would let a gseapy upgrade reintroduce
 #: the whole of #117 under a clean bill of health.
 NES_UNDIAGNOSED = 'undiagnosed'
+
+# --- Pooled-null FDR recomputation (issue #122) ----------------------------
+#
+# #117 repaired the degenerate row itself. It could not repair anybody else's
+# q-value, because ``gsea_fdr`` had already run inside the Rust extension before
+# this module saw a result — and that function pools across terms.
+#
+# GSEA's FDR is a ratio of two tail fractions (gseapy/algorithm.py:632-681).
+# For an observed NES* >= 0:
+#
+#     FDR = [ #{NESnull >= NES*} / #{NESnull >= 0} ]
+#           ------------------------------------------
+#           [ #{NESobs  >= NES*} / #{NESobs  >= 0} ]
+#
+# Both pools are shared by every term. The substituted NES = 1.0 of a degenerate
+# term does *not* enter the permutation pool in the numerator — a term whose
+# null lies entirely on one side of zero contributes no same-signed null
+# entries, which is correct. It enters the **observed** vector in the
+# denominator, and that vector normalises everybody else's q.
+#
+# The bias is therefore one-sided and derivable. Let h = #{genuine NESobs >=
+# NES*} and p = #{genuine NESobs >= 0}. Injecting one fabricated NES of 1.0:
+#
+#   * NES* > 1.0   — h unchanged, p becomes p+1, so the denominator fraction
+#                    falls and the reported FDR is *inflated* (conservative).
+#   * 0 <= NES* <= 1.0 — h becomes h+1 and p becomes p+1; since h <= p the
+#                    fraction rises and the reported FDR is *deflated*
+#                    (anti-conservative).
+#
+# So the strongest results are penalised and the weak-to-moderate ones
+# flattered, systematically rather than randomly. Negatively-enriched terms are
+# untouched: a fabricated +1.0 never enters the negative pool. On a grid of
+# seven terms with one substitution the multiplier on the denominator is
+# (p+1)/p ~ 1.15-1.3, i.e. a 15-30% shift in q for terms above NES 1.0 — not
+# negligible against a 0.05 cutoff.
+#
+# The repair is to recompute the pooled FDR here, from the same permutation
+# nulls #117 already captures, treating the degenerate terms honestly. See
+# :func:`recompute_pooled_fdr` for why they are counted as +/-infinity rather
+# than dropped.
+
+#: A degenerate term's observed ES beat every permutation, so its normalised
+#: score is unbounded on that side. Counting it at every same-signed threshold
+#: is the faithful limit of the statistic and invents no magnitude.
+DEGENERATE_INFINITY = 'infinity'
+#: Drop degenerate terms from both pools. This is what issue #122 proposed; it
+#: is available for the comparison the issue asks for, but it is not the default
+#: — see :func:`recompute_pooled_fdr`.
+DEGENERATE_EXCLUDE = 'exclude'
+
+#: The q-value in this row was computed by this module from the captured
+#: permutation nulls, with degenerate terms handled per :data:`DEGENERATE_INFINITY`.
+FDR_RECOMPUTED = 'recomputed'
+#: The q-value in this row is gseapy's own, untouched. Either the permutation
+#: nulls could not be captured, or the recomputation declined this row.
+FDR_GSEAPY = 'gseapy'
 
 #: Serialises the process-global patch in :func:`_capture_prerank_summaries`.
 #:
@@ -218,6 +274,38 @@ def _capture_prerank_summaries(sink: List[Any]) -> Iterator[Dict[str, bool]]:
             setattr(gsea_module, 'prerank_rs', original)
 
 
+def _null_summaries(summaries: List[Any]) -> Dict[str, Tuple[float, np.ndarray]]:
+    """Extract each term's observed ES and its permutation null (issues #117, #122).
+
+    The captured ``GSEASummary`` objects are the only place the permutation
+    distribution survives; :func:`_capture_prerank_summaries` explains why they
+    have to be intercepted at all. #117 needed one integer per term and threw
+    the arrays away, which is the sole reason the pooled-null recomputation of
+    #122 could not be written against them.
+
+    Args:
+        summaries: ``GSEASummary`` objects captured from ``prerank_rs``.
+
+    Returns:
+        Term → ``(observed ES, finite permutation ES array)``. Terms whose
+        summary cannot be read, or whose null contains no finite value, are
+        omitted — downstream that reads as "not assessed", which is a different
+        claim from a tail of zero.
+    """
+    out: Dict[str, Tuple[float, np.ndarray]] = {}
+    for summary in summaries:
+        try:
+            observed = float(summary.es)
+            null = np.asarray(summary.esnull, dtype=float)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        null = null[np.isfinite(null)]
+        if null.size == 0:
+            continue
+        out[str(summary.term)] = (observed, null)
+    return out
+
+
 def _null_tail_sizes(summaries: List[Any]) -> Dict[str, int]:
     """Count each term's same-signed permutation tail (issue #117).
 
@@ -234,18 +322,154 @@ def _null_tail_sizes(summaries: List[Any]) -> Dict[str, int]:
         than as a count of zero.
     """
     sizes: Dict[str, int] = {}
-    for summary in summaries:
-        try:
-            observed = float(summary.es)
-            null = np.asarray(summary.esnull, dtype=float)
-        except (AttributeError, TypeError, ValueError):
-            continue
-        null = null[np.isfinite(null)]
-        if null.size == 0:
-            continue
+    for term, (observed, null) in _null_summaries(summaries).items():
         same_signed = (null >= 0) if observed >= 0 else (null < 0)
-        sizes[str(summary.term)] = int(same_signed.sum())
+        sizes[term] = int(same_signed.sum())
     return sizes
+
+
+def recompute_pooled_fdr(
+    summaries: List[Any],
+    degenerate: str = DEGENERATE_INFINITY,
+) -> Dict[str, float]:
+    """Recompute the pooled-null FDR without the fabricated NES (issue #122).
+
+    A transcription of gseapy's own ``normalize`` (algorithm.py:567-609) and
+    ``gsea_fdr`` (algorithm.py:632-681), not an independent derivation. That is
+    deliberate: the point of the change is to remove one contaminating value
+    from the pools, so every other step must stay bit-comparable to the
+    implementation being replaced. The equivalence test in
+    ``tests/test_gsea_service.py`` asserts exactly that — on a run with no
+    degenerate term this function must reproduce gseapy's q-values to ~1e-12 —
+    and it is the check that makes the change reviewable.
+
+    **Why degenerate terms are counted as +/-infinity rather than dropped.**
+    Issue #122 proposed excluding them. Excluding removes a term that genuinely
+    belongs in the observed distribution, so it deflates the denominator for
+    everybody else — the same class of error as the one being fixed, smaller and
+    with the opposite sign. The observed ES beat every permutation, so the
+    normalised score is unbounded on that side; counting it at every same-signed
+    threshold is the faithful limit and requires no invented magnitude. Under
+    that treatment the degenerate term's own q comes out as 0.0, which is the
+    limit #117 already writes into the row by hand — the two agree rather than
+    having to be reconciled. :data:`DEGENERATE_EXCLUDE` implements the other
+    choice so the two can be compared on real data, which is what #122's second
+    acceptance criterion asks for.
+
+    Note that +/-infinity is used *inside the pooling only*. The reported NES
+    for such a term stays NaN: the score is not normalisable, and printing an
+    infinity in the results table would be a magnitude claim the data does not
+    support.
+
+    Args:
+        summaries: ``GSEASummary`` objects captured from ``prerank_rs``.
+        degenerate: :data:`DEGENERATE_INFINITY` or :data:`DEGENERATE_EXCLUDE`.
+
+    Returns:
+        Term → recomputed q-value, capped at 1.0 exactly as gseapy caps it.
+        Empty when the nulls could not be read or are not rectangular, in which
+        case the caller leaves gseapy's own numbers in place. Terms whose
+        denominator would be zero are omitted for the same reason: gseapy
+        substitutes 1e9 there, which is not a q-value and must not reach a
+        results table.
+    """
+    if degenerate not in (DEGENERATE_INFINITY, DEGENERATE_EXCLUDE):
+        raise ValueError(
+            f"degenerate must be {DEGENERATE_INFINITY!r} or "
+            f"{DEGENERATE_EXCLUDE!r}, got {degenerate!r}"
+        )
+
+    per_term = _null_summaries(summaries)
+    if not per_term:
+        return {}
+
+    # Every term is permuted the same number of times, so a ragged set of rows
+    # means the capture picked up two overlapping runs (the condition
+    # _PRERANK_PATCH_LOCK exists to prevent) or a partially-read summary. Either
+    # way the pools would be built from mismatched material, so decline rather
+    # than pool them.
+    widths = {null.size for _, null in per_term.values()}
+    if len(widths) != 1:
+        logger.error(
+            "GSEA: permutation nulls are not rectangular (%s distinct widths: "
+            "%s) — the pooled FDR of issue #122 cannot be recomputed and "
+            "gseapy's own q-values stand. This usually means two runs' "
+            "summaries were captured together.",
+            len(widths), sorted(widths),
+        )
+        return {}
+
+    terms = list(per_term)
+    es = np.asarray([per_term[t][0] for t in terms], dtype=float)
+    esnull = np.vstack([per_term[t][1] for t in terms])
+
+    # gseapy/algorithm.py:596-607, transcribed. A fully-masked row — no
+    # permutation on the observed side — leaves the mean masked; gseapy lets the
+    # 0/0 through and the Rust path substitutes 1.0. Filling with NaN instead
+    # keeps the degenerate rows identifiable so they can be replaced below,
+    # rather than silently becoming a number.
+    with np.errstate(invalid='ignore', divide='ignore'):
+        pos_mean = np.ma.filled(
+            np.ma.MaskedArray(esnull, mask=(esnull < 0)).mean(axis=1), np.nan
+        ).astype(float)
+        neg_mean = np.ma.filled(
+            np.ma.MaskedArray(esnull, mask=(esnull >= 0)).mean(axis=1), np.nan
+        ).astype(float)
+        nes = np.where(es >= 0, es / pos_mean, -es / neg_mean)
+        # The null rows stay well defined even for a degenerate term: its
+        # permutations all sit on the other side of zero, so they normalise
+        # against that side's mean, which exists. This is why the contamination
+        # is confined to the observed vector.
+        nesnull = np.where(
+            esnull >= 0,
+            esnull / pos_mean[:, np.newaxis],
+            -esnull / neg_mean[:, np.newaxis],
+        )
+
+    degenerate_mask = ~np.isfinite(nes)
+    if degenerate == DEGENERATE_INFINITY:
+        nes = np.where(degenerate_mask, np.where(es >= 0, np.inf, -np.inf), nes)
+        keep = np.ones(len(terms), dtype=bool)
+    else:
+        keep = ~degenerate_mask
+
+    # A non-finite value in the *null* pool is not a regime this handles; drop
+    # those entries rather than let np.sort park them at the end where
+    # searchsorted would count them as the largest values in the distribution.
+    nvals = np.sort(nesnull[np.isfinite(nesnull)].ravel())
+    nnes = np.sort(nes[keep])
+    if nvals.size == 0 or nnes.size == 0:
+        return {}
+
+    fdrs: Dict[str, float] = {}
+    for i, term in enumerate(terms):
+        if not keep[i]:
+            continue
+        value = nes[i]
+        # gseapy/algorithm.py:649-677, transcribed. searchsorted over the two
+        # sorted pools is gseapy's own formulation of "count at or beyond this
+        # threshold, on this side of zero".
+        if value >= 0:
+            all_pos = nvals.size - int(np.searchsorted(nvals, 0, side='left'))
+            all_higher = nvals.size - int(np.searchsorted(nvals, value, side='left'))
+            nes_pos = nnes.size - int(np.searchsorted(nnes, 0, side='left'))
+            nes_higher = nnes.size - int(np.searchsorted(nnes, value, side='left'))
+        else:
+            all_pos = int(np.searchsorted(nvals, 0, side='left'))
+            all_higher = int(np.searchsorted(nvals, value, side='right'))
+            nes_pos = int(np.searchsorted(nnes, 0, side='left'))
+            nes_higher = int(np.searchsorted(nnes, value, side='right'))
+
+        if all_pos == 0 or nes_pos == 0:
+            # gseapy returns 1e9 here. That is a sentinel, not a q-value, and
+            # this module's output goes straight into a results table and a
+            # report, so the row is left with gseapy's number and labelled as
+            # gseapy's rather than given a fabricated one.
+            continue
+        fdr = (all_higher / float(all_pos)) / (nes_higher / float(nes_pos))
+        fdrs[term] = float(min(fdr, 1.0))
+
+    return fdrs
 
 
 def apply_null_diagnostics(
@@ -253,6 +477,7 @@ def apply_null_diagnostics(
     same_signed_sizes: Dict[str, int],
     permutation_num: int,
     diagnostics_captured: bool = True,
+    recomputed_fdr: Optional[Dict[str, float]] = None,
 ) -> pd.DataFrame:
     """Classify each result row by its same-signed null tail and repair it (#117).
 
@@ -293,10 +518,26 @@ def apply_null_diagnostics(
             False means the wrapper never fired — the failure is in this
             module's grip on gseapy, not in the data — and is logged as an
             error rather than a warning.
+        recomputed_fdr: KE → q-value from :func:`recompute_pooled_fdr`
+            (issue #122). Where a KE is present its q replaces gseapy's, which
+            was pooled against a fabricated NES; where it is absent gseapy's
+            number stands. Either way the row records which one it carries in
+            ``fdr_source``, because "recomputed" and "gseapy's own" are
+            different statistical claims and a reader thresholding on q is
+            entitled to know which they are looking at.
 
     Returns:
         pd.DataFrame: ``res``, mutated in place and returned for chaining.
     """
+    # Issue #122 — replace the pooled q before the regime classification below
+    # reads it, so a degenerate row's hand-written limit is applied on top of
+    # the recomputed value rather than being overwritten by it.
+    recomputed = pd.Series(
+        res['KE'].map(recomputed_fdr or {}), index=res.index, dtype=float
+    )
+    res['fdr_source'] = np.where(recomputed.notna(), FDR_RECOMPUTED, FDR_GSEAPY)
+    res['FDR'] = recomputed.where(recomputed.notna(), res['FDR'])
+
     res['null_same_signed_n'] = res['KE'].map(same_signed_sizes)
     tail = res['null_same_signed_n']
     undiagnosed = tail.isna()
@@ -312,7 +553,27 @@ def apply_null_diagnostics(
     if beyond.any():
         res.loc[beyond, 'NES'] = np.nan
         res.loc[beyond, 'p_value'] = 1.0 / permutation_num
-        res.loc[beyond, 'FDR'] = 0.0
+        # The FDR limit is 0: nothing in the pooled null is more extreme than a
+        # score no permutation reached. Written by hand only where the row was
+        # not recomputed — under DEGENERATE_INFINITY the recomputation derives
+        # the same 0.0 from the pools, and a disagreement between the two would
+        # mean the infinity treatment had stopped being the limit it claims to
+        # be, which is worth an error rather than a silent overwrite.
+        untouched = beyond & (res['fdr_source'] == FDR_GSEAPY)
+        res.loc[untouched, 'FDR'] = 0.0
+        disagreed = res.loc[
+            beyond & (res['fdr_source'] == FDR_RECOMPUTED) & (res['FDR'] != 0.0),
+            'KE',
+        ].tolist()
+        if disagreed:
+            logger.error(
+                "GSEA: the recomputed pooled FDR (issue #122) is non-zero for "
+                "%d Key Event(s) whose observed ES beat every permutation, "
+                "where the limit is 0: %s. The infinity treatment in "
+                "recompute_pooled_fdr is no longer producing the limit it "
+                "documents.",
+                len(disagreed), sorted(disagreed),
+            )
         logger.warning(
             "GSEA: %d Key Event(s) had no same-signed permutation and were "
             "reported by gseapy as NES=1.0, p=1.0 — corrected to "
@@ -463,6 +724,11 @@ def run_gsea_analysis(
         )
     diagnostics_captured = bool(capture_state.get('captured'))
     same_signed_sizes = _null_tail_sizes(summaries)
+    # Issue #122 — the pooled FDR gseapy returned was normalised against an
+    # observed-NES vector containing a fabricated 1.0 for every degenerate term.
+    # Recompute it from the same captured nulls; an empty result means the
+    # nulls were unreadable and gseapy's own q-values stand, labelled as such.
+    recomputed_fdr = recompute_pooled_fdr(summaries)
 
     res = pre_res.res2d.copy()
 
@@ -500,8 +766,21 @@ def run_gsea_analysis(
     res = apply_null_diagnostics(
         res, same_signed_sizes, permutation_num,
         diagnostics_captured=diagnostics_captured,
+        recomputed_fdr=recomputed_fdr,
     )
     undiagnosed_kes = int((res['nes_status'] == NES_UNDIAGNOSED).sum())
+    if recomputed_fdr:
+        logger.info(
+            "GSEA: recomputed the pooled-null FDR for %d of %d Key Event(s) "
+            "(issue #122); the rest carry gseapy's own q-value.",
+            int((res['fdr_source'] == FDR_RECOMPUTED).sum()), len(res),
+        )
+    else:
+        logger.warning(
+            "GSEA: the pooled-null FDR could not be recomputed (issue #122), "
+            "so every q-value in this run is gseapy's own and was normalised "
+            "against a pool that may contain a substituted NES."
+        )
 
     # Populate total_KE_genes_in_dataset from pre-computed overlap counts
     res['total_KE_genes_in_dataset'] = (
@@ -580,8 +859,8 @@ def run_gsea_analysis(
     res = res.sort_values(['FDR', 'KE'], ascending=[True, True], kind='mergesort')
 
     out = res[['KE', 'Title', 'NES', 'nes_status', 'ES', 'p_value',
-               'p_value_resolution', 'FDR', 'null_same_signed_n', 'lead_genes',
-               'total_KE_genes_in_dataset']]
+               'p_value_resolution', 'FDR', 'fdr_source', 'null_same_signed_n',
+               'lead_genes', 'total_KE_genes_in_dataset']]
     # Attach on the returned object: pandas only propagates .attrs through
     # operations that call __finalize__, so set it last.
     out.attrs[KE_SUMMARY_ATTR] = ke_summary
