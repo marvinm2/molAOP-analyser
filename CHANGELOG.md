@@ -8,6 +8,8 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-08-13
+
 ### Changed
 
 - **GSEA q-values are now computed here rather than taken from gseapy (#122).** This is a

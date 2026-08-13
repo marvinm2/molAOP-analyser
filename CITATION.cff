@@ -27,7 +27,8 @@ authors:
     given-names: Marvin
     orcid: https://orcid.org/0000-0003-2230-0840
     affiliation: Department of Translational Genomics, Maastricht University
-version: 4.0.0
+version: 5.0.0
+date-released: '2026-08-13'
 license: GPL-2.0-only
 repository-code: https://github.com/marvinm2/molAOP-analyser
 url: https://molaop-analyser.vhp4safety.nl
