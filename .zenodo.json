@@ -47,10 +47,10 @@
       "scheme": "doi"
     },
     {
-      "identifier": "https://github.com/marvinm2/molAOP-builder",
+      "identifier": "10.5281/zenodo.21914244",
       "relation": "requires",
       "resource_type": "software",
-      "scheme": "url"
+      "scheme": "doi"
     }
   ]
 }

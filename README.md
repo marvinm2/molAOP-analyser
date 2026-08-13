@@ -387,6 +387,7 @@ separately:
 | If your analysis used… | Also cite |
 |---|---|
 | KE → pathway mappings (i.e. any enrichment result) | the molAOP Builder **dataset**, [10.5281/zenodo.20184643](https://doi.org/10.5281/zenodo.20184643) |
+| the Builder application itself (e.g. you curated mappings with it) | the molAOP Builder **software**, [10.5281/zenodo.21914244](https://doi.org/10.5281/zenodo.21914244) |
 | Key Event or AOP structure | [AOP-Wiki](https://aopwiki.org/) (content CC BY-SA 4.0) |
 | WikiPathways gene sets | [WikiPathways](https://www.wikipathways.org/) |
 | GO or Reactome gene sets | [Gene Ontology](https://geneontology.org/) / [Reactome](https://reactome.org/) |

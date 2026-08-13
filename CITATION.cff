@@ -9,7 +9,7 @@ message: >-
   If you use this software, please cite it using the metadata below. An enrichment
   result also rests on the Key Event to pathway mappings produced by the Molecular AOP
   Builder, published separately as 10.5281/zenodo.20184643 — cite that too when you
-  report enrichment results.
+  report enrichment results. The Builder software itself is 10.5281/zenodo.21914244.
 type: software
 title: >-
   Molecular AOP Analyser: Key Event enrichment of gene-expression data against
