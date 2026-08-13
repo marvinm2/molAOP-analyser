@@ -5,6 +5,7 @@ Provides reusable fixtures for database, Flask app, and test data.
 """
 
 import os
+import socket
 import sys
 import tempfile
 import pytest
@@ -337,3 +338,56 @@ def cleanup_temp_files():
                 os.unlink(filepath)
         except OSError:
             pass
+
+# ---------------------------------------------------------------------------
+# The suite must not reach the network
+# ---------------------------------------------------------------------------
+#
+# Nothing here *requires* the network — the whole suite passes with it blocked.
+# But some paths still attempted real calls and quietly fell back, which cost
+# 15-30 seconds a run and, once, a 300-second stall: a test sat in urllib3's
+# Retry-After backoff after the Builder's public API (100 requests per hour per
+# IP) rate-limited it. pytest-timeout caught that one, so it failed rather than
+# hanging, but a release gated on "CI green on this exact commit" should not be
+# able to go red because a third party was busy.
+#
+# The four-tier fallbacks in aop_discovery_service are exactly why this was
+# invisible: a test that reaches AOP-Wiki, gets nothing, and falls back to the
+# bundled snapshot still passes. It passes faster, and for the right reason, with
+# the socket closed.
+#
+# Implemented here rather than with pytest-recording's --block-network so the
+# suite gains no dependency: requirements-dev.txt is a pip-compile lock that has
+# to be regenerated inside python:3.14-bookworm to match the image, which is a
+# heavier change than the guard deserves.
+#
+# Unix-domain sockets stay open — SQLite and the test client need them.
+
+class NetworkAccessInTestError(RuntimeError):
+    """A test tried to open a network connection."""
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch, request):
+    """Refuse outbound network connections for the duration of every test.
+
+    Mark a test ``@pytest.mark.allow_network`` to opt out, which should be
+    reserved for a test whose subject genuinely is the network call.
+    """
+    if request.node.get_closest_marker("allow_network"):
+        return
+
+    real_connect = socket.socket.connect
+
+    def guarded_connect(self, address, *args, **kwargs):
+        if self.family in (socket.AF_INET, socket.AF_INET6):
+            raise NetworkAccessInTestError(
+                f"test attempted a network connection to {address!r}. The suite "
+                "runs without network access so it cannot be slowed or failed by "
+                "a third party; stub the call, or mark the test "
+                "@pytest.mark.allow_network if the connection is the subject of "
+                "the test."
+            )
+        return real_connect(self, address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)

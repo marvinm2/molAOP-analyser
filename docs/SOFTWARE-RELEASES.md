@@ -53,7 +53,16 @@ accepts the licence identifier, community, or relation types.
 
 ## A note on the test suite
 
-The suite is expected to pass without network access, but one path has been observed making a
-live HTTP call and stalling on a `Retry-After` backoff. Since the release gates on "CI green
-on that exact commit", a hang here blocks the tag rather than failing it. If CI sits at the
-test step far longer than the usual runtime, that is the likely cause.
+The suite runs with outbound network access refused — a `conftest.py` guard raises on any
+`AF_INET`/`AF_INET6` connect, so a release cannot go red because the Builder's public API
+(100 requests/hour/IP) or the AOP-Wiki SPARQL endpoint was busy. Nothing in the suite needs
+the network; the guard made it about 25% faster by removing calls that were being attempted
+and silently falling back.
+
+A test whose subject genuinely is the network call opts out with
+`@pytest.mark.allow_network`. If you add one, remember it reintroduces exactly the dependency
+the guard removes, so the release becomes sensitive to a third party again.
+
+Independently, `pytest.ini` sets a 300-second per-test timeout with `timeout_method = thread`
+(issue #104), which dumps every thread's stack. A stalled test therefore fails with a stack
+trace naming the culprit rather than hanging.
