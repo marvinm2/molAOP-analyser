@@ -2,3 +2,13 @@
 pytest>=7.4,<9
 pytest-cov>=5.0,<8
 pytest-timeout>=2.3,<3
+
+# gseapy's own reference implementation of normalize()/gsea_fdr() lives in
+# gseapy/algorithm.py, which does `from joblib import Parallel, delayed` at
+# module level while gseapy declares only numpy, scipy, pandas, matplotlib and
+# requests — an upstream packaging gap. Importing it is how
+# tests/test_gsea_service.py::TestPooledNullFdr checks the #122 recomputation
+# against gseapy's own arithmetic instead of against a second copy of it, so
+# joblib is a test dependency here even though nothing at runtime needs it
+# (prerank goes through the Rust extension, not algorithm.py).
+joblib
