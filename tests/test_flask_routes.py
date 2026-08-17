@@ -1692,6 +1692,68 @@ class TestPathwayView:
             f"Body excerpt: {response.data[:500]!r}"
         )
 
+    def test_picker_option_carries_ke_id(self, authenticated_client):
+        """Each picker <option> exposes data-ke alongside data-wp.
+
+        The expression overlay needs the KE, not just the pathway: the colours come
+        from that Key Event's gene set in `keToGenes`. Without data-ke the JS has no
+        way to look them up, so the overlay silently renders a bare diagram.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form(),
+            wp_picker_data=[self._picker_entry],
+        )
+        assert response.status_code == 200
+        assert b'data-ke="KE:1"' in response.data, (
+            "Expected data-ke on the picker option so the overlay can resolve the "
+            "Key Event's gene set."
+        )
+        # data-wp must survive alongside it — setPathway still validates on the WP ID.
+        assert b'data-wp="WP368"' in response.data
+
+    def test_overlay_controls_render(self, authenticated_client):
+        """The overlay toggle, counts line and third-party disclosure are all present.
+
+        The disclosure is not cosmetic: with the overlay on, gene symbols leave the
+        app for pathway-viewer.toolforge.org, and the toggle is the only way to opt
+        out. A regression that drops either leaves users colouring their data with no
+        statement that it was sent anywhere, so both are asserted explicitly.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form(),
+            wp_picker_data=[self._picker_entry],
+        )
+        assert response.status_code == 200
+        body = response.data
+        assert b'id="pathway-overlay-toggle"' in body
+        assert b'id="pathway-overlay-counts"' in body
+        assert b'id="pathway-overlay-ramp"' in body
+        assert b'pathway-viewer.toolforge.org' in body, (
+            "Expected the third-party disclosure naming the Toolforge host."
+        )
+
+    def test_overlay_reports_significance_criterion(self, authenticated_client):
+        """The page states the per-gene significance rule the overlay used.
+
+        Only significant genes are coloured, so the rule that decided that has to be
+        visible — and it is not the Key Event FDR. Here logfc_threshold=1.0 with the
+        default p-value cutoff.
+        """
+        response = self._post_analyze(
+            authenticated_client,
+            self._analyze_form(),
+            wp_picker_data=[self._picker_entry],
+        )
+        assert response.status_code == 200
+        # The criterion is inlined through Jinja's `| tojson`, which escapes the
+        # non-ASCII glyphs, so the body carries the JSON-encoded form.
+        expected = json.dumps("|log₂FC| ≥ 1 and p ≤ 0.05")
+        assert expected in response.data.decode('utf-8'), (
+            f"Expected the overlay JS to inline {expected}."
+        )
+
 
 class TestMinConfidenceControl:
     """Issue #60: the minimum mapping-confidence control on the single flow."""

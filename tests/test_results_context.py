@@ -15,7 +15,10 @@ import re
 
 import pytest
 
-from services.results_context import build_results_context
+from services.results_context import (
+    build_results_context,
+    describe_gene_significance_criterion,
+)
 
 
 TEMPLATE = "templates/results.html"
@@ -156,3 +159,57 @@ def test_nothing_is_claimed_when_nothing_was_dropped_or_recorded(value):
     html = _render(dropped_rows=value)
 
     assert "had no gene symbol" not in html
+
+
+class TestGeneSignificanceCriterion:
+    """The overlay caption must state which rule decided "significant gene".
+
+    The pathway-view overlay colours only significant genes, and the per-gene
+    `significant` flag is *not* the Key Event FDR — it is the log2FC/p-value pair
+    from the upload settings. Worse, the analysis form hides both threshold inputs
+    under GSEA, so `logfc_threshold` silently defaults to 0 there and the same word
+    covers a much broader set of genes. These tests pin the wording so a reader can
+    always tell which rule produced the colours they are looking at.
+    """
+
+    def test_fisher_names_both_thresholds(self):
+        assert describe_gene_significance_criterion("ora", 1.0, 0.05) == (
+            "|log₂FC| ≥ 1 and p ≤ 0.05"
+        )
+
+    def test_whole_numbers_lose_the_trailing_zero(self):
+        """'≥ 1' reads as a threshold; '≥ 1.0' reads as generated output."""
+        assert "≥ 1 and" in describe_gene_significance_criterion("ora", 1.0, 0.05)
+        assert "≥ 0.5 and" in describe_gene_significance_criterion("ora", 0.5, 0.05)
+
+    def test_absent_thresholds_fall_back_to_the_pipeline_defaults(self):
+        """Mirrors process_gene_expression: log2FC defaults to 0, p to PVAL_CUTOFF."""
+        from config import Config
+
+        result = describe_gene_significance_criterion("ora", None, None)
+
+        assert result == f"|log₂FC| ≥ 0 and p ≤ {Config.PVAL_CUTOFF}"
+
+    def test_gsea_says_no_logfc_cut_applies(self):
+        """Under GSEA the hidden log2FC input defaults to 0, so claiming a fold-change
+        threshold would be false — and the resulting gene set is genuinely broader."""
+        result = describe_gene_significance_criterion("gsea", None, 0.01)
+
+        assert "p ≤ 0.01" in result
+        assert "no log₂FC cut" in result
+        assert "≥" not in result, f"GSEA must not imply a fold-change cut: {result!r}"
+
+    def test_builder_computes_the_criterion_from_the_run_thresholds(self):
+        ctx = build_results_context(
+            table=[], network={"nodes": [], "edges": []}, metadata={},
+            threshold=1.5, pval_threshold=0.01,
+        )
+
+        assert ctx["gene_significance_criterion"] == "|log₂FC| ≥ 1.5 and p ≤ 0.01"
+
+    def test_criterion_reaches_the_template(self):
+        """The value is inlined into the overlay JS, so it must survive rendering."""
+        html = _render(gene_significance_criterion="|log₂FC| ≥ 1.5 and p ≤ 0.01")
+
+        assert "|log\\u2082FC| \\u2265 1.5 and p \\u2264 0.01" in html or \
+               "|log₂FC| ≥ 1.5 and p ≤ 0.01" in html

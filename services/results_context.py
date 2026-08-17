@@ -40,6 +40,55 @@ def _as_json(value: Any) -> str:
     return json.dumps(value if value is not None else None)
 
 
+def _format_cutoff(value: float) -> str:
+    """Render a threshold for display without a trailing ``.0`` on whole numbers."""
+    if value == int(value):
+        return str(int(value))
+    return f"{value:g}"
+
+
+def describe_gene_significance_criterion(
+    method: str,
+    threshold: Optional[float],
+    pval_threshold: Optional[float],
+) -> str:
+    """Describe what "a significant gene" means for this run, in the user's terms.
+
+    The per-gene ``significant`` flag is set in
+    ``data_service.process_gene_expression()`` as
+    ``|log2FC| >= logfc_threshold AND pval <= effective_pval``, where
+    ``effective_pval`` falls back to ``Config.PVAL_CUTOFF``.
+
+    The catch is that the analysis form hides both threshold inputs when GSEA is
+    selected, because they have no effect on the enrichment statistic. They still
+    reach ``process_gene_expression()``, though, so ``logfc_threshold`` defaults
+    to ``0.0`` and the flag quietly degrades to a bare p-value cut — a much larger
+    set of "significant" genes than the same dataset yields under Fisher. The
+    pathway overlay colours exactly those genes, so it has to say which rule
+    produced them rather than let one word mean two things.
+
+    Leading-edge genes would be the better basis under GSEA; that is a larger
+    change and is deliberately not attempted here.
+
+    Args:
+        method: ``'gsea'`` or anything else (treated as Fisher/ORA).
+        threshold: the run's log2FC threshold, if the route set one.
+        pval_threshold: the run's per-gene p-value threshold, if the route set one.
+
+    Returns:
+        A short phrase suitable for inlining into a sentence, e.g.
+        ``'|log₂FC| ≥ 1 and p ≤ 0.05'``.
+    """
+    pval = pval_threshold if pval_threshold is not None else Config.PVAL_CUTOFF
+    if method == 'gsea':
+        return (
+            f"p ≤ {_format_cutoff(pval)}; GSEA applies no log₂FC cut, "
+            "so this is broader than under Fisher's exact test"
+        )
+    logfc = threshold if threshold is not None else 0.0
+    return f"|log₂FC| ≥ {_format_cutoff(float(logfc))} and p ≤ {_format_cutoff(pval)}"
+
+
 def build_results_context(
     *,
     table: List[Dict[str, Any]],
@@ -108,6 +157,11 @@ def build_results_context(
         "metadata": metadata,
         "method": method or "ora",
         "pval_threshold": pval_threshold,
+        # Consumed by the pathway-overlay caption, which must name the rule that
+        # decided which genes it coloured.
+        "gene_significance_criterion": describe_gene_significance_criterion(
+            method or "ora", threshold, pval_threshold
+        ),
         "tour_active": tour_active,
         # Both of these reach `| tojson` in the template, so they must be
         # concrete values rather than an absent name.
