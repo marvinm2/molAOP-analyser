@@ -315,10 +315,24 @@ CYP3A4         3.21             0.00001   0.0001
             entries are ordered so the most-enriched Key Events' pathways appear first. The
             <strong>Open full pathway</strong> link opens the diagram on wikipathways.org.
         </p>
+        <p>
+            With <strong>Overlay expression data</strong> checked (the default), the genes of the
+            selected Key Event that are significant in your dataset are coloured by log&#8322;FC on
+            the same blue-to-red scale as the AOP network above. Only significant genes are
+            coloured, so an uncoloured node means either that the gene is absent from your dataset
+            or that it was measured and not significant &mdash; the line under the controls gives
+            both counts so you can tell which. Note that gene-level significance is the per-gene
+            threshold from your upload settings, not the Key Event FDR, and that GSEA applies no
+            log&#8322;FC cut, so the same dataset yields a broader set of coloured genes under GSEA
+            than under Fisher's exact test. The caption states the rule in force for your run.
+        </p>
         <div class="info-box">
-            <strong>Note:</strong> The Pathway view shows the bare WikiPathways diagram &mdash;
-            your gene expression values are <em>not</em> overlaid on it. For expression-coloured
-            visualisation, use the AOP network above.
+            <strong>Note:</strong> Colouring is performed by the WikiPathways Toolforge viewer,
+            which takes the nodes to colour from the diagram URL. With the overlay on, the
+            <em>gene symbols</em> of the selected Key Event's significant genes are therefore sent
+            to <code>pathway-viewer.toolforge.org</code>; your log&#8322;FC values, p-values and
+            uploaded file are not. Uncheck <strong>Overlay expression data</strong> for the bare
+            diagram, which sends nothing about your dataset.
         </div>
     </div>
 

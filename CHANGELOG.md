@@ -8,6 +8,50 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+### Added
+
+- **Gene expression is overlaid on the embedded WikiPathways diagram (#51).** The pathway view
+  showed a bare diagram; the genes of the selected Key Event that are significant in the uploaded
+  dataset are now coloured by log2FC on the same blue-to-red ramp as the Cytoscape network, from
+  the same `defaultLogFCColor()`, so the two views cannot disagree. An *Overlay expression data*
+  checkbox (default on) returns the bare diagram, and the picker `<option>` carries `data-ke`
+  because the colours come from the Key Event's gene set rather than from the pathway.
+
+  This needed no rendering service. The WikiPathways Toolforge viewer already colours nodes from
+  URL query parameters, where the parameter *name* is the colour and its value is a
+  comma-separated node-selector list, and WikiPathways SVGs tag gene nodes with `HGNC_<SYMBOL>` —
+  which matches this app's HGNC-only uppercase pipeline with no ID translation. The gene payload
+  was already in the browser as `keToGenes`, so nothing extra is fetched and no new dependency,
+  route or server-side rendering was introduced. The overlay had previously been deferred on the
+  understanding that it required a PinPath R/Plumber microservice or `rpy2` in-container.
+
+  **Only significant genes are coloured**, which makes an uncoloured node ambiguous — absent from
+  the dataset, or measured and not significant. A counts line states both numbers and names the
+  per-gene significance rule in force, via the new
+  `results_context.describe_gene_significance_criterion()`. That rule differs by method: GSEA
+  hides the threshold inputs, so `logfc_threshold` falls back to 0 and the flag becomes a bare
+  p-value cut, qualifying many more genes than Fisher's exact test does on the same data.
+
+  Colour bins must be **even** in number (8). With an odd count the middle bin's centre is exactly
+  0.0, where `defaultLogFCColor()` returns its `#ccc` fallback rather than a ramp colour, so that
+  bin coloured nothing and silently dropped significant genes with a near-zero fold change. The
+  URL length cap measures the serialised query string rather than estimating a per-gene cost, and
+  the reported dropped-gene count covers only genes the cap excluded.
+
+  **This sends data to a third party.** With the overlay on, the gene symbols of the selected Key
+  Event's significant genes travel to `pathway-viewer.toolforge.org` inside the diagram URL;
+  log2FC values do not, only the colour bin. That reverses the pathway view's original design
+  decision to keep expression data out of that URL, and the card discloses it next to the control
+  that causes it.
+
+### Fixed
+
+- **The resource checkboxes no longer claim GO BP and Reactome have no confidence field.** Four
+  labels reading `— no confidence field` sat directly above the paragraph stating that the
+  threshold applies to all three resources. They were left behind when the threshold was extended
+  to the GMT-backed resources (#71) and the prose making that claim was removed; the capability
+  has been correct since 2026-07-22 and only the labels were wrong.
+
 ## [5.0.0] - 2026-08-13
 
 ### Changed

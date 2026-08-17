@@ -570,7 +570,8 @@
         <div class="pathway-view__header">
             <div>
                 <h3 class="pathway-view__title">Pathway view</h3>
-                <p class="pathway-view__caption">Bare WikiPathways diagram for the Key Event's mapped pathway. No expression data is overlaid.</p>
+                <p class="pathway-view__caption">WikiPathways diagram for the Key Event's mapped pathway, with your
+                   significant genes coloured by log&#8322;FC on the same scale as the network above.</p>
             </div>
             <button id="pathway-view-toggle" class="btn btn--primary">Show pathway view</button>
         </div>
@@ -579,12 +580,42 @@
                 <label for="pathway-picker">Select a pathway</label>
                 <select id="pathway-picker" class="pathway-view__picker">
                     {% for entry in wp_picker_data %}
-                    <option value="{{ entry.wp_id }}" data-wp="{{ entry.wp_id }}" data-confidence="{{ entry.confidence_level }}">{{ entry.ke_id }} {{ entry.ke_title }} — {{ entry.wp_title }} ({{ entry.wp_id }})</option>
+                    <option value="{{ entry.wp_id }}" data-wp="{{ entry.wp_id }}" data-ke="{{ entry.ke_id }}" data-confidence="{{ entry.confidence_level }}">{{ entry.ke_id }} {{ entry.ke_title }} — {{ entry.wp_title }} ({{ entry.wp_id }})</option>
                     {% endfor %}
                 </select>
                 <span id="pathway-confidence-badge" class="confidence-badge"></span>
                 <a id="pathway-popup-link" class="pathway-view__popup-link" href="#" target="_blank" rel="noopener noreferrer">Open full pathway →</a>
             </div>
+
+            {# Expression overlay controls. The colouring is done by the Toolforge
+               viewer's own node-highlight query parameters (param name = colour,
+               value = comma-separated node selectors), so switching the overlay on
+               sends the symbols of this KE's significant genes to
+               pathway-viewer.toolforge.org. That deliberately reverses Phase 999.4's
+               D-02, so the disclosure below stays next to the control that causes it. #}
+            <div class="pathway-view__overlay-row">
+                <label class="pathway-view__overlay-toggle">
+                    <input type="checkbox" id="pathway-overlay-toggle" checked>
+                    Overlay expression data
+                </label>
+                <span class="pathway-view__overlay-scale">
+                    <span class="pathway-view__overlay-scale-label">−1</span>
+                    <span id="pathway-overlay-ramp" class="pathway-view__overlay-ramp"></span>
+                    <span class="pathway-view__overlay-scale-label">+1</span>
+                    <span class="pathway-view__overlay-scale-note">Down ← log&#8322;FC → Up</span>
+                </span>
+            </div>
+            {# Only significant genes are coloured, so an uncoloured node is
+               ambiguous — not measured, or measured and not significant. This
+               counts line is what disambiguates it and is not decorative. #}
+            <p id="pathway-overlay-counts" class="pathway-view__overlay-counts"></p>
+            <p class="pathway-view__overlay-disclosure">
+                With the overlay on, the symbols of this Key Event's significant genes are sent to
+                <code>pathway-viewer.toolforge.org</code> (Wikimedia Toolforge) inside the diagram
+                URL so it can colour the nodes. Uncheck the box for the bare diagram, which sends
+                nothing about your dataset.
+            </p>
+
             <div class="pathway-view__iframe-wrapper">
                 <p id="pathway-loading-msg" class="pathway-view__loading">Loading pathway diagram...</p>
                 <iframe id="pathway-iframe" class="pathway-view__iframe" src="" title="WikiPathways pathway viewer" loading="lazy" sandbox="allow-scripts allow-same-origin allow-popups" referrerpolicy="no-referrer"></iframe>
@@ -1915,10 +1946,46 @@ async function handleReportSubmit(event) {
 // Lazy embed of the WikiPathways Toolforge viewer.
 // D-04: iframe src is empty until the toggle is clicked.
 // T-999.4-02-01: wpId is validated against /^WP\d+$/ before any URL assignment.
-// D-02: no gene/log2FC/expression data is passed into the iframe URL.
+// D-02 (superseded): the iframe URL originally carried no expression data. It now
+// carries the *symbols* of the selected Key Event's significant genes, grouped by
+// log2FC colour bin, because that is how the Toolforge viewer colours nodes — its
+// query-parameter NAME is the colour and the value is a comma-separated selector
+// list. Enabling the overlay therefore discloses those symbols to a third party,
+// which the card states next to the checkbox that controls it. log2FC values
+// themselves are never sent, only the bin each gene fell into.
 (function() {
     const EMBED_BASE = "https://pathway-viewer.toolforge.org/embed/";
     const PATHWAY_BASE = "https://www.wikipathways.org/pathways/";
+
+    // Toolforge matches nodes against tokens present in the pathway SVG.
+    // WikiPathways SVGs tag every gene node with an `HGNC_<SYMBOL>` class, which
+    // lines up exactly with this app's HGNC-only, uppercased gene pipeline — so no
+    // ID translation is needed. Selectors absent from the SVG are dropped
+    // viewer-side, making unmatched genes a silent no-op rather than an error.
+    const OVERLAY_SELECTOR_PREFIX = 'HGNC_';
+    // Number of discrete colour bins across the log2FC ramp. One query parameter
+    // is emitted per occupied bin (the parameter name *is* the colour), so this
+    // also bounds the parameter count. Must be EVEN: with an odd count the middle
+    // bin's centre is exactly 0, where defaultLogFCColor() returns its '#ccc'
+    // fallback instead of a ramp colour — that bin would then never colour
+    // anything, silently dropping significant genes with a near-zero fold change.
+    // An even count also puts a bin boundary at zero, so every coloured gene reads
+    // as unambiguously up or down.
+    const OVERLAY_BINS = 8;
+    // defaultLogFCColor() clamps at +/-1, so the bins must span the same range or
+    // the ramp shown here would disagree with the network's gene-node colours.
+    const OVERLAY_FC_LIMIT = 1;
+    // Keep the assembled URL clear of nginx's 8KB request-line + header budget on
+    // the Toolforge side. Only significant genes are sent, so this rarely binds —
+    // but a GSEA run has no user-set log2FC threshold and can qualify far more
+    // genes, so the cap is load-bearing rather than theoretical.
+    const OVERLAY_MAX_URL_LENGTH = 3500;
+
+    // Built server-side by results_context.describe_gene_significance_criterion()
+    // so it is unit-testable and states the criterion actually in force — which
+    // differs between Fisher and GSEA. See that function for why.
+    const SIGNIFICANCE_CRITERION = {{ gene_significance_criterion | tojson }};
+
     const pathwayToggle = document.getElementById('pathway-view-toggle');
     const pathwayContent = document.getElementById('pathway-view-content');
     const pathwayIframe = document.getElementById('pathway-iframe');
@@ -1926,6 +1993,9 @@ async function handleReportSubmit(event) {
     const pathwayPopupLink = document.getElementById('pathway-popup-link');
     const pathwayLoadingMsg = document.getElementById('pathway-loading-msg');
     const pathwayBadge = document.getElementById('pathway-confidence-badge');
+    const overlayToggle = document.getElementById('pathway-overlay-toggle');
+    const overlayCounts = document.getElementById('pathway-overlay-counts');
+    const overlayRamp = document.getElementById('pathway-overlay-ramp');
     let pathwayFirstShow = true;
 
     // Gate on the elements the picker logic actually dereferences. If the
@@ -1935,18 +2005,147 @@ async function handleReportSubmit(event) {
         return;
     }
 
+    // binColor: the colour for bin index i, taken from defaultLogFCColor() at the
+    // bin's centre so the overlay sits on the same ramp as the Cytoscape gene
+    // nodes. Returned as bare hex without '#', which is the form Toolforge accepts
+    // as a query-parameter name ('#' would have to be percent-encoded).
+    function binColor(i) {
+        const centre = -OVERLAY_FC_LIMIT
+            + (2 * OVERLAY_FC_LIMIT) * ((i + 0.5) / OVERLAY_BINS);
+        const rgb = defaultLogFCColor(centre);
+        const m = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(rgb);
+        if (!m) { return null; }  // '#ccc' zero-fallback: leave to the default fill
+        return [m[1], m[2], m[3]]
+            .map(v => parseInt(v, 10).toString(16).padStart(2, '0'))
+            .join('');
+    }
+
+    // binIndex: which colour bin a log2FC value falls into, clamped at the ramp
+    // limits so an extreme fold change saturates rather than falling off the end.
+    function binIndex(logfc) {
+        const fc = Math.max(-OVERLAY_FC_LIMIT,
+                            Math.min(OVERLAY_FC_LIMIT, parseFloat(logfc) || 0));
+        const norm = (fc + OVERLAY_FC_LIMIT) / (2 * OVERLAY_FC_LIMIT);
+        return Math.min(OVERLAY_BINS - 1, Math.floor(norm * OVERLAY_BINS));
+    }
+
+    // significantGenesFor: this KE's genes that are both measured in the upload
+    // and flagged significant. `keToGenes` is already filtered to measured genes,
+    // so its length is the measured count.
+    function significantGenesFor(keId) {
+        const genes = (typeof keToGenes !== 'undefined' && keToGenes[keId]) || [];
+        return { measured: genes, significant: genes.filter(g => g.significant) };
+    }
+
+    // buildOverlayParams: turn a KE's significant genes into Toolforge's
+    // colour-keyed query string. Returns the query string (without a leading '?')
+    // plus how many genes it actually carries, so the caption can report any that
+    // the URL cap forced out.
+    function buildOverlayParams(keId) {
+        const significant = significantGenesFor(keId).significant;
+        if (!significant.length) { return { query: '', included: 0, dropped: 0 }; }
+
+        // Strongest evidence first, so if the cap bites it drops the weakest
+        // genes rather than an arbitrary slice. pvalue_adj is preferred; genes
+        // missing it sort last instead of tying at 0.
+        const ranked = significant.slice().sort((a, b) => {
+            const pa = (a.pvalue_adj != null ? a.pvalue_adj
+                        : (a.pvalue_raw != null ? a.pvalue_raw : Infinity));
+            const pb = (b.pvalue_adj != null ? b.pvalue_adj
+                        : (b.pvalue_raw != null ? b.pvalue_raw : Infinity));
+            return pa - pb;
+        });
+
+        // Serialise the accumulated groups exactly as they will be sent, so the cap
+        // is measured against the real string. An earlier version estimated the
+        // per-gene cost instead and overshot the budget by ~15%.
+        const serialise = (groups) => Array.from(groups.entries())
+            .map(([color, selectors]) => color + '=' + encodeURIComponent(selectors.join(',')))
+            .join('&');
+
+        const byColor = new Map();
+        let included = 0;
+        let query = '';
+        for (const gene of ranked) {
+            const color = binColor(binIndex(gene.log2FC));
+            if (!color) { continue; }  // unreachable while OVERLAY_BINS is even
+            const selector = OVERLAY_SELECTOR_PREFIX + String(gene.id).toUpperCase();
+            const existing = byColor.get(color);
+            if (existing) { existing.push(selector); } else { byColor.set(color, [selector]); }
+            const candidate = serialise(byColor);
+            if (candidate.length > OVERLAY_MAX_URL_LENGTH) {
+                // Over budget: undo this gene and stop. Genes are strongest-first,
+                // so everything still unvisited is weaker than what is already in.
+                if (existing) { existing.pop(); } else { byColor.delete(color); }
+                break;
+            }
+            query = candidate;
+            included += 1;
+        }
+
+        // `dropped` counts only genes the cap excluded, so the caption never blames
+        // the URL budget for a gene that was left out for any other reason.
+        return { query: query, included: included, dropped: ranked.length - included };
+    }
+
+    // updateOverlayCounts: state the denominator explicitly. Because only
+    // significant genes are coloured, an uncoloured node means either "not in your
+    // data" or "measured but not significant" — without these counts the reader
+    // cannot tell which, and would likely read it as "not changed".
+    function updateOverlayCounts(keId, overlayOn, dropped) {
+        if (!overlayCounts) { return; }
+        if (!overlayOn) {
+            overlayCounts.textContent = 'Overlay off — showing the bare diagram.';
+            return;
+        }
+        const { measured, significant } = significantGenesFor(keId);
+        if (!measured.length) {
+            overlayCounts.textContent =
+                'None of this pathway’s genes were measured in your dataset, so nothing is coloured.';
+            return;
+        }
+        let text = significant.length + ' of ' + measured.length + ' measured gene'
+            + (measured.length === 1 ? '' : 's') + ' in this Key Event’s gene set '
+            + (significant.length === 1 ? 'is' : 'are') + ' significant and coloured. '
+            + 'Uncoloured nodes are either absent from your dataset or not significant. '
+            + 'Significance here is per gene (' + SIGNIFICANCE_CRITERION + '), '
+            + 'not the Key Event FDR.';
+        if (dropped > 0) {
+            text += ' ' + dropped + ' further significant gene'
+                + (dropped === 1 ? '' : 's') + ' omitted to keep the diagram URL within limits.';
+        }
+        overlayCounts.textContent = text;
+    }
+
+    // Render the ramp from the same binColor() the overlay uses, so the legend
+    // cannot drift from the colours actually sent.
+    function renderOverlayRamp() {
+        if (!overlayRamp) { return; }
+        const stops = [];
+        for (let i = 0; i < OVERLAY_BINS; i += 1) {
+            const color = binColor(i);
+            stops.push(color ? '#' + color : 'transparent');
+        }
+        overlayRamp.style.background = 'linear-gradient(to right, ' + stops.join(', ') + ')';
+    }
+
     // setPathway: validates wpId and sets the iframe src + popup link href.
     // On a malformed wpId it clears BOTH the iframe src and the popup link
     // href so the two controls never silently disagree (e.g. iframe stuck on
     // a previous valid pathway while the popup link points elsewhere).
-    function setPathway(wpId) {
+    // The wpId guard runs before any URL is assembled, overlay included.
+    function setPathway(wpId, keId) {
         if (!/^WP\d+$/.test(wpId)) {
             if (pathwayIframe) { pathwayIframe.src = ''; }
             if (pathwayPopupLink) { pathwayPopupLink.href = '#'; }
             return;
         }
         if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = ''; }
-        pathwayIframe.src = EMBED_BASE + wpId;
+        const overlayOn = !!(overlayToggle && overlayToggle.checked);
+        const overlay = (overlayOn && keId) ? buildOverlayParams(keId)
+                                            : { query: '', included: 0, dropped: 0 };
+        updateOverlayCounts(keId, overlayOn, overlay.dropped);
+        pathwayIframe.src = EMBED_BASE + wpId + (overlay.query ? '?' + overlay.query : '');
         pathwayPopupLink.href = PATHWAY_BASE + wpId + ".html";
     }
 
@@ -1967,7 +2166,7 @@ async function handleReportSubmit(event) {
             if (pathwayFirstShow && pathwayPicker && pathwayPicker.options.length > 0) {
                 pathwayFirstShow = false;
                 var firstOption = pathwayPicker.options[0];
-                setPathway(firstOption.dataset.wp);
+                setPathway(firstOption.dataset.wp, firstOption.dataset.ke);
                 updateBadge(firstOption.dataset.confidence);
             }
         } else {
@@ -1983,9 +2182,23 @@ async function handleReportSubmit(event) {
         var selectedOption = this.options[this.selectedIndex];
         if (!selectedOption) { return; }
         if (pathwayLoadingMsg) { pathwayLoadingMsg.style.display = ''; }
-        setPathway(selectedOption.dataset.wp);
+        setPathway(selectedOption.dataset.wp, selectedOption.dataset.ke);
         updateBadge(selectedOption.dataset.confidence);
     });
+
+    // Overlay toggle: re-render the currently selected pathway with or without the
+    // colour parameters. No-ops before the first reveal, when nothing is loaded yet
+    // and there is no iframe URL to rebuild.
+    if (overlayToggle) {
+        overlayToggle.addEventListener('change', function() {
+            if (pathwayFirstShow) { return; }
+            var selectedOption = pathwayPicker.options[pathwayPicker.selectedIndex];
+            if (!selectedOption) { return; }
+            setPathway(selectedOption.dataset.wp, selectedOption.dataset.ke);
+        });
+    }
+
+    renderOverlayRamp();
 
     // iframe load handler: hide the loading message once the frame has loaded.
     // Note: onerror is intentionally NOT used — it does not fire for
