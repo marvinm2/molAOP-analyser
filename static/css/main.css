@@ -227,8 +227,55 @@ header {
    TYPOGRAPHY
    ========================================================================== */
 
-h1 {
+/* Base heading rules. Only `h1` was styled until 2026-08-18, which is why the
+   templates hand-rolled every other heading inline — results.html alone carried
+   69 `style=` attributes and 11 literal brand hex values, most of them some
+   variant of `color: #29235C; font-size: 16px` on an h3 or h4. Defining the
+   scale here lets those be deleted rather than duplicated. Sizes match what the
+   inline styles were already asking for, so nothing changes visually. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
     color: var(--color-primary-dark);
+}
+
+h2 {
+    font-size: 22px;
+    font-weight: 600;
+}
+
+h3 {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+h4 {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+h5 {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/* Available to assistive technology, absent from the visual layout. Used for
+   page titles where the design already communicates the subject visually (the
+   results page leads with a metadata strip, not a heading) but the document
+   still needs an h1 to anchor its outline. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* ==========================================================================

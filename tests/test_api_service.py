@@ -55,6 +55,57 @@ class TestParseGmtReferenceSets:
         assert parse_gmt_reference_sets("") == {}
 
 
+# The provenance block the Builder actually emits, copied verbatim from
+# GET /exports/gmt/ke-wp on 2026-08-18. Its own last line tells consumers that
+# '#' lines are not gene sets.
+BUILDER_HEADER = (
+    "# molAOP Builder GMT export\n"
+    "# resource: KE-WP\n"
+    "# export-revision: 0e6d8234525b9882\n"
+    "# source-fingerprint: 447:de059ae56c077366426bc3114b6dd55e|\n"
+    "# confidence: all tiers\n"
+    "# generated: 2026-08-18T06:40:56+00:00\n"
+    "# Lines beginning with # are provenance, not gene sets.\n"
+)
+
+
+class TestGmtProvenanceHeader:
+    """The Builder's '#' provenance header must never be read as a gene set.
+
+    Before 2026-08-18 neither parser had an explicit '#' guard; they survived the
+    header only because comment lines contain fewer than three tab-separated
+    fields and were dropped by the geneless-line check. That is luck, not intent:
+    one tab in a future header line — a tab-aligned key/value, say — would have
+    been parsed as a descriptor plus genes and silently polluted the reference
+    data, which is the failure mode that would be hardest to notice downstream.
+    """
+
+    def test_header_does_not_leak_into_reference_sets(self):
+        with_header = BUILDER_HEADER + SAMPLE_GMT
+
+        assert parse_gmt_reference_sets(with_header) == parse_gmt_reference_sets(SAMPLE_GMT)
+
+    def test_header_alone_yields_nothing(self):
+        assert parse_gmt_reference_sets(BUILDER_HEADER) == {}
+
+    def test_tabbed_header_line_is_still_skipped(self):
+        """The case the old field-count guard would have missed."""
+        hostile = "# generated:\t2026-08-18\tby\tthe\tbuilder\n" + SAMPLE_GMT
+
+        result = parse_gmt_reference_sets(hostile)
+
+        assert result == parse_gmt_reference_sets(SAMPLE_GMT)
+
+    def test_pathway_gene_map_skips_the_header_too(self):
+        from services.api_service import parse_gmt_pathway_gene_map
+
+        body = "KE177_Mito_WP5241\tFatty acid oxidation\tACSL3\tACADL\n"
+        # A '#' line mentioning a WP id must not be mined for one.
+        hostile = "# source-fingerprint:\tWP5241\t447\n" + BUILDER_HEADER + body
+
+        assert parse_gmt_pathway_gene_map(hostile) == parse_gmt_pathway_gene_map(body)
+
+
 class TestFetchGmtReferenceSets:
     """Tests for fetching + parsing a resource GMT export from the Builder."""
 

@@ -14,10 +14,14 @@
 
     <h2>Purpose</h2>
     <p>
-        Given a differential gene expression dataset and a selected AOP, the tool performs
-        Fisher's exact test enrichment analysis to identify Key Events whose associated gene
-        sets are significantly over-represented among differentially expressed genes. Results
-        are visualised as an interactive AOP network with gene-level expression overlays.
+        Given a differential gene expression dataset and a selected AOP, the tool tests which
+        Key Events' gene sets respond in your data. Two methods are offered: <strong>Fisher's
+        exact test</strong>, a threshold-based over-representation test, and <strong>GSEA</strong>,
+        a threshold-free ranking method that is direction-aware. Both report
+        Benjamini&ndash;Hochberg-adjusted results, and both distinguish Key Events that are
+        over-represented from those that are <em>depleted</em>. Results are visualised as an
+        interactive AOP network with gene-level expression colouring, and on the underlying
+        WikiPathways diagrams.
     </p>
 
     <h2>Part of VHP4Safety</h2>
@@ -31,10 +35,45 @@
 
     <h2>Data Sources</h2>
     <p>
-        Key Event gene set mappings are derived from the
-        <a href="https://molaop-builder.vhp4safety.nl" target="_blank" rel="noopener">molAOP Builder</a>
-        platform, which links AOP Key Events to WikiPathways biological pathways. Gene annotations
-        are sourced from <a href="https://www.wikipathways.org" target="_blank" rel="noopener">WikiPathways</a>.
+        Key Event gene set mappings are curated in the
+        <a href="https://molaop-builder.vhp4safety.nl" target="_blank" rel="noopener">molAOP Builder</a>,
+        which links AOP Key Events to three resources you can select between:
+        <a href="https://www.wikipathways.org" target="_blank" rel="noopener">WikiPathways</a>,
+        <a href="https://geneontology.org" target="_blank" rel="noopener">Gene Ontology</a>
+        (Biological Process) and
+        <a href="https://reactome.org" target="_blank" rel="noopener">Reactome</a>.
+        Every mapping carries a curator-assigned confidence level, which you can use as a
+        filter. AOP structure &mdash; Key Events and their relationships &mdash; comes from the
+        <a href="https://aopwiki.org" target="_blank" rel="noopener">AOP-Wiki</a> RDF endpoint.
+    </p>
+
+    <h2>How to cite</h2>
+    <p>
+        An enrichment result rests on the curated mappings as much as on this software, and the
+        two carry separate DOIs:
+    </p>
+    <ul>
+        <li><strong>This software:</strong>
+            <a href="https://doi.org/10.5281/zenodo.21914317" target="_blank" rel="noopener">10.5281/zenodo.21914317</a>
+            (concept DOI &mdash; always the newest release; cite the version DOI of the release
+            you used if the result must be reproducible)</li>
+        <li><strong>The KE&rarr;pathway mappings:</strong> the molAOP Builder <em>dataset</em>,
+            <a href="https://doi.org/10.5281/zenodo.20184643" target="_blank" rel="noopener">10.5281/zenodo.20184643</a></li>
+        <li><strong>The Builder application</strong>, if you curated mappings with it:
+            <a href="https://doi.org/10.5281/zenodo.21914244" target="_blank" rel="noopener">10.5281/zenodo.21914244</a></li>
+    </ul>
+    <p>
+        Please also cite the underlying resources you selected (AOP-Wiki, WikiPathways, Gene
+        Ontology, Reactome). Machine-readable metadata is in
+        <a href="https://github.com/marvinm2/molAOP-analyser/blob/main/CITATION.cff" target="_blank" rel="noopener"><code>CITATION.cff</code></a>.
+    </p>
+
+    <h2>Source and licence</h2>
+    <p>
+        Source code:
+        <a href="https://github.com/marvinm2/molAOP-analyser" target="_blank" rel="noopener">github.com/marvinm2/molAOP-analyser</a>,
+        released under GPL-2.0-only. The running version and build are reported at
+        <a href="/health"><code>/health</code></a>.
     </p>
 
     <h2>Contact</h2>

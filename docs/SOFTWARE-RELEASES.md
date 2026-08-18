@@ -32,17 +32,28 @@ A minted version DOI cannot be withdrawn, only superseded.
 1. Everything that must be true in the archive is on `main`: citation metadata, licence and
    copyright, `data/README.md` provenance, a README a stranger can follow — including the
    system libraries WeasyPrint needs, which `pip install` does not supply.
-2. One release-prep commit: `CHANGELOG.md` `[Unreleased]` → the version heading, the version
-   constant, and `CITATION.cff` `version` + `date-released`.
+2. One release-prep commit bumping **four** files together: `CHANGELOG.md` `[Unreleased]` →
+   the version heading, the version constant in `config.py`, `CITATION.cff`
+   `version` + `date-released`, and **`.zenodo.json` `version`**. `tests/test_app_version.py`
+   asserts all four agree, so a commit that misses one fails CI at step 3 rather than at
+   release time.
 3. Merge; wait for CI green **on that exact commit**.
 4. Annotated tag, push, confirm `ghcr.io/marvinm2/molaop-analyser:<tag>` exists.
 5. Publish a **full** GitHub Release with hand-written notes.
 6. Verify the Zenodo record: creators (no `dependabot[bot]`), licence, version, files,
    community, the VHP4Safety grant, and that the `requires` relation points at the Builder's
    real software DOI.
-7. Backfill this repository's own DOI into the README badge, `CITATION.cff` **and**
-   `.zenodo.json` — the last is re-read from every future tag, so skipping it silently
-   reverts the record's cross-links at the next release.
+7. Backfill DOIs, which is three separate places with three different jobs — say which you
+   have done, because "backfilled the DOI" has meant only one of them before now:
+   - **README badge** → the **concept** DOI (`10.5281/zenodo.21914317`), linked directly.
+     Do *not* use `zenodo.org/badge/latestdoi/…`: it redirects to the newest **version**
+     DOI, so the badge and the surrounding text disagree. (This was wrong until 2026-08-18.)
+   - **`CITATION.cff`** → the concept DOI under `identifiers`, plus `version` and
+     `date-released` for the release just cut.
+   - **`.zenodo.json`** → the `related_identifiers` cross-links to the **Builder's** software
+     and dataset DOIs. This file is re-read from every future tag, so a missing cross-link
+     silently reverts at the next release. Zenodo mints this record's own DOI, so do not add
+     a self-reference here.
 
 ## If the record does not appear
 

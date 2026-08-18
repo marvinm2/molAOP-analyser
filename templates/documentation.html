@@ -10,12 +10,13 @@
 
     <!-- Quick Navigation -->
     <div class="doc-nav">
-        <h3 style="margin-top: 0; color: #29235C;">Contents</h3>
+        <h3 style="margin-top: 0;">Contents</h3>
         <ul>
             <li><a href="#getting-started">Getting Started</a></li>
             <li><a href="#input-format">Input File Format Specification</a></li>
             <li><a href="#column-detector">Column Auto-Detection</a></li>
             <li><a href="#statistical-methods">Statistical Methods</a></li>
+            <li><a href="#gene-sets">Where the Gene Sets Come From</a></li>
             <li><a href="#interpreting-results">Interpreting Results</a></li>
             <li><a href="#batch-analysis">Batch Analysis Tutorial</a></li>
             <li><a href="#comparison-feature">Comparison Feature Guide</a></li>
@@ -185,8 +186,16 @@ CYP3A4         3.21             0.00001   0.0001
           Key Event. GSEA reports a leading-edge subset for each Key Event (the
           genes that drive the enrichment score); inspect these to confirm the
           signal is biologically coherent and not driven by one or two outliers.
-          Both methods are FDR-corrected (Benjamini&ndash;Hochberg for Fisher; the
-          GSEA permutation procedure produces its own FDR q-values).
+          Both methods are FDR-corrected, but not in the same way. Fisher's exact
+          uses Benjamini&ndash;Hochberg across the tested Key Events. For GSEA, the
+          q-values are <strong>recomputed here</strong> rather than taken from
+          <code>gseapy</code>: a GSEA q-value is a ratio of tail fractions over a
+          null pooled across every Key Event in the run, so a Key Event whose score
+          could not be normalised will otherwise shift everyone else's q-value. Each
+          row carries an <strong>FDR source</strong> column saying whether its value
+          was recomputed or is <code>gseapy</code>'s original, so the two are never
+          silently mixed. Results produced before 2026-08-13 used the pass-through
+          value throughout.
         </p>
 
         <h3>Background Universe</h3>
@@ -210,6 +219,111 @@ CYP3A4         3.21             0.00001   0.0001
         </p>
     </div>
 
+    <!-- Section: Where the gene sets come from -->
+    <div class="doc-section" id="gene-sets">
+        <h2>Where the Gene Sets Come From</h2>
+        <p>
+            Everything above tests <em>your</em> genes against a Key Event's gene set. This
+            section is about that gene set: which resource it came from, how well evidenced the
+            underlying mapping is, and how to check what a given run actually used. These are
+            the controls most likely to change a result without changing your data.
+        </p>
+
+        <h3>Gene set resources</h3>
+        <p>
+            Key Events are linked to biological pathways and processes in the
+            <a href="https://molaop-builder.vhp4safety.nl" target="_blank" rel="noopener">molAOP Builder</a>,
+            where each mapping is proposed, assessed and approved by a curator. Three resources
+            are available and you can select any combination:
+        </p>
+        <ul>
+            <li><strong>WikiPathways</strong> &mdash; community-curated biological pathways.
+                The broadest coverage of the three, and the default.</li>
+            <li><strong>Gene Ontology (Biological Process)</strong> &mdash; GO BP terms, with
+                gene annotations propagated over the ontology hierarchy, so a general term
+                carries the genes of its more specific descendants.</li>
+            <li><strong>Reactome</strong> &mdash; curated reaction pathways. The narrowest
+                coverage; a small number of Key Events carry a Reactome mapping.</li>
+        </ul>
+        <p>
+            Selecting more than one resource takes the <strong>union</strong> per Key Event: a
+            gene counts towards a Key Event if any selected resource places it there. This
+            increases coverage and, because it enlarges gene sets, generally makes enrichment
+            easier to detect &mdash; so a result obtained from three resources is not directly
+            comparable with one obtained from a single resource.
+        </p>
+        <div class="info-box">
+            <strong>Coverage is uneven.</strong> WikiPathways maps far more Key Events than the
+            other two, so adding GO BP and Reactome typically adds a handful of Key Events
+            rather than transforming the analysis. Which Key Events gained a gene set is
+            visible in the Key Events assessed line on the results page.
+        </div>
+
+        <h3>Minimum mapping confidence</h3>
+        <p>
+            Every KE&rarr;pathway mapping carries a curator-assigned confidence of
+            <strong>High</strong>, <strong>Medium</strong> or <strong>Low</strong>, reflecting
+            how well the pathway represents the biology of that Key Event. The
+            <strong>Minimum mapping confidence</strong> control filters mappings
+            <em>before</em> gene sets are built:
+        </p>
+        <ul>
+            <li><strong>All mappings</strong> (default) &mdash; no filtering.</li>
+            <li><strong>Medium and High only</strong> &mdash; drops low-confidence mappings.</li>
+            <li><strong>High only</strong> &mdash; the strictest, best-evidenced set.</li>
+        </ul>
+        <p>
+            Raising the threshold shrinks each Key Event's gene set, and a Key Event whose
+            mappings are all below the threshold is not tested at all. Comparing a run at
+            <em>High only</em> against one at <em>All mappings</em> is therefore a useful
+            sensitivity check: a result that survives the stricter setting rests on
+            better-evidenced mappings.
+        </p>
+        <p>
+            The threshold applies to <strong>all three resources</strong>. Mappings with no
+            recorded confidence are always kept, so raising the threshold can never silently
+            empty an analysis.
+        </p>
+        <div class="warning-box">
+            <strong>One exception.</strong> If a resource cannot be reached and the analyser
+            falls back to the reference files bundled with the image, those carry no confidence
+            column and are used in full. When that happens the run says so &mdash; see below.
+        </div>
+
+        <h3>Provenance: what a run actually used</h3>
+        <p>
+            The resources you select are a <em>request</em>, and requests can be met in
+            different ways: served live from the Builder, served from a local cache of an
+            earlier response, or &mdash; for WikiPathways only &mdash; fall back to reference
+            files shipped inside the application. Each possibility gives a different gene set,
+            so every run records how each resource was actually resolved rather than what was
+            asked for.
+        </p>
+        <p>
+            The results page, the batch summary and both report formats carry a
+            <strong>Gene set provenance</strong> line naming, per resource, the source used,
+            how many Key Events it contributed and when a cached copy was taken. A banner
+            appears above it whenever a run differed from the request &mdash; a resource that
+            could not be loaded and was skipped, gene sets served from the bundled files, or a
+            confidence threshold that could not be applied.
+        </p>
+        <div class="info-box">
+            <strong>For a methods section, quote the provenance line, not your resource
+            selection.</strong> They are usually the same, and when they are not, the
+            provenance line is the one that describes the numbers you are reporting.
+        </div>
+        <p>
+            Two further things the provenance can tell you. A pathway that is mapped to a Key
+            Event but whose genes could not be resolved is reported separately from a Key Event
+            with no mapping at all &mdash; the first is a gap in this tool's reference data, the
+            second a gap in curation, and only the second is worth reporting to the Builder.
+            And Key Events excluded from testing, because they had no overlap with your data or
+            fewer than five measured genes, are counted explicitly: they are also excluded from
+            the multiple-testing correction, so the denominator matches what was actually
+            tested.
+        </p>
+    </div>
+
     <!-- Section 3: Interpreting Results -->
     <div class="doc-section" id="interpreting-results">
         <h2>Interpreting Results</h2>
@@ -217,8 +331,8 @@ CYP3A4         3.21             0.00001   0.0001
         <h3>Volcano Plot</h3>
         <p>The volcano plot visualizes the magnitude (log&#x2082;FC) and significance (-log&#x2081;&#x2080; p-value) of gene expression changes:</p>
         <ul>
-            <li><strong style="color: red;">Red points:</strong> Significantly upregulated genes (above FC threshold, p &lt; 0.05)</li>
-            <li><strong style="color: blue;">Blue points:</strong> Significantly downregulated genes (below -FC threshold, p &lt; 0.05)</li>
+            <li><strong style="color: red;">Red points:</strong> Significantly upregulated genes (above the FC threshold and at or below your p-value cutoff)</li>
+            <li><strong style="color: blue;">Blue points:</strong> Significantly downregulated genes (below the negative FC threshold and at or below your p-value cutoff)</li>
             <li><strong style="color: green;">Green points:</strong> Statistically significant but below FC threshold</li>
             <li><strong style="color: lightgray;">Gray points:</strong> Not statistically significant</li>
         </ul>
@@ -279,12 +393,25 @@ CYP3A4         3.21             0.00001   0.0001
 
         <h4>Network Controls</h4>
         <ul>
-            <li><strong>+ Add Gene Nodes:</strong> Display genes associated with each KE</li>
-            <li><strong>Toggle Gene Visibility:</strong> Show/hide gene nodes</li>
-            <li><strong>Reset View:</strong> Return to original layout and zoom</li>
-            <li><strong>Download PNG:</strong> Export network visualization</li>
-            <li><strong>Download Network:</strong> Export Cytoscape JSON file for further analysis</li>
+            <li><strong>Expand All:</strong> Add the gene nodes for every Key Event at once.
+                Individual Key Events also expand by clicking their node.</li>
+            <li><strong>Collapse All:</strong> Remove all gene nodes and return to the
+                Key-Event-only view.</li>
+            <li><strong>Significance cutoff (FDR):</strong> Choose the adjusted-p threshold
+                (0.001 / 0.01 / 0.05 / 0.10 / 0.25) at which a Key Event counts as
+                enriched or depleted. This is the <em>same</em> definition used by the
+                enrichment table, the comparison matrix and both reports, and changing it
+                re-styles the network and re-badges the table immediately.</li>
+            <li><strong>Reset View:</strong> Return to the original layout and zoom.</li>
+            <li><strong>Export PNG:</strong> Download the network as an image.</li>
+            <li><strong>Download Network:</strong> Export a Cytoscape JSON file, with each
+                Key Event's p-value and FDR embedded, for further analysis.</li>
+            <li><strong>Zoom in / out / fit:</strong> Below the canvas.</li>
         </ul>
+        <p>
+            The <strong>Show gene nodes</strong> and <strong>Significant genes only</strong>
+            checkboxes in the <em>Hub genes</em> panel further below also act on this network.
+        </p>
 
         <div class="info-box">
             <strong>Looking for a GMT file?</strong>
@@ -330,9 +457,11 @@ CYP3A4         3.21             0.00001   0.0001
             <strong>Note:</strong> Colouring is performed by the WikiPathways Toolforge viewer,
             which takes the nodes to colour from the diagram URL. With the overlay on, the
             <em>gene symbols</em> of the selected Key Event's significant genes are therefore sent
-            to <code>pathway-viewer.toolforge.org</code>; your log&#8322;FC values, p-values and
-            uploaded file are not. Uncheck <strong>Overlay expression data</strong> for the bare
-            diagram, which sends nothing about your dataset.
+            to <code>pathway-viewer.toolforge.org</code>, each paired with the colour it should be
+            drawn in &mdash; which is an eight-level band of its log&#8322;FC, not the value itself.
+            Your exact log&#8322;FC values, your p-values and your uploaded file are never sent.
+            Uncheck <strong>Overlay expression data</strong> for the bare diagram, which sends
+            nothing about your dataset.
         </div>
     </div>
 
@@ -349,7 +478,10 @@ CYP3A4         3.21             0.00001   0.0001
         <p>Click the <strong>Batch Analysis</strong> tab on the home page. You can add files in two ways:</p>
         <ul>
             <li><strong>Upload your own:</strong> Drag and drop up to 10 CSV/TSV/TXT files onto the drop zone, or click to browse</li>
-            <li><strong>Use demo datasets:</strong> Expand the "Select Cisplatin Demo Datasets" panel and tick the files you want to include</li>
+            <li><strong>Use demo datasets:</strong> Tick the shipped PXR agonist datasets
+                (<code>GSE90122_SR12813</code> and <code>GSE90122_TO90137</code>). The
+                <a href="/demos">Demos</a> page also has a one-click
+                <em>Compare both PXR datasets</em> button that builds and runs the batch for you.</li>
         </ul>
         <p>Each uploaded file shows a preview of its first few rows so you can verify the data looks correct.</p>
 
@@ -367,7 +499,10 @@ CYP3A4         3.21             0.00001   0.0001
             <li><strong>Timepoint:</strong> Exposure duration (e.g., "4hr", "24hr", "72hr")</li>
             <li><strong>Dose:</strong> Concentration (e.g., "0.1uM", "50uM")</li>
         </ul>
-        <p>For cisplatin demo files, these fields are auto-filled from the filename.</p>
+        <p>
+            Where a demo filename encodes them, these fields are auto-filled for you; you can
+            edit any of them afterwards.
+        </p>
 
         <h3>Step 3: Analysis Settings</h3>
         <p>Configure shared settings that apply to all files:</p>

@@ -7,6 +7,9 @@
 {% endblock %}
 
 {% block content %}
+{# The landing page led with the tour banner's h2 and had no h1, so its outline
+   started a level down. The nav already shows the product name visually. #}
+<h1 class="visually-hidden">Molecular AOP Analyser — Key Event enrichment analysis</h1>
 {# Phase 13: Guided Tour banner (TUTR-01). Visible regardless of active tab. Hidden client-side by tour.js when localStorage.molaop_tour_seen === 'true'. #}
 <section class="card card--banner card--banner--onboarding">
   <h2>New here? Take a guided tour.</h2>

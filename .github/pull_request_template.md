@@ -67,7 +67,14 @@
 - [ ] `CHANGELOG.md` updated for user-visible changes
 
 ### Related Issues
-<!-- Link to any related issues -->
+<!-- Link to any related issues.
+
+     Use the KEYWORD, not a bare "(#123)". Only `Fixes`/`Closes`/`Resolves` auto-close
+     the issue on merge; a bare reference just links to it. #122 stayed open through an
+     entire release that shipped it because every commit referencing it used the bare
+     form, and this repo has a longer history of the same: a past triage found five of
+     thirteen open issues already delivered. If a PR completes an issue, say so with a
+     keyword here. -->
 
 Fixes #(issue number)
 Closes #(issue number)

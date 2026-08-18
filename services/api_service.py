@@ -312,6 +312,8 @@ def parse_gmt_pathway_gene_map(gmt_text):
     for line in gmt_text.splitlines():
         if not line.strip():
             continue
+        if line.lstrip().startswith("#"):
+            continue  # provenance header — see parse_gmt_reference_sets
         fields = line.split("\t")
         if len(fields) < 3:
             continue  # descriptor + title but no genes
@@ -395,6 +397,15 @@ def parse_gmt_reference_sets(gmt_text):
     reference_sets = {}
     for line in gmt_text.splitlines():
         if not line.strip():
+            continue
+        # The Builder prefixes every GMT export with a provenance block —
+        # `# resource:`, `# export-revision:`, `# generated:` and so on, closing
+        # with a line that states outright that `#` lines are not gene sets.
+        # Skip them explicitly: until 2026-08-18 this parser survived only because
+        # comment lines happen to contain fewer than three tab-separated fields,
+        # so a single tab anywhere in a future header line would have been read as
+        # a gene set and silently polluted the reference data.
+        if line.lstrip().startswith("#"):
             continue
         fields = line.split("\t")
         if len(fields) < 3:
