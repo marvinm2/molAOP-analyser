@@ -2,7 +2,23 @@
 
 > Context document for building a tool that fetches Key Event (KE) mappings from the Molecular AOP Builder application.
 
-> *Updated 2026-05-14 for builder v2.8.0 / Phase 34 (Assessment Metadata Schema Parity). Additive change; existing parser code unaffected — `services/api_service.py` uses `.get()` patterns and ignores unknown keys.*
+> *Last verified against the live Builder on **2026-08-18** (Builder **v2.9.0**). Earlier
+> revisions tracked v2.8.0 / Phase 34 (Assessment Metadata Schema Parity); those changes were
+> additive and left `services/api_service.py` unaffected, since it uses `.get()` patterns and
+> ignores unknown keys.*
+>
+> **Known drift, not yet corrected here** (found 2026-08-18, none of it affects this
+> application — all are integrator-facing and belong upstream):
+> - The `/dataset/*` and `/export/*` endpoint families documented below return **503** and
+>   **500** respectively on the live service. Do not wire against them without checking.
+> - `connection_type` is described as WikiPathways-only; the live `go-mappings` records carry
+>   it too, while Reactome does not.
+> - The `go-mappings` JSON has ~19 fields against the 7 shown, and its CSV inserts
+>   `go_direction` at column 8 — ahead of `suggestion_score` — so positional parsing tuned to
+>   the WikiPathways CSV reads the wrong column.
+> - GMT exports now begin with a `#` provenance block (resource, export revision,
+>   source fingerprint, generation timestamp). `parse_gmt_reference_sets` and
+>   `parse_gmt_pathway_gene_map` skip it explicitly as of 2026-08-18.
 
 ## What This System Is
 

@@ -38,6 +38,11 @@
     <a href="/batch/{{ metadata.get('batch_uuid') }}/summary" class="breadcrumb-link">&larr; Back to batch summary{% if metadata.get('batch_name') %}: {{ metadata.get('batch_name') }}{% endif %}</a>
     {% endif %}
 
+    {# The page had no h1 at all, so its outline began at h2 and a screen reader
+       had no title to announce. The metadata strip below is the visual heading;
+       this names the page for assistive tech without changing that. #}
+    <h1 class="visually-hidden">Enrichment results for {{ metadata.get('filename', 'your dataset') }}</h1>
+
     <!-- Metadata summary card -->
     <div class="card card--wide metadata-summary-card">
         <div class="metadata-summary">
@@ -379,7 +384,7 @@
         <!-- Network Legend -->
         <div class="network-legend">
             <div class="network-legend__inner">
-                <h3 style="margin-top: 0; margin-bottom: 15px; color: #29235C; font-size: 16px;">Network Legend</h3>
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px;">Network Legend</h3>
 
                 <div class="network-legend__grid">
                     <!-- Node Types -->
@@ -528,7 +533,7 @@
 
         <!-- Network Statistics -->
         <div class="network-stats">
-            <h3 style="color: #29235C; text-align: center; margin-bottom: 15px;">Network Statistics</h3>
+            <h3 style="text-align: center; margin-bottom: 15px;">Network Statistics</h3>
             <div class="network-stats__table">
                 <table id="networkStatsTable" style="width: 100%; border-collapse: collapse;">
                     <tbody>
@@ -575,7 +580,7 @@
     <div class="card card--wide pathway-view" id="pathway-view-section">
         <div class="pathway-view__header">
             <div>
-                <h3 class="pathway-view__title">Pathway view</h3>
+                <h2 class="pathway-view__title">Pathway view</h2>
                 <p class="pathway-view__caption">WikiPathways diagram for the Key Event's mapped pathway, with your
                    significant genes coloured by log&#8322;FC on the same scale as the network above.</p>
             </div>
@@ -634,7 +639,7 @@
     <div class="card card--wide hub-panel">
         <div class="hub-panel__header">
             <div>
-                <h3 class="hub-panel__title">Hub genes</h3>
+                <h2 class="hub-panel__title">Hub genes</h2>
                 <p style="font-size: 12px; font-weight: 400; color: #29235C; margin: 4px 0 0 0;">
                     Genes from your upload ranked by how many Key Events they appear in within the selected AOP.
                 </p>
@@ -695,7 +700,7 @@
         </div>
         {% else %}
         <div style="padding: 24px; text-align: center; color: #555;">
-            <h4 style="font-size: 16px; font-weight: 600; color: #29235C; margin-bottom: 8px;">No hub genes found</h4>
+            <h4 style="margin-bottom: 8px;">No hub genes found</h4>
             <p style="font-size: 14px; margin: 0;">None of the genes in your upload were found in the Key Event gene sets for this AOP. Try a different AOP or check that your gene symbols are human HGNC symbols.</p>
         </div>
         {% endif %}
@@ -703,7 +708,7 @@
 
     <!-- Share Results card -->
     <div class="card card--wide">
-        <h3>Share Results</h3>
+        <h2>Share Results</h2>
         <p style="font-size: 14px; color: #555; margin-bottom: 15px;">
             Generate a stable link to share these enrichment results with colleagues. The link is valid for 30 days.
         </p>
@@ -717,7 +722,7 @@
 
     <!-- Report Generation card -->
     <div class="card card--wide">
-        <h3>Generate Analysis Report</h3>
+        <h2>Generate Analysis Report</h2>
         <p style="font-size: 14px; color: #555; margin-bottom: 15px;">
             Create a comprehensive report including experiment metadata, analysis settings, and results for documentation or sharing.
         </p>

@@ -10,12 +10,13 @@
 
     <!-- Quick Navigation -->
     <div class="doc-nav">
-        <h3 style="margin-top: 0; color: #29235C;">Contents</h3>
+        <h3 style="margin-top: 0;">Contents</h3>
         <ul>
             <li><a href="#getting-started">Getting Started</a></li>
             <li><a href="#input-format">Input File Format Specification</a></li>
             <li><a href="#column-detector">Column Auto-Detection</a></li>
             <li><a href="#statistical-methods">Statistical Methods</a></li>
+            <li><a href="#gene-sets">Where the Gene Sets Come From</a></li>
             <li><a href="#interpreting-results">Interpreting Results</a></li>
             <li><a href="#batch-analysis">Batch Analysis Tutorial</a></li>
             <li><a href="#comparison-feature">Comparison Feature Guide</a></li>
@@ -215,6 +216,111 @@ CYP3A4         3.21             0.00001   0.0001
             discarded is reported next to the background size on the results page, in the batch summary and in the
             generated report &mdash; a large figure usually means the wrong identifier column was chosen, or that the
             file is poorly annotated.
+        </p>
+    </div>
+
+    <!-- Section: Where the gene sets come from -->
+    <div class="doc-section" id="gene-sets">
+        <h2>Where the Gene Sets Come From</h2>
+        <p>
+            Everything above tests <em>your</em> genes against a Key Event's gene set. This
+            section is about that gene set: which resource it came from, how well evidenced the
+            underlying mapping is, and how to check what a given run actually used. These are
+            the controls most likely to change a result without changing your data.
+        </p>
+
+        <h3>Gene set resources</h3>
+        <p>
+            Key Events are linked to biological pathways and processes in the
+            <a href="https://molaop-builder.vhp4safety.nl" target="_blank" rel="noopener">molAOP Builder</a>,
+            where each mapping is proposed, assessed and approved by a curator. Three resources
+            are available and you can select any combination:
+        </p>
+        <ul>
+            <li><strong>WikiPathways</strong> &mdash; community-curated biological pathways.
+                The broadest coverage of the three, and the default.</li>
+            <li><strong>Gene Ontology (Biological Process)</strong> &mdash; GO BP terms, with
+                gene annotations propagated over the ontology hierarchy, so a general term
+                carries the genes of its more specific descendants.</li>
+            <li><strong>Reactome</strong> &mdash; curated reaction pathways. The narrowest
+                coverage; a small number of Key Events carry a Reactome mapping.</li>
+        </ul>
+        <p>
+            Selecting more than one resource takes the <strong>union</strong> per Key Event: a
+            gene counts towards a Key Event if any selected resource places it there. This
+            increases coverage and, because it enlarges gene sets, generally makes enrichment
+            easier to detect &mdash; so a result obtained from three resources is not directly
+            comparable with one obtained from a single resource.
+        </p>
+        <div class="info-box">
+            <strong>Coverage is uneven.</strong> WikiPathways maps far more Key Events than the
+            other two, so adding GO BP and Reactome typically adds a handful of Key Events
+            rather than transforming the analysis. Which Key Events gained a gene set is
+            visible in the Key Events assessed line on the results page.
+        </div>
+
+        <h3>Minimum mapping confidence</h3>
+        <p>
+            Every KE&rarr;pathway mapping carries a curator-assigned confidence of
+            <strong>High</strong>, <strong>Medium</strong> or <strong>Low</strong>, reflecting
+            how well the pathway represents the biology of that Key Event. The
+            <strong>Minimum mapping confidence</strong> control filters mappings
+            <em>before</em> gene sets are built:
+        </p>
+        <ul>
+            <li><strong>All mappings</strong> (default) &mdash; no filtering.</li>
+            <li><strong>Medium and High only</strong> &mdash; drops low-confidence mappings.</li>
+            <li><strong>High only</strong> &mdash; the strictest, best-evidenced set.</li>
+        </ul>
+        <p>
+            Raising the threshold shrinks each Key Event's gene set, and a Key Event whose
+            mappings are all below the threshold is not tested at all. Comparing a run at
+            <em>High only</em> against one at <em>All mappings</em> is therefore a useful
+            sensitivity check: a result that survives the stricter setting rests on
+            better-evidenced mappings.
+        </p>
+        <p>
+            The threshold applies to <strong>all three resources</strong>. Mappings with no
+            recorded confidence are always kept, so raising the threshold can never silently
+            empty an analysis.
+        </p>
+        <div class="warning-box">
+            <strong>One exception.</strong> If a resource cannot be reached and the analyser
+            falls back to the reference files bundled with the image, those carry no confidence
+            column and are used in full. When that happens the run says so &mdash; see below.
+        </div>
+
+        <h3>Provenance: what a run actually used</h3>
+        <p>
+            The resources you select are a <em>request</em>, and requests can be met in
+            different ways: served live from the Builder, served from a local cache of an
+            earlier response, or &mdash; for WikiPathways only &mdash; fall back to reference
+            files shipped inside the application. Each possibility gives a different gene set,
+            so every run records how each resource was actually resolved rather than what was
+            asked for.
+        </p>
+        <p>
+            The results page, the batch summary and both report formats carry a
+            <strong>Gene set provenance</strong> line naming, per resource, the source used,
+            how many Key Events it contributed and when a cached copy was taken. A banner
+            appears above it whenever a run differed from the request &mdash; a resource that
+            could not be loaded and was skipped, gene sets served from the bundled files, or a
+            confidence threshold that could not be applied.
+        </p>
+        <div class="info-box">
+            <strong>For a methods section, quote the provenance line, not your resource
+            selection.</strong> They are usually the same, and when they are not, the
+            provenance line is the one that describes the numbers you are reporting.
+        </div>
+        <p>
+            Two further things the provenance can tell you. A pathway that is mapped to a Key
+            Event but whose genes could not be resolved is reported separately from a Key Event
+            with no mapping at all &mdash; the first is a gap in this tool's reference data, the
+            second a gap in curation, and only the second is worth reporting to the Builder.
+            And Key Events excluded from testing, because they had no overlap with your data or
+            fewer than five measured genes, are counted explicitly: they are also excluded from
+            the multiple-testing correction, so the denominator matches what was actually
+            tested.
         </p>
     </div>
 

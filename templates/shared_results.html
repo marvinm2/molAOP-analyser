@@ -35,7 +35,7 @@
     <!-- Not found state -->
     <div class="card card--wide">
         <div class="state-message">
-            <h2>Shared Analysis Not Found</h2>
+            <h1>Shared Analysis Not Found</h1>
             <p>This shared analysis was not found. Please check the URL.</p>
             <a href="{{ url_for('index') }}">&larr; Return to molAOP Analyser</a>
         </div>
@@ -45,13 +45,17 @@
     <!-- Expired state -->
     <div class="card card--wide">
         <div class="state-message">
-            <h2>Shared Analysis Expired</h2>
+            <h1>Shared Analysis Expired</h1>
             <p>This shared analysis has expired. Contact the owner for a new link.</p>
             <a href="{{ url_for('index') }}">&larr; Return to molAOP Analyser</a>
         </div>
     </div>
 
 {% else %}
+    {# No h1 in any of this page's three states — each outline started at h2.
+       The not-found and expired states now use their sole heading as the h1;
+       this branch has no visual title, so the h1 is for assistive tech only. #}
+    <h1 class="visually-hidden">Shared enrichment results{% if dataset_label %} for {{ dataset_label }}{% endif %}</h1>
     <!-- Shared view banner -->
     <div class="card card--wide" style="padding: 12px 20px;">
         <div class="shared-banner">
@@ -266,7 +270,7 @@
         <!-- Network Legend -->
         <div class="network-legend">
             <div class="network-legend__inner">
-                <h3 style="margin-top: 0; margin-bottom: 15px; color: #29235C; font-size: 16px;">Network Legend</h3>
+                <h3 style="margin-top: 0; margin-bottom: 15px; font-size: 16px;">Network Legend</h3>
                 <div class="network-legend__grid">
                     <div>
                         <strong style="color: #29235C;">Key Event Types:</strong>
@@ -391,7 +395,7 @@
 
         <!-- Network Statistics -->
         <div class="network-stats">
-            <h3 style="color: #29235C; text-align: center; margin-bottom: 15px;">Network Statistics</h3>
+            <h3 style="text-align: center; margin-bottom: 15px;">Network Statistics</h3>
             <div class="network-stats__table">
                 <table id="networkStatsTable" style="width: 100%; border-collapse: collapse;">
                     <tbody>

@@ -71,6 +71,28 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   application — plus the licence, the repository and a link to `/health`. None of this was
   reachable from the interface, for a tool whose README treats citation as a correctness matter.
 
+- **A "Where the Gene Sets Come From" section in the user guide**, covering the three controls
+  that change what a run reports and were previously undocumented: resource selection and what
+  taking their union means for comparability, the minimum mapping confidence threshold and its
+  one exception, and the provenance line that records how each resource was actually resolved —
+  with the note that a methods section should quote the provenance, not the request.
+
+### Changed
+
+- The citation metadata now points at the Builder's real software DOI
+  (`10.5281/zenodo.21914244`) and records this repository's own concept DOI
+  (`10.5281/zenodo.21914317`) in `CITATION.cff`. Both landed after 5.0.0 was cut and were not
+  previously recorded here.
+- `docs/SOFTWARE-RELEASES.md`: the release-prep step now names **four** files, not three —
+  `.zenodo.json`'s `version` was missing, and `tests/test_app_version.py` asserts it, so
+  following the runbook literally failed CI. The DOI-backfill step now says which identifier
+  belongs in which file, having previously been done in one place of three.
+- `docs/KE-MAPPING-API-REFERENCE.md` re-verified against the live Builder (v2.9.0) and its
+  header dated accordingly. Known upstream drift is listed rather than silently corrected: the
+  `/dataset/*` and `/export/*` families return 503/500 live, `connection_type` is not
+  WikiPathways-only, and the `go-mappings` CSV inserts `go_direction` at column 8, which breaks
+  positional parsing tuned to the WikiPathways CSV.
+
 
 - **Gene expression is overlaid on the embedded WikiPathways diagram (#51).** The pathway view
   showed a bare diagram; the genes of the selected Key Event that are significant in the uploaded
