@@ -95,10 +95,15 @@ tr:nth-child(even) {
     align-items: center;
     margin-top: 5px;
 }
+/* Must mirror defaultLogFCColor(): a two-leg linear interpolation
+   rgb(44,123,182) -> white -> rgb(215,25,28), i.e. WHITE at log2FC 0.
+   This was a five-stop RdYlBu ramp with a yellow midpoint until 2026-08-18,
+   which no node has ever been drawn in. Endpoints matched, so the error only
+   showed when comparing a mid-range node against the bar. */
 .network-legend__gradient-bar {
     width: 100px;
     height: 12px;
-    background: linear-gradient(to right, #2c7bb6, #abd9e9, #ffffcc, #fdae61, #d73027);
+    background: linear-gradient(to right, #2c7bb6, #ffffff, #d7191c);
     border: 1px solid #999;
 }
 

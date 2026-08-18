@@ -3,7 +3,7 @@
 [![CI/CD Pipeline](https://github.com/marvinm2/molAOP-analyser/actions/workflows/ci.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/ci.yml)
 [![Code Quality](https://github.com/marvinm2/molAOP-analyser/actions/workflows/code-quality.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/code-quality.yml)
 [![Publish Docker image](https://github.com/marvinm2/molAOP-analyser/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/marvinm2/molAOP-analyser/actions/workflows/docker-publish.yml)
-[![Software DOI](https://zenodo.org/badge/1024497140.svg)](https://zenodo.org/badge/latestdoi/1024497140)
+[![Software DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21914317.svg)](https://doi.org/10.5281/zenodo.21914317)
 
 This web application allows users to upload or select gene expression datasets and perform Key Event (KE) enrichment analysis in the context of Molecular Adverse Outcome Pathways (AOPs). The results are visualized in interactive tables and network diagrams with comprehensive reporting capabilities.
 
@@ -51,7 +51,7 @@ Both tools are part of the [VHP4Safety](https://platform.vhp4safety.nl) platform
 
 - **Interactive AOP network** visualization using Cytoscape.js with:
   - Color-coded nodes by KE type (MIE, Intermediate, AO)
-  - Gene expression coloring (-2 to +2 log2FC scale)
+  - Gene expression coloring (blue-white-red, saturating at ±1 log2FC)
   - Significance borders for enriched KEs and genes
   - **Comprehensive legend** with node types and color scales
   - Add/toggle gene nodes, reset view, download options
@@ -375,11 +375,16 @@ The application reads configuration from `config.py`. Key settings:
 
 ## How to cite
 
-Cite the **software** if you ran the analyser or are describing the method — see the
-*Software DOI* badge at the top, which is a concept DOI and always resolves to the newest
-version. For a reproducible citation, take the version DOI of the release you actually used
-from the Zenodo record. `CITATION.cff` in the repository root carries the machine-readable
-form.
+Cite the **software** if you ran the analyser or are describing the method. The *Software
+DOI* badge above is the **concept DOI**, [10.5281/zenodo.21914317](https://doi.org/10.5281/zenodo.21914317),
+which always resolves to the newest release. For a reproducible citation, take the **version**
+DOI of the release you actually used from the Zenodo record — v5.0.0 is
+[10.5281/zenodo.21914318](https://doi.org/10.5281/zenodo.21914318). `CITATION.cff` in the
+repository root carries the machine-readable form.
+
+> The badge used to link `zenodo.org/badge/latestdoi/1024497140`, which redirects to the
+> **newest version** DOI, not the concept DOI — so following this section produced a
+> version-pinned citation while the text claimed otherwise. Corrected 2026-08-18.
 
 An analysis run with this tool also rests on data you did not produce, and those want citing
 separately:

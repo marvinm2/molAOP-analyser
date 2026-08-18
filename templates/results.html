@@ -88,10 +88,12 @@
     <div class="card card--wide" data-tour-target="results-table">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap;">
             <h2 style="margin: 0;">KE Enrichment Results</h2>
+            {# "Download Results (CSV)" used to sit here too, but its handler only
+               triggered DataTables' own CSV button, which `dom: 'Bfrtip'` already
+               renders ~40px below alongside Copy/Excel/Print. Two CSV buttons for one
+               export. The gene-by-KE export below is a genuinely different shape
+               (one row per gene-KE pair) and stays. #}
             <div style="display: inline-flex; gap: 8px; flex-wrap: wrap;">
-                <button class="btn btn--primary" onclick="downloadCSV()" title="Download enrichment results as CSV">
-                    Download Results (CSV)
-                </button>
                 <button class="btn btn--primary" onclick="downloadGeneByKeCSV(event)"
                         title="Download a long-format CSV with one row per gene-KE pair (KE_ID, KE_Title, Gene_Symbol, log2FC, pvalue, FDR), respecting your active log2FC and p-value thresholds.">
                     Export gene-by-KE (CSV)
@@ -472,11 +474,15 @@
                 {% else %}
                 <div class="network-legend__scale">
                     <strong style="color: #29235C; font-size: 13px;">Gene Expression Scale (log&#8322;FC):</strong>
+                    {# The bounds must match defaultLogFCColor()'s clamp, which saturates
+                       at ±1 — not ±2, as this legend claimed until 2026-08-18. A gene at
+                       log2FC 1.0 is already fully red; anything beyond is the same colour.
+                       tests/test_colour_scale.py pins these labels to the clamp. #}
                     <div class="network-legend__gradient">
-                        <span style="font-size: 11px; margin-right: 5px;">-2</span>
+                        <span style="font-size: 11px; margin-right: 5px;">&minus;1</span>
                         <div class="network-legend__gradient-bar"></div>
-                        <span style="font-size: 11px; margin-left: 5px;">+2</span>
-                        <span style="font-size: 11px; margin-left: 10px; color: #666;">Downregulated &larr; &rarr; Upregulated</span>
+                        <span style="font-size: 11px; margin-left: 5px;">+1</span>
+                        <span style="font-size: 11px; margin-left: 10px; color: #666;">Downregulated &larr; &rarr; Upregulated (saturates at &plusmn;1)</span>
                     </div>
                 </div>
                 {% endif %}
@@ -645,6 +651,11 @@
             </div>
         </div>
         {% if hub_list %}
+        {# The "KE list" cell joins up to five KE titles, and results.css applies
+           white-space: nowrap to every th/td, so without this wrapper a hub gene in
+           several Key Events pushes the whole document sideways — on desktop, not
+           just narrow screens. The enrichment table above has had one all along. #}
+        <div style="overflow-x: auto;">
         <table id="hubGenesTable" class="display" style="width:100%">
             <thead>
                 <tr>
@@ -681,6 +692,7 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
         {% else %}
         <div style="padding: 24px; text-align: center; color: #555;">
             <h4 style="font-size: 16px; font-weight: 600; color: #29235C; margin-bottom: 8px;">No hub genes found</h4>
@@ -880,10 +892,6 @@ if (document.getElementById('hubGenesTable')) {
             hubGenesTable.draw();
         });
     });
-}
-
-function downloadCSV() {
-    resultsTable.button('.buttons-csv').trigger();
 }
 
 // --- Network Statistics Functions ---
@@ -1332,6 +1340,9 @@ function expandAll() {
                     });
                 });
             });
+            // The gene layer is now present, which is exactly what the hub panel's
+            // checkbox reports — keep the two in agreement (see syncGeneNodesToggle).
+            syncGeneNodesToggle(true);
             var layout = cy.layout({ name: 'cose', animate: true, animationDuration: 500 });
             layout.promiseOn('layoutstop').then(function() {
                 hideSpinner();
@@ -1490,8 +1501,21 @@ function collapseAll() {
         cy.nodes('.gene').remove();
     });
     expandedKEs.clear();
+    syncGeneNodesToggle(false);
     cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 60, rankSep: 80, padding: 30 }).run();
     updateNetworkStats();
+}
+
+// syncGeneNodesToggle: keep the hub panel's "Show gene nodes" checkbox honest.
+// Expand All / Collapse All mutate the same gene layer the checkbox controls, but
+// they live in a different card and used not to touch it — so after Collapse All
+// the box stayed ticked while the graph held no gene nodes at all, and the next
+// click on it did nothing visible because the browser saw no state change.
+// Set `checked` directly rather than dispatching 'change', or this re-enters the
+// handler that called us.
+function syncGeneNodesToggle(checked) {
+    var toggleEl = document.getElementById('show-gene-nodes-toggle');
+    if (toggleEl) { toggleEl.checked = checked; }
 }
 
 // --- Show gene nodes toggle (Phase 15 D-04, D-05, HUBG-05, HUBG-06) ---
@@ -1533,6 +1557,11 @@ function showGeneNodes() {
             cy.nodes('.gene').forEach(function(n) {
                 if (hubGeneSet.has(n.id())) n.addClass('hub');
             });
+            // Every KE's genes are now on screen, so record that: the per-KE tap
+            // handler reads expandedKEs to decide between expanding and opening the
+            // drawer, and without this a tap re-ran the expand path as a no-op and
+            // never opened the drawer at all.
+            Object.keys(keToGenes).forEach(function(keId) { expandedKEs.add(keId); });
             var layout = cy.layout({ name: 'cose', animate: true, animationDuration: 500 });
             layout.promiseOn('layoutstop').then(function() {
                 hideSpinner();
@@ -1551,11 +1580,20 @@ function showGeneNodes() {
 function hideGeneNodes() {
     cy.batch(function() { cy.nodes('.gene').remove(); });
     cy.elements().removeClass('highlighted');
+    // Clear expandedKEs for the same reason collapseAll() does. The per-KE tap
+    // handler treats membership as "this KE's genes are already on screen" and
+    // opens the drawer instead of adding them, so leaving the set populated after
+    // removing every gene node made a subsequent tap silently fail to expand.
+    expandedKEs.clear();
     cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 60, rankSep: 80, padding: 30 }).run();
     updateNetworkStats();
 }
 
 // Wire the "Show gene nodes" toggle (D-05: default OFF, no run on page load).
+// The control sits in the Hub genes card but acts on the network two cards above,
+// which is off-screen when it is clicked — so scroll the network into view, the
+// same courtesy the hub-row click path has always paid (D-06). Without it the
+// toggle reads as doing nothing at all.
 if (document.getElementById('show-gene-nodes-toggle')) {
     document.getElementById('show-gene-nodes-toggle').addEventListener('change', function() {
         if (this.checked) {
@@ -1563,6 +1601,8 @@ if (document.getElementById('show-gene-nodes-toggle')) {
         } else {
             hideGeneNodes();
         }
+        var cyEl = document.getElementById('cy');
+        if (cyEl) { cyEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
     });
 }
 

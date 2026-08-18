@@ -185,8 +185,16 @@ CYP3A4         3.21             0.00001   0.0001
           Key Event. GSEA reports a leading-edge subset for each Key Event (the
           genes that drive the enrichment score); inspect these to confirm the
           signal is biologically coherent and not driven by one or two outliers.
-          Both methods are FDR-corrected (Benjamini&ndash;Hochberg for Fisher; the
-          GSEA permutation procedure produces its own FDR q-values).
+          Both methods are FDR-corrected, but not in the same way. Fisher's exact
+          uses Benjamini&ndash;Hochberg across the tested Key Events. For GSEA, the
+          q-values are <strong>recomputed here</strong> rather than taken from
+          <code>gseapy</code>: a GSEA q-value is a ratio of tail fractions over a
+          null pooled across every Key Event in the run, so a Key Event whose score
+          could not be normalised will otherwise shift everyone else's q-value. Each
+          row carries an <strong>FDR source</strong> column saying whether its value
+          was recomputed or is <code>gseapy</code>'s original, so the two are never
+          silently mixed. Results produced before 2026-08-13 used the pass-through
+          value throughout.
         </p>
 
         <h3>Background Universe</h3>
@@ -217,8 +225,8 @@ CYP3A4         3.21             0.00001   0.0001
         <h3>Volcano Plot</h3>
         <p>The volcano plot visualizes the magnitude (log&#x2082;FC) and significance (-log&#x2081;&#x2080; p-value) of gene expression changes:</p>
         <ul>
-            <li><strong style="color: red;">Red points:</strong> Significantly upregulated genes (above FC threshold, p &lt; 0.05)</li>
-            <li><strong style="color: blue;">Blue points:</strong> Significantly downregulated genes (below -FC threshold, p &lt; 0.05)</li>
+            <li><strong style="color: red;">Red points:</strong> Significantly upregulated genes (above the FC threshold and at or below your p-value cutoff)</li>
+            <li><strong style="color: blue;">Blue points:</strong> Significantly downregulated genes (below the negative FC threshold and at or below your p-value cutoff)</li>
             <li><strong style="color: green;">Green points:</strong> Statistically significant but below FC threshold</li>
             <li><strong style="color: lightgray;">Gray points:</strong> Not statistically significant</li>
         </ul>
@@ -279,12 +287,25 @@ CYP3A4         3.21             0.00001   0.0001
 
         <h4>Network Controls</h4>
         <ul>
-            <li><strong>+ Add Gene Nodes:</strong> Display genes associated with each KE</li>
-            <li><strong>Toggle Gene Visibility:</strong> Show/hide gene nodes</li>
-            <li><strong>Reset View:</strong> Return to original layout and zoom</li>
-            <li><strong>Download PNG:</strong> Export network visualization</li>
-            <li><strong>Download Network:</strong> Export Cytoscape JSON file for further analysis</li>
+            <li><strong>Expand All:</strong> Add the gene nodes for every Key Event at once.
+                Individual Key Events also expand by clicking their node.</li>
+            <li><strong>Collapse All:</strong> Remove all gene nodes and return to the
+                Key-Event-only view.</li>
+            <li><strong>Significance cutoff (FDR):</strong> Choose the adjusted-p threshold
+                (0.001 / 0.01 / 0.05 / 0.10 / 0.25) at which a Key Event counts as
+                enriched or depleted. This is the <em>same</em> definition used by the
+                enrichment table, the comparison matrix and both reports, and changing it
+                re-styles the network and re-badges the table immediately.</li>
+            <li><strong>Reset View:</strong> Return to the original layout and zoom.</li>
+            <li><strong>Export PNG:</strong> Download the network as an image.</li>
+            <li><strong>Download Network:</strong> Export a Cytoscape JSON file, with each
+                Key Event's p-value and FDR embedded, for further analysis.</li>
+            <li><strong>Zoom in / out / fit:</strong> Below the canvas.</li>
         </ul>
+        <p>
+            The <strong>Show gene nodes</strong> and <strong>Significant genes only</strong>
+            checkboxes in the <em>Hub genes</em> panel further below also act on this network.
+        </p>
 
         <div class="info-box">
             <strong>Looking for a GMT file?</strong>
@@ -330,9 +351,11 @@ CYP3A4         3.21             0.00001   0.0001
             <strong>Note:</strong> Colouring is performed by the WikiPathways Toolforge viewer,
             which takes the nodes to colour from the diagram URL. With the overlay on, the
             <em>gene symbols</em> of the selected Key Event's significant genes are therefore sent
-            to <code>pathway-viewer.toolforge.org</code>; your log&#8322;FC values, p-values and
-            uploaded file are not. Uncheck <strong>Overlay expression data</strong> for the bare
-            diagram, which sends nothing about your dataset.
+            to <code>pathway-viewer.toolforge.org</code>, each paired with the colour it should be
+            drawn in &mdash; which is an eight-level band of its log&#8322;FC, not the value itself.
+            Your exact log&#8322;FC values, your p-values and your uploaded file are never sent.
+            Uncheck <strong>Overlay expression data</strong> for the bare diagram, which sends
+            nothing about your dataset.
         </div>
     </div>
 
@@ -349,7 +372,10 @@ CYP3A4         3.21             0.00001   0.0001
         <p>Click the <strong>Batch Analysis</strong> tab on the home page. You can add files in two ways:</p>
         <ul>
             <li><strong>Upload your own:</strong> Drag and drop up to 10 CSV/TSV/TXT files onto the drop zone, or click to browse</li>
-            <li><strong>Use demo datasets:</strong> Expand the "Select Cisplatin Demo Datasets" panel and tick the files you want to include</li>
+            <li><strong>Use demo datasets:</strong> Tick the shipped PXR agonist datasets
+                (<code>GSE90122_SR12813</code> and <code>GSE90122_TO90137</code>). The
+                <a href="/demos">Demos</a> page also has a one-click
+                <em>Compare both PXR datasets</em> button that builds and runs the batch for you.</li>
         </ul>
         <p>Each uploaded file shows a preview of its first few rows so you can verify the data looks correct.</p>
 
@@ -367,7 +393,10 @@ CYP3A4         3.21             0.00001   0.0001
             <li><strong>Timepoint:</strong> Exposure duration (e.g., "4hr", "24hr", "72hr")</li>
             <li><strong>Dose:</strong> Concentration (e.g., "0.1uM", "50uM")</li>
         </ul>
-        <p>For cisplatin demo files, these fields are auto-filled from the filename.</p>
+        <p>
+            Where a demo filename encodes them, these fields are auto-filled for you; you can
+            edit any of them afterwards.
+        </p>
 
         <h3>Step 3: Analysis Settings</h3>
         <p>Configure shared settings that apply to all files:</p>

@@ -8,7 +8,69 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The gene-expression legend described a scale the code does not draw.** Two independent
+  errors, both long-standing, both on the page results are read from. The legend was labelled
+  −2 / +2 while `defaultLogFCColor()` clamps at **±1**, so every gene colour was read as half
+  its actual intensity and a gene at +5 was indistinguishable from one at +1 with nothing
+  saying the scale had run out. Separately, the legend's gradient bar was a five-stop RdYlBu
+  ramp with a **yellow** midpoint, while the function interpolates blue → **white** → red; the
+  endpoints agreed, which is why it went unnoticed for so long. Both are corrected on the
+  results and shared-results pages, and `tests/test_colour_scale.py` now pins the labels and
+  the CSS stops to the clamp. **No node colour changes** — only the description of them, so
+  figures produced earlier remain valid.
+
+  Surfaced by #51: the pathway overlay generates its ramp *from* the function, so it was
+  correct on arrival and put two contradictory legends on one page.
+
+- **The user guide said GSEA q-values come from `gseapy`.** Untrue since 5.0.0 (#122), which
+  recomputes the pooled-null FDR here and ships an `fdr_source` column precisely so the two
+  can be told apart. The statistical-methods section now describes what the tool does.
+
+- **The "Software DOI" badge was not the concept DOI it claimed to be.** It pointed at
+  `zenodo.org/badge/latestdoi/…`, which redirects to the newest *version* DOI
+  (`10.5281/zenodo.21914318`), while the citation section told readers it was the concept DOI.
+  Anyone following our own instructions cited a version-pinned identifier believing otherwise.
+  The badge now resolves to the concept DOI `10.5281/zenodo.21914317`, and the section names
+  both.
+
+- **The hub-genes table could push the whole page sideways.** It had no horizontal-scroll
+  wrapper while `results.css` applies `white-space: nowrap` to every cell, so a gene belonging
+  to several Key Events made the "KE list" cell unbreakable. Affected desktop, not just narrow
+  screens.
+
+- **"Show gene nodes" could report a state the network did not have.** *Collapse All* removed
+  every gene node without unticking the box, and *Expand All* added them without ticking it, so
+  the checkbox and the graph disagreed and the next click on it appeared to do nothing. Both
+  now keep it in sync, and toggling it scrolls the network into view — the control sits two
+  cards below the thing it acts on. Unticking it also clears the expanded-Key-Event set, which
+  it previously left stale, causing a later tap on a Key Event to open its drawer instead of
+  re-adding its genes.
+
+- **The GMT parsers now skip the Builder's provenance header explicitly.** The Builder prefixes
+  every export with `#` lines whose own closing line states they are not gene sets. Both parsers
+  survived them only because comment lines contain fewer than three tab-separated fields — so a
+  single tab in a future header line would have been read as a gene set and silently polluted
+  the reference data.
+
+- Corrected several smaller claims: the documented network controls listed two buttons that do
+  not exist and omitted the FDR cutoff selector, which is the single definition of significance;
+  the batch tutorial pointed at a cisplatin demo panel that is hidden and whose data is not
+  shipped; the Top 10% / 20% tooltips described the 10th and 20th percentiles when the code uses
+  the 90th and 80th; the volcano legend hardcoded `p < 0.05` for a user-settable cutoff; the
+  overlay's privacy note now says that a *binned* log2FC is what travels, matching the wording
+  already on the results page; the About page said the tool performs Fisher's exact test and
+  maps Key Events to WikiPathways alone, when GSEA has been first-class since 4.0 and GO BP and
+  Reactome are both selectable; and the footer said 2025.
+
 ### Added
+
+- **A "How to cite" section on the About page**, naming the three DOIs that are not
+  interchangeable — this software, the Builder *dataset* the mappings come from, and the Builder
+  application — plus the licence, the repository and a link to `/health`. None of this was
+  reachable from the interface, for a tool whose README treats citation as a correctness matter.
+
 
 - **Gene expression is overlaid on the embedded WikiPathways diagram (#51).** The pathway view
   showed a bare diagram; the genes of the selected Key Event that are significant in the uploaded

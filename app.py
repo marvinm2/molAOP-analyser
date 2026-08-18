@@ -335,8 +335,13 @@ def about():
 def demos():
     """Render the curated demos page (Phase 10.1, D-01).
 
-    Shows two sections (PXR + Cisplatin) with curated demo cards. Each card
-    POSTs to /preview with demo_file + recommended_aops prefilled.
+    Shows the curated demo cards, each POSTing to /preview with demo_file +
+    recommended_aops prefilled, plus the one-click PXR batch CTA.
+
+    The cisplatin section is still assembled below (and passed to the template)
+    but is not rendered: its dataset is deprecated as demo content, gitignored
+    and absent from the image, so the template gates it off. Kept rather than
+    deleted so the catalog helpers stay exercised if it is ever reinstated.
     """
     curated_pxr = [
         {'file': 'GSE90122_TO90137.tsv',
