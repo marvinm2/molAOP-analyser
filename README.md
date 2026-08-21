@@ -378,8 +378,8 @@ The application reads configuration from `config.py`. Key settings:
 Cite the **software** if you ran the analyser or are describing the method. The *Software
 DOI* badge above is the **concept DOI**, [10.5281/zenodo.21914317](https://doi.org/10.5281/zenodo.21914317),
 which always resolves to the newest release. For a reproducible citation, take the **version**
-DOI of the release you actually used from the Zenodo record — v5.0.0 is
-[10.5281/zenodo.21914318](https://doi.org/10.5281/zenodo.21914318). `CITATION.cff` in the
+DOI of the release you actually used from the Zenodo record — v6.0.0 is
+[10.5281/zenodo.22048008](https://doi.org/10.5281/zenodo.22048008). `CITATION.cff` in the
 repository root carries the machine-readable form.
 
 > The badge used to link `zenodo.org/badge/latestdoi/1024497140`, which redirects to the
