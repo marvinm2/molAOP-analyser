@@ -31,8 +31,8 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.21914317
     description: Concept DOI — always resolves to the newest release
-version: 5.0.0
-date-released: '2026-08-13'
+version: 6.0.0
+date-released: '2026-08-21'
 license: GPL-2.0-only
 repository-code: https://github.com/marvinm2/molAOP-analyser
 url: https://molaop-analyser.vhp4safety.nl

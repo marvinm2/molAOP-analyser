@@ -18,7 +18,7 @@ import zoneinfo
 # version produced their results. tests/test_app_version.py pins this to the
 # newest released heading in CHANGELOG.md, where a release is actually declared,
 # so a release that forgets to bump it fails the build.
-__version__ = "5.0.0"
+__version__ = "6.0.0"
 
 
 def get_build_ref() -> str:

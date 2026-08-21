@@ -8,6 +8,8 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-08-21
+
 ### Changed
 
 - **The enrichment background is now a choice, and it is reported.** Two settings define it,
