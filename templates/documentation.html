@@ -200,14 +200,62 @@ CYP3A4         3.21             0.00001   0.0001
 
         <h3>Background Universe</h3>
         <p>
-            The enrichment analysis uses <strong>all genes in your uploaded dataset</strong> as the background universe.
-            This ensures the statistical test accounts for which genes were actually measured in your experiment.
+            Fisher's exact test asks whether a Key Event's genes are over-represented among your
+            significant genes <strong>relative to a background</strong>. The background is therefore
+            part of the result, not a technicality, and the Analyser lets you choose it.
         </p>
 
         <div class="warning-box">
             <strong>Important:</strong> The background is NOT the entire human genome, but rather the genes you provide
             in your input file. This makes the test more appropriate for platform-specific data (e.g., RNA-seq, microarray).
         </div>
+
+        <p>Two separate settings define it. In a single analysis only the first applies.</p>
+
+        <h4>Gene universe &mdash; what counts as a gene in one condition</h4>
+        <ul>
+            <li><strong>All measured genes</strong> (default) &mdash; every gene with a usable identifier
+                and a fold change. A gene with no p-value stays in the background and can never be
+                called significant, which is the asymmetry the test needs.</li>
+            <li><strong>Only genes with a p-value</strong> &mdash; genes carrying a value in the p-value
+                column you selected. This was the Analyser's behaviour before version 5.1.</li>
+        </ul>
+        <p>
+            The distinction matters more than it looks. DESeq2 and limma withhold an adjusted p-value
+            from low-count genes, and that selects against exactly the expression profile an induced
+            response has &mdash; low at baseline, strongly up on treatment. Excluding those genes from
+            the background as well means a gene set built from inducible genes is scored against a
+            universe that left them out. In one lead-exposure dataset <code>HMOX1</code> showed a
+            22-fold induction at <em>p</em> = 4.8&times;10<sup>-5</sup>, received no adjusted p-value,
+            and so was absent from the background entirely.
+        </p>
+
+        <h4>Across conditions &mdash; how a batch's universes combine</h4>
+        <ul>
+            <li><strong>Union</strong> (default) &mdash; genes measured in any condition.</li>
+            <li><strong>Intersection</strong> &mdash; genes measured in every condition. The
+                Analyser's behaviour before version 5.1.</li>
+            <li><strong>None</strong> &mdash; each condition keeps its own universe. Enrichment values
+                are then not comparable between conditions.</li>
+        </ul>
+        <p>
+            Intersection reads as the conservative choice and is not. Each condition's universe has
+            already been shaped by that condition's own filtering, so intersecting collapses the batch
+            onto whichever condition was filtered hardest. On a four-dose series the background can end
+            up equal to a single dose &mdash; observed at 4,086 genes against a union of 18,339, with
+            three of the four conditions contributing nothing.
+        </p>
+
+        <p>
+            Both settings are recorded with the batch and shown wherever the background appears, so a
+            background size is never reported without the rules that produced it. Batches run before
+            version 5.1 keep the old rules and reproduce exactly.
+        </p>
+
+        <p>
+            <strong>GSEA uses no background.</strong> It scores a ranked list of every gene in each
+            condition, so neither setting applies and conditions are not harmonised.
+        </p>
 
         <p>
             Rows whose gene identifier is blank or a missing-value placeholder

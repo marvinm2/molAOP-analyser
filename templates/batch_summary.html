@@ -24,7 +24,7 @@
     {% if resource_resolution_text %}
     <p><strong>Gene Set Provenance:</strong> {{ resource_resolution_text }}</p>
     {% endif %}
-    <p><strong>Harmonised Background:</strong> {{ batch.harmonised_gene_count }} genes (intersection of all conditions)</p>
+    <p><strong>Enrichment Background:</strong> {{ batch.background_description() }}</p>
     <p><strong>Completed:</strong> {{ batch.completed_at.strftime('%Y-%m-%d %H:%M') if batch.completed_at else 'N/A' }}</p>
     {% if batch.owner %}<p><strong>Owner:</strong> {{ batch.owner }}</p>{% endif %}
     {% if batch.description %}<p><strong>Description:</strong> {{ batch.description }}</p>{% endif %}
@@ -41,10 +41,23 @@
   </div>
   {% endif %}
 
-  <!-- Harmonisation note — transparent to user per locked design decision -->
+  {# Harmonisation note — transparent to user per locked design decision.
+     Issue #132: the rules are named rather than assumed, because they change
+     what the enrichment statistics mean. #}
   <div class="batch-harmonisation-note">
-    <p>Gene backgrounds have been harmonised across all {{ batch.conditions|length }} conditions using intersection.
-    Each condition uses a background of {{ batch.harmonised_gene_count }} genes for comparable enrichment statistics.</p>
+    {% if batch.effective_method() == 'gsea' %}
+    <p>GSEA scores a ranked list of every gene in each condition, so no background
+    is applied and the conditions are not harmonised.</p>
+    {% elif batch.effective_background_harmonisation() == 'per_condition' %}
+    <p>Each of the {{ batch.conditions|length }} conditions was tested against its own
+    gene universe. Enrichment values are not directly comparable across conditions,
+    because the background differs between them.</p>
+    {% else %}
+    <p>Gene backgrounds were harmonised across all {{ batch.conditions|length }} conditions
+    by {{ batch.effective_background_harmonisation() }}, over
+    {% if batch.effective_background_universe() == 'measured' %}every measured gene{% else %}genes with a usable p-value{% endif %}.
+    Each condition uses a background of {{ batch.harmonised_gene_count }} genes.</p>
+    {% endif %}
   </div>
 
   <!-- Condition results list (upload order, per locked design decision) -->

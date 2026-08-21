@@ -595,6 +595,14 @@ document.getElementById('btn-analyze').addEventListener('click', function() {
     // the server to default it to 'ora'.
     const batchMethodEl = document.querySelector('input[name="batch_method"]:checked');
     payload.append('method', batchMethodEl ? batchMethodEl.value : 'ora');
+    // Issue #132: the two rules that define the enrichment background. Sent
+    // explicitly for the same reason as the method above — a dropped field
+    // would be defaulted server-side without the user ever being told which
+    // background their results were scored against.
+    const universeEl = document.querySelector('input[name="background_universe"]:checked');
+    payload.append('background_universe', universeEl ? universeEl.value : 'measured');
+    const harmonisationEl = document.querySelector('input[name="background_harmonisation"]:checked');
+    payload.append('background_harmonisation', harmonisationEl ? harmonisationEl.value : 'union');
     document.querySelectorAll('.batch-resource:checked').forEach(function(cb) {
         payload.append('resources', cb.value);
     });

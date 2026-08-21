@@ -415,7 +415,9 @@ def _batch_meta_rows(batch, conditions, comparison_data) -> List[tuple]:
         ('P-value Cutoff',
          f'{batch.pval_cutoff} (gene counts only; GSEA ranks all genes)'
          if is_gsea else str(batch.pval_cutoff)),
-        ('Harmonised Background', f'{batch.harmonised_gene_count or 0:,} genes'),
+        # Issue #132: the size alone is not interpretable — the rules that
+        # built the background travel with it into the report.
+        ('Enrichment Background', batch.background_description()),
         ('Owner', batch.owner or 'N/A'),
         ('Completed', completed),
     ]

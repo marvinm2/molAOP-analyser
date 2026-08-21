@@ -336,3 +336,87 @@ class TestDroppedRowsColumn:
             assert stored['counted'] == 875
         finally:
             session.close()
+
+
+class TestBackgroundRuleColumns:
+    """Issue #132: the background rules are stored, and NULL means legacy.
+
+    Every batch run before these columns existed used the loader's drop-any-NaN
+    universe and an intersection across conditions. Reading NULL back as
+    anything else would silently reinterpret results that are already published
+    in shared links and exported reports.
+    """
+
+    def test_null_reads_back_as_the_pre_132_behaviour(self):
+        from database import BatchRecord
+
+        batch = BatchRecord()
+        assert batch.effective_background_universe() == 'testable'
+        assert batch.effective_background_harmonisation() == 'intersection'
+
+    def test_stored_values_are_returned(self):
+        from database import BatchRecord
+
+        batch = BatchRecord(
+            background_universe='measured', background_harmonisation='union'
+        )
+        assert batch.effective_background_universe() == 'measured'
+        assert batch.effective_background_harmonisation() == 'union'
+
+    def test_description_names_the_rules_not_just_the_size(self):
+        from database import BatchRecord
+
+        batch = BatchRecord(
+            method='ora', background_universe='measured',
+            background_harmonisation='union', harmonised_gene_count=18339,
+        )
+        text = batch.background_description()
+        assert '18,339' in text
+        assert 'any condition' in text
+
+        legacy = BatchRecord(
+            method='ora', background_universe='testable',
+            background_harmonisation='intersection', harmonised_gene_count=4086,
+        )
+        legacy_text = legacy.background_description()
+        assert '4,086' in legacy_text
+        assert 'every condition' in legacy_text
+        assert 'p-value' in legacy_text
+
+    def test_gsea_has_no_background_to_describe(self):
+        """GSEA scores a ranked list; quoting a background size would describe
+        a quantity the analysis never used."""
+        from database import BatchRecord
+
+        batch = BatchRecord(method='gsea', harmonised_gene_count=4086)
+        assert '4,086' not in batch.background_description()
+        assert 'GSEA' in batch.background_description()
+
+    def test_per_condition_describes_itself_without_a_size(self):
+        from database import BatchRecord
+
+        batch = BatchRecord(
+            method='ora', background_harmonisation='per_condition',
+            background_universe='measured', harmonised_gene_count=None,
+        )
+        assert 'per condition' in batch.background_description()
+
+    def test_migration_is_idempotent_and_additive(self, tmp_path):
+        """The columns are added to a database created without them."""
+        from sqlalchemy import create_engine, text as sql_text
+        from database import _ensure_background_rule_columns, Base
+
+        db_path = tmp_path / 'legacy.db'
+        engine = create_engine(f'sqlite:///{db_path}')
+        Base.metadata.create_all(bind=engine)
+        with engine.connect() as conn:
+            conn.execute(sql_text('ALTER TABLE batches DROP COLUMN background_universe'))
+            conn.execute(sql_text('ALTER TABLE batches DROP COLUMN background_harmonisation'))
+            conn.commit()
+
+        _ensure_background_rule_columns(engine)
+        _ensure_background_rule_columns(engine)  # no-op on the second pass
+
+        with engine.connect() as conn:
+            cols = {row[1] for row in conn.execute(sql_text('PRAGMA table_info(batches)'))}
+        assert {'background_universe', 'background_harmonisation'} <= cols

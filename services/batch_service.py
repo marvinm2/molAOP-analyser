@@ -192,29 +192,85 @@ def validate_batch_columns(file_infos: List[Dict]) -> Tuple[bool, str]:
     return True, ''
 
 
+# Cross-condition background rules (issue #132). See harmonise_backgrounds.
+HARMONISATION_UNION = 'union'
+HARMONISATION_INTERSECTION = 'intersection'
+HARMONISATION_PER_CONDITION = 'per_condition'
+VALID_HARMONISATIONS = (
+    HARMONISATION_UNION,
+    HARMONISATION_INTERSECTION,
+    HARMONISATION_PER_CONDITION,
+)
+
+# Defaults for a new batch (issue #132). Both differ from the behaviour of
+# every batch run before this change, which is the point: 'testable' +
+# 'intersection' let each condition's own filtering shape the universe and then
+# collapsed the batch onto whichever condition was filtered hardest. Legacy
+# batches keep their old rules through the NULL-coercing accessors on
+# BatchRecord, so nothing already run is reinterpreted.
+DEFAULT_BACKGROUND_UNIVERSE = 'measured'
+DEFAULT_BACKGROUND_HARMONISATION = HARMONISATION_UNION
+
+
 def harmonise_backgrounds(
     file_infos: List[Dict],
-) -> Tuple[Set[str], Dict[str, int]]:
-    """Compute the intersection of gene universes across all batch files.
+    mode: str = HARMONISATION_INTERSECTION,
+    universe: str = 'testable',
+) -> Tuple[Optional[Set[str]], Dict[str, int]]:
+    """Combine the per-file gene universes into one background for the batch.
 
     Each entry in file_infos must have keys: ``filepath``, ``id_col``,
-    ``fc_col``, ``pval_col``.
+    ``fc_col``, ``pval_col``. The gene universe for each file is the set of
+    gene symbols (uppercased) in the 'ID' column returned by
+    ``load_and_validate_data`` under ``universe``.
 
-    The gene universe for each file is the full set of gene symbols (uppercased)
-    in the 'ID' column returned by ``load_and_validate_data``.  The harmonised
-    background is the intersection of all per-file universes, ensuring Fisher's
-    exact test uses only genes measured in every condition.
+    Three rules, because the choice is consequential and was previously
+    implicit:
+
+    ``intersection``
+        Genes present in every condition -- what this function always did. It
+        reads as the conservative option and is not. Each condition's universe
+        has already been shaped by that condition's own filtering, so the
+        intersection collapses to whichever condition was filtered hardest:
+        on a four-dose DESeq2 batch the background can equal the single worst
+        contrast exactly, with the other three contributing nothing. The
+        background is then decided by one dose rather than by the experiment.
+
+    ``union``
+        Genes present in any condition. A gene measured in three of four
+        conditions stays in the background of all four, which is what makes
+        the conditions comparable without letting the weakest one set the
+        universe for the rest.
+
+    ``per_condition``
+        No harmonisation: every condition is tested against its own universe.
+        Returns ``None``, which callers must treat as "apply no filter" --
+        distinct from an empty set, which means the rule ran and nothing
+        survived.
 
     Args:
         file_infos: List of dicts describing each file and its column mapping.
+        mode: One of ``VALID_HARMONISATIONS``.
+        universe: Per-file gene-universe rule, passed through to
+            ``load_and_validate_data`` (issue #132).
 
     Returns:
         Tuple of:
-          - ``harmonised_genes``: Set of gene symbols present in every file.
-          - ``per_file_counts``: Dict mapping filepath to the raw gene count
-            for that file (before intersection).
+          - ``harmonised_genes``: Set of gene symbols to restrict every
+            condition to, or ``None`` under ``per_condition``.
+          - ``per_file_counts``: Dict mapping filepath to that file's own gene
+            count, before any cross-condition rule.
+
+    Raises:
+        ValueError: If ``mode`` is not a recognised rule.
     """
     from services.data_service import load_and_validate_data  # avoid circular import at module level
+
+    if mode not in VALID_HARMONISATIONS:
+        raise ValueError(
+            f'Unknown harmonisation mode {mode!r}; expected one of '
+            f'{", ".join(VALID_HARMONISATIONS)}'
+        )
 
     universes: List[Set[str]] = []
     per_file_counts: Dict[str, int] = {}
@@ -225,7 +281,7 @@ def harmonise_backgrounds(
         fc_col = info['fc_col']
         pval_col = info['pval_col']
 
-        df = load_and_validate_data(filepath, id_col, fc_col, pval_col)
+        df = load_and_validate_data(filepath, id_col, fc_col, pval_col, universe=universe)
         gene_universe = set(df['ID'].str.upper())
         universes.append(gene_universe)
         per_file_counts[filepath] = len(gene_universe)
@@ -234,15 +290,26 @@ def harmonise_backgrounds(
             f'{len(gene_universe)} unique genes'
         )
 
+    if mode == HARMONISATION_PER_CONDITION:
+        logger.info(
+            'harmonise_backgrounds: per-condition — each condition keeps its '
+            'own universe (%s)',
+            ', '.join(str(n) for n in per_file_counts.values()) or 'no files',
+        )
+        return None, per_file_counts
+
     if not universes:
         return set(), {}
 
-    harmonised = universes[0]
-    for universe in universes[1:]:
-        harmonised = harmonised & universe
+    harmonised = set(universes[0])
+    for gene_universe in universes[1:]:
+        if mode == HARMONISATION_UNION:
+            harmonised |= gene_universe
+        else:
+            harmonised &= gene_universe
 
     logger.info(
-        f'harmonise_backgrounds: intersection = {len(harmonised)} genes '
+        f'harmonise_backgrounds: {mode} = {len(harmonised)} genes '
         f'across {len(file_infos)} files'
     )
     return harmonised, per_file_counts
@@ -251,7 +318,7 @@ def harmonise_backgrounds(
 def _run_condition(
     cond,
     batch,
-    harmonised_genes: Set[str],
+    harmonised_genes: Optional[Set[str]],
     reference_sets: Dict,
     ke_list,
     edges,
@@ -263,6 +330,13 @@ def _run_condition(
 
     Loads the file, applies the harmonised background filter, runs enrichment
     and network building, stores results on the ConditionRecord, and commits.
+
+    The harmonised filter applies to ORA only (issue #132). It exists to give
+    every condition's Fisher test the same 2x2 universe. GSEA has no 2x2 table
+    and no background: it scores a ranked list, so restricting that list to
+    genes shared with the other conditions removes ranking information without
+    matching anything. ``harmonised_genes`` of ``None`` means the batch chose
+    per-condition backgrounds and no filter is applied to either backend.
 
     The enrichment backend is chosen by the parent batch's method (issue #76):
     ``'ora'`` runs Fisher's exact over the thresholded gene list, ``'gsea'``
@@ -303,12 +377,13 @@ def _run_condition(
     from config import Config
     filepath = os.path.join(Config.UPLOAD_FOLDER, batch.uuid, cond.filename)
 
-    # Load raw data using the batch-level column mapping
+    # Load raw data using the batch-level column mapping and gene-universe rule
     df_raw = load_and_validate_data(
         filepath,
         batch.id_column,
         batch.fc_column,
         batch.pval_column,
+        universe=batch.effective_background_universe(),
     )
 
     # Process gene expression (applies significance flags)
@@ -316,17 +391,20 @@ def _run_condition(
         df_raw, batch.logfc_threshold or 0.0, pval_threshold=batch.pval_cutoff
     )
 
-    # Apply harmonisation: restrict to genes present in all batch files
-    df_filtered = df_processed[df_processed['ID'].isin(harmonised_genes)].copy()
+    # Apply harmonisation: restrict to the batch background. ORA only -- see
+    # the note in this function's docstring for why GSEA is left whole.
+    if harmonised_genes is not None and method == 'ora':
+        df_filtered = df_processed[df_processed['ID'].isin(harmonised_genes)].copy()
+    else:
+        df_filtered = df_processed.copy()
 
     # Recalculate gene counts after filtering
     total_genes = len(df_filtered)
     significant_genes = int(df_filtered['significant'].sum())
 
-    # Run enrichment on the harmonised/filtered data, dispatching to Fisher
-    # (ORA) or GSEA per the batch-level method (#76). GSEA ranks the whole
-    # filtered table, so the harmonised background still bounds it identically
-    # across conditions — which is what makes the comparison legitimate.
+    # Run enrichment, dispatching to Fisher (ORA) or GSEA per the batch-level
+    # method (#76). ORA sees the harmonised background; GSEA sees the whole
+    # table (#132).
     #
     # Issue #81: the reference sets carry the KE -> unresolvable-pathway map
     # (helpers.ReferenceSets), so a Key Event whose curated pathway could not
@@ -518,13 +596,23 @@ def run_batch(batch_id: int, db_url: str, reference_sets: Dict) -> None:
         db_session.commit()
         logger.info(
             f'run_batch: starting batch {batch.uuid} ({len(batch.conditions)} conditions, '
-            f'method={batch.effective_method()})'
+            f'method={batch.effective_method()}, '
+            f'universe={batch.effective_background_universe()}, '
+            f'harmonisation={batch.effective_background_harmonisation()})'
         )
 
-        # Load harmonised background from the stored JSON
-        harmonised_genes: Set[str] = set(
-            json.loads(batch.harmonised_background or '[]')
-        )
+        # Load harmonised background from the stored JSON.
+        #
+        # Issue #132: a per-condition batch stores no gene list, and None here
+        # means "apply no filter" -- distinct from an empty set, which would
+        # mean the rule ran and nothing survived and must still filter
+        # everything away. The two were the same value before this change
+        # because there was only one rule.
+        harmonised_genes: Optional[Set[str]]
+        if batch.effective_background_harmonisation() == HARMONISATION_PER_CONDITION:
+            harmonised_genes = None
+        else:
+            harmonised_genes = set(json.loads(batch.harmonised_background or '[]'))
 
         # Load AOP topology once for the whole batch
         ke_list, edges, ke_type_map, ke_title_map = load_aop_data(batch.aop_id)

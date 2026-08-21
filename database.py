@@ -228,6 +228,18 @@ class BatchRecord(Base):
     harmonised_background = Column(Text)
     harmonised_gene_count = Column(Integer)
 
+    # Issue #132: the two rules that together define the enrichment background.
+    # They are stored rather than inferred because a background is only
+    # interpretable alongside the rules that built it, and because both were
+    # previously implicit -- every batch predating this column was run with
+    # 'testable' + 'intersection', which is what NULL is read back as.
+    #
+    # background_universe ('measured'/'testable') decides what counts as a gene
+    # in one condition. background_harmonisation ('union'/'intersection'/
+    # 'per_condition') decides how the conditions' universes combine.
+    background_universe = Column(String(20))
+    background_harmonisation = Column(String(20))
+
     # Batch metadata
     batch_name = Column(String(500))
     owner = Column(String(255))
@@ -257,6 +269,71 @@ class BatchRecord(Base):
             ``'ora'`` or ``'gsea'``.
         """
         return self.method or 'ora'
+
+    def effective_background_universe(self) -> str:
+        """Return the gene-universe rule this batch was run with.
+
+        Coerces NULL to ``'testable'`` (issue #132) -- the behaviour of every
+        batch created before the column existed, where the loader dropped any
+        row with a missing value in any column. Callers should use this rather
+        than reading ``.background_universe`` directly so a legacy batch
+        reproduces exactly.
+
+        Returns:
+            ``'measured'`` or ``'testable'``.
+        """
+        return self.background_universe or 'testable'
+
+    def effective_background_harmonisation(self) -> str:
+        """Return the cross-condition background rule this batch was run with.
+
+        Coerces NULL to ``'intersection'`` (issue #132), the behaviour of every
+        batch created before the column existed.
+
+        Returns:
+            ``'union'``, ``'intersection'`` or ``'per_condition'``.
+        """
+        return self.background_harmonisation or 'intersection'
+
+    def background_description(self) -> str:
+        """Return a one-line description of this batch's enrichment background.
+
+        Kept on the model so the summary page, the progress partial and the
+        batch report all say the same thing. A background size on its own is
+        not interpretable -- 4,086 genes means something different under each
+        rule -- so the size is never rendered without the rules that produced
+        it (issue #132).
+
+        Returns:
+            A human-readable sentence, e.g. ``"18,339 genes — every gene
+            measured in any condition"``.
+        """
+        universe = self.effective_background_universe()
+        harmonisation = self.effective_background_harmonisation()
+        measured = universe == 'measured'
+
+        if self.effective_method() == 'gsea':
+            # GSEA scores a ranked list and has no 2x2 background, so neither
+            # rule applies to it. Saying "background: N genes" on a GSEA batch
+            # would describe a quantity the analysis never used.
+            return (
+                'not applicable — GSEA ranks every gene in each condition and '
+                'uses no background'
+            )
+
+        if harmonisation == 'per_condition':
+            return (
+                'per condition — each condition is tested against its own '
+                + ('measured genes' if measured else 'testable genes')
+            )
+
+        count = f'{self.harmonised_gene_count:,} genes' if self.harmonised_gene_count else 'unknown size'
+        if harmonisation == 'union':
+            scope = 'in any condition'
+        else:
+            scope = 'in every condition'
+        kind = 'measured' if measured else 'with a usable p-value'
+        return f'{count} — every gene {kind} {scope}'
 
 
 class ConditionRecord(Base):
@@ -434,6 +511,37 @@ def _ensure_min_confidence_column(engine) -> None:
                 )
 
 
+def _ensure_background_rule_columns(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for the background rules (#132).
+
+    Adds ``background_universe TEXT`` and ``background_harmonisation TEXT`` to
+    ``batches`` when absent. Safe to run on every startup -- the PRAGMA check
+    makes each ALTER a no-op where the column already exists. Existing rows keep
+    NULL, read back by ``effective_background_universe()`` and
+    ``effective_background_harmonisation()`` as ``'testable'`` and
+    ``'intersection'`` -- the behaviour those batches actually ran with, so a
+    pre-#132 batch reopens and re-exports identically.
+
+    Security note: the table and column names are module-internal constants --
+    no user-supplied input is interpolated into the SQL statements.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    for column in ('background_universe', 'background_harmonisation'):
+        with engine.connect() as conn:
+            result = conn.execute(text("PRAGMA table_info(batches)"))
+            existing_cols = {row[1] for row in result}
+            if column not in existing_cols:
+                conn.execute(
+                    text(f"ALTER TABLE batches ADD COLUMN {column} TEXT")
+                )
+                conn.commit()
+                logger.info(
+                    f"Added '{column}' column to 'batches' table (#132 migration)"
+                )
+
+
 def _ensure_id_match_fraction_column(engine) -> None:
     """Idempotent PRAGMA-then-ALTER migration for 'id_match_fraction' (#69).
 
@@ -570,6 +678,10 @@ class DatabaseManager:
             # Idempotent additive migration: add 'id_match_fraction' to
             # batch_conditions (#69). No-op on fresh databases.
             _ensure_id_match_fraction_column(self.engine)
+
+            # Idempotent additive migration: add the background rule columns to
+            # batches (#132). No-op on fresh databases.
+            _ensure_background_rule_columns(self.engine)
 
             # Idempotent additive migration: add 'resource_resolution' to
             # experiments and batches (#68). No-op on fresh databases.

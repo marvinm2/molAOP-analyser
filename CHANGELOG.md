@@ -8,6 +8,46 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+### Changed
+
+- **The enrichment background is now a choice, and it is reported.** Two settings define it,
+  kept separate because they are separate decisions and bundling them would hide that the
+  second can undo the first (#132).
+
+  **Gene universe** — `measured` (default) keeps every gene with a usable identifier and a
+  fold change; `testable` keeps only genes with a value in the selected p-value column, which
+  is what the loader always did. The old rule dropped every gene DESeq2's independent
+  filtering withheld an adjusted p-value from, and that selects against exactly the profile
+  an induced response has — low at baseline, strongly up on treatment. In a lead-exposure
+  dataset `HMOX1` showed a 22-fold induction at *p* = 4.8e-5, was given no adjusted p-value,
+  and so was absent from the background entirely: it could not be counted as a hit for any
+  gene set, at any dose.
+
+  **Across conditions** — `union` (default), `intersection` (the old behaviour), or
+  `per_condition`. Intersecting reads as conservative and is not: each condition's universe
+  has already been shaped by that condition's own filtering, so the intersection collapses the
+  batch onto whichever condition was filtered hardest. On a four-dose batch it came out at
+  4,086 genes, equal to the 50 µM contrast exactly — that set being a subset of all three
+  others — against a union of 18,339.
+
+  The consequence ran both ways. Inducible gene sets were hollowed out; constitutively
+  expressed sets occupied a larger share of a smaller background, which inflated their
+  expected overlap and deflated their enrichment.
+
+  Both settings are stored on the batch and rendered wherever the background appears — the
+  progress partial, the summary page and the batch report — so a gene count is never shown
+  without the rules that produced it. **The tested gene list is unchanged**: a gene with no
+  adjusted p-value belongs in the background, not among the hits.
+
+  **Batches created before this keep their own rules** (`testable` + `intersection`) through
+  NULL-coercing accessors, so existing shared links and exported reports reproduce exactly.
+
+- **Harmonisation applies to ORA only.** It was previously applied before the backend
+  dispatch, so a GSEA batch had its ranked list truncated to the genes shared with every
+  other condition. GSEA has no 2×2 table and no background; that removed ranking information
+  without matching anything. A code comment claiming it "is what makes the comparison
+  legitimate" went with it (#132).
+
 ### Fixed
 
 - **The gene-expression legend described a scale the code does not draw.** Two independent
