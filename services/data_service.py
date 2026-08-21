@@ -2,6 +2,7 @@
 Data processing service for gene expression data and reference sets.
 """
 import pandas as pd
+import numpy as np
 import logging
 import re
 from typing import Dict, Set, Tuple, List, Any, Optional
@@ -40,7 +41,19 @@ _MISSING_ID_TOKENS = {
     token.strip().upper() for token in _pandas_str_na_values if token.strip()
 } | _PUNCTUATION_ID_PLACEHOLDERS
 
-def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: str) -> pd.DataFrame:
+# Gene-universe rules (issue #132). See load_and_validate_data for what each one
+# keeps and why the distinction matters for the Fisher background.
+UNIVERSE_MEASURED = 'measured'
+UNIVERSE_TESTABLE = 'testable'
+VALID_UNIVERSES = (UNIVERSE_MEASURED, UNIVERSE_TESTABLE)
+
+def load_and_validate_data(
+    filepath: str,
+    id_col: str,
+    fc_col: str,
+    pval_col: str,
+    universe: str = UNIVERSE_TESTABLE,
+) -> pd.DataFrame:
     """
     Load and validate gene expression data from file.
     
@@ -49,9 +62,17 @@ def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: st
         id_col: Column name for gene IDs
         fc_col: Column name for log2 fold change
         pval_col: Column name for p-values
-    
+        universe: Which rows count as the gene universe (issue #132).
+            ``'testable'`` keeps only rows with a finite value in all three
+            columns -- the behaviour this loader always had. ``'measured'``
+            additionally keeps rows whose p-value is missing but whose fold
+            change is not. The choice is invisible in the gene-level output and
+            decisive in the enrichment: it decides the Fisher background.
+
     Returns:
-        pd.DataFrame: Cleaned and validated dataframe
+        pd.DataFrame: Cleaned and validated dataframe. ``df.attrs`` carries
+        ``'universe'`` and, under ``'measured'``, ``'untestable_rows'`` -- the
+        number of kept genes with no p-value, which can never be significant.
     
     Raises:
         ValueError: If required columns are missing or data is invalid
@@ -95,7 +116,41 @@ def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: st
                     'pval': row[pval_col]
                 })
 
-        df = pd.DataFrame(df_expanded, columns=['ID', 'log2FC', 'pval']).dropna()
+        df = pd.DataFrame(df_expanded, columns=['ID', 'log2FC', 'pval'])
+
+        # Issue #132 -- apply the gene-universe rule.
+        #
+        # The loader always dropped any row with a missing value in any column.
+        # Read on `padj`, that silently removes every gene DESeq2's independent
+        # filtering withheld an adjusted p-value from, which selects against
+        # exactly the profile an induced stress response has: low at baseline,
+        # strongly up on treatment. Those genes then cannot be counted in the
+        # Fisher background either, so a gene set built from inducible genes is
+        # measured against a universe that excluded them.
+        #
+        # 'measured' keeps a row whose p-value is missing but whose fold change
+        # is not: the gene was measured and modelled, it simply cannot be called
+        # significant. No special handling is needed downstream because
+        # `NaN <= cutoff` is False, so it lands in the background as
+        # non-significant of its own accord.
+        #
+        # A missing fold change drops the row under *both* rules. DESeq2 leaves
+        # log2FoldChange NA only for genes with no counts at all, and an
+        # unmeasurable gene in the background deflates every enrichment -- the
+        # same error as the one above, from the other side.
+        if universe not in VALID_UNIVERSES:
+            raise DataValidationError(
+                f"Unknown gene universe {universe!r}; expected one of "
+                f"{', '.join(VALID_UNIVERSES)}.",
+                field="universe",
+                value=str(universe),
+            )
+        if universe == UNIVERSE_MEASURED:
+            df = df.dropna(subset=['ID', 'log2FC'])
+            untestable_rows = int(df['pval'].isna().sum())
+        else:
+            df = df.dropna()
+            untestable_rows = 0
 
         # Nothing survived. Before issue #80 this could not happen — every row
         # produced at least the pseudo-gene "NAN" — so downstream code assumes a
@@ -114,6 +169,14 @@ def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: st
                     field="id_column",
                     value=id_col
                 )
+            if universe == UNIVERSE_MEASURED:
+                raise DataValidationError(
+                    f"No usable rows were found: every row read from column "
+                    f"'{id_col}' was dropped because '{fc_col}' was missing. "
+                    f"Check that the fold-change column is correct.",
+                    field="columns",
+                    value=str([id_col, fc_col])
+                )
             raise DataValidationError(
                 f"No usable rows were found: every row read from column "
                 f"'{id_col}' was dropped because '{fc_col}' or '{pval_col}' was "
@@ -126,6 +189,11 @@ def load_and_validate_data(filepath: str, id_col: str, fc_col: str, pval_col: st
         # Carried through process_gene_expression() into its stats dict so the
         # count can be shown next to the background size.
         df.attrs['dropped_unidentified_rows'] = dropped_rows
+        # Issue #132 -- the universe rule and, under 'measured', how many of the
+        # kept genes carry no p-value. Reported next to the background size so
+        # "background" is never quoted without saying what it was made of.
+        df.attrs['universe'] = universe
+        df.attrs['untestable_rows'] = untestable_rows
 
         if dropped_rows:
             logger.info(
@@ -171,9 +239,21 @@ def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0, pval
             row = group.iloc[0].to_dict()
             combined_rows.append(row)
         else:
-            # Average log2FC and combine p-values using Fisher's method
+            # Average log2FC and combine p-values using Fisher's method.
+            #
+            # Issue #132: under the 'measured' universe a duplicate group can
+            # contain rows with no p-value. Fisher's method over a vector
+            # containing NaN returns NaN, which would demote a gene that *is*
+            # testable in one of its rows to untestable purely because it shares
+            # a symbol with one that is not. Combine over the finite p-values
+            # only; a group with none stays NaN, which is correct -- that gene
+            # is in the background and cannot be significant.
             avg_fc = group['log2FC'].astype(float).mean()
-            _, combined_p = combine_pvalues(group['pval'].astype(float), method='fisher')
+            finite_p = group['pval'].astype(float).dropna()
+            if len(finite_p):
+                _, combined_p = combine_pvalues(finite_p, method='fisher')
+            else:
+                combined_p = float('nan')
             combined_rows.append({'ID': gene, 'log2FC': avg_fc, 'pval': combined_p})
 
     df_processed = pd.DataFrame(combined_rows)
@@ -203,6 +283,12 @@ def process_gene_expression(df: pd.DataFrame, logfc_threshold: float = 0.0, pval
         # Reported alongside the background size so 'total_genes' can be quoted
         # as the number of measured genes and the discard stays visible.
         'dropped_unidentified_rows': int(df.attrs.get('dropped_unidentified_rows', 0)),
+        # Issue #132: which universe rule built this background, and how many of
+        # its genes carry no p-value and so can never be significant. Both are
+        # shown next to the background size, because a background is only
+        # interpretable alongside the rule that made it.
+        'universe': df.attrs.get('universe', UNIVERSE_TESTABLE),
+        'untestable_genes': int((~np.isfinite(df_processed['pval'].astype(float))).sum()),
     }
 
 

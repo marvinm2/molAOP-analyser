@@ -281,3 +281,85 @@ class TestMissingGeneSymbols:
         result, stats = process_gene_expression(df, logfc_threshold=1.0)
         assert stats['significant_genes'] == 1
         assert 'NAN' not in set(result['ID'])
+
+
+class TestGeneUniverse:
+    """Issue #132: which rows count as the gene universe.
+
+    Read on `padj`, the loader's original drop-any-NaN rule removes every gene
+    DESeq2's independent filtering withheld an adjusted p-value from. That
+    selects against exactly the expression profile an induced stress response
+    has — low at baseline, strongly up on treatment — so those genes cannot be
+    counted in the Fisher background either.
+    """
+
+    def _write(self, tmp_path, rows):
+        path = tmp_path / 'dge.csv'
+        pd.DataFrame(rows).to_csv(path, index=False)
+        return str(path)
+
+    def test_testable_is_the_default_and_drops_missing_pvalues(self, tmp_path):
+        path = self._write(tmp_path, {
+            'Gene': ['BRCA1', 'HMOX1'],
+            'logFC': [1.0, 4.47],
+            'padj': [0.01, None],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'padj')
+        assert set(df['ID']) == {'BRCA1'}
+
+    def test_measured_keeps_a_gene_with_no_adjusted_pvalue(self, tmp_path):
+        path = self._write(tmp_path, {
+            'Gene': ['BRCA1', 'HMOX1'],
+            'logFC': [1.0, 4.47],
+            'padj': [0.01, None],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'padj', universe='measured')
+        assert set(df['ID']) == {'BRCA1', 'HMOX1'}
+        assert df.attrs['untestable_rows'] == 1
+
+    def test_a_gene_with_no_pvalue_is_never_significant(self, tmp_path):
+        """It belongs in the background, not among the hits — the asymmetry
+        Fisher's exact test needs. NaN <= cutoff is False, so this needs no
+        special handling, but it must stay true."""
+        path = self._write(tmp_path, {
+            'Gene': ['BRCA1', 'HMOX1'],
+            'logFC': [1.0, 4.47],
+            'padj': [0.01, None],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'padj', universe='measured')
+        processed, stats = process_gene_expression(df, 0.0, pval_threshold=0.05)
+        assert stats['total_genes'] == 2
+        assert stats['significant_genes'] == 1
+        assert stats['untestable_genes'] == 1
+        assert not processed.loc[processed['ID'] == 'HMOX1', 'significant'].iloc[0]
+
+    def test_a_missing_fold_change_drops_the_row_under_both_rules(self, tmp_path):
+        """DESeq2 leaves log2FoldChange NA only for genes with no counts at all.
+        An unmeasurable gene in the background deflates every enrichment."""
+        path = self._write(tmp_path, {
+            'Gene': ['BRCA1', 'ZEROCOUNT'],
+            'logFC': [1.0, None],
+            'padj': [0.01, None],
+        })
+        for universe in ('testable', 'measured'):
+            df = load_and_validate_data(path, 'Gene', 'logFC', 'padj', universe=universe)
+            assert set(df['ID']) == {'BRCA1'}, universe
+
+    def test_duplicate_symbols_combine_over_finite_pvalues_only(self, tmp_path):
+        """A symbol testable in one row must not be demoted to untestable
+        because it shares a name with a row that is not."""
+        path = self._write(tmp_path, {
+            'Gene': ['MT1F', 'MT1F'],
+            'logFC': [1.0, 2.0],
+            'padj': [0.002, None],
+        })
+        df = load_and_validate_data(path, 'Gene', 'logFC', 'padj', universe='measured')
+        processed, _ = process_gene_expression(df, 0.0, pval_threshold=0.05)
+        assert len(processed) == 1
+        assert processed['pval'].notna().all()
+        assert processed['significant'].iloc[0]
+
+    def test_unknown_universe_is_rejected(self, tmp_path):
+        path = self._write(tmp_path, {'Gene': ['BRCA1'], 'logFC': [1.0], 'padj': [0.01]})
+        with pytest.raises(DataValidationError, match='Unknown gene universe'):
+            load_and_validate_data(path, 'Gene', 'logFC', 'padj', universe='everything')
