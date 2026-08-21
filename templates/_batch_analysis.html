@@ -186,6 +186,72 @@
             </div>
         </div>
 
+        <!-- Enrichment background (#132) -->
+        <div id="batch-background-controls">
+        <h3>Enrichment Background</h3>
+        <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
+            Fisher's exact test asks whether a gene set is over-represented among your
+            significant genes <em>relative to a background</em>, so the background is
+            part of the result, not a technicality. Two separate decisions define it:
+            what counts as a gene in one condition, and how the conditions combine.
+        </p>
+        <p id="batch-background-gsea-note" style="display:none; font-size:14px; color:#29235C;
+                  background:#f0f4ff; border-left:3px solid #307BBF; padding:8px 12px;
+                  margin-bottom:16px;">
+            GSEA scores a ranked list and uses no background, so neither of these
+            settings applies. Every gene in each condition is ranked and scored.
+        </p>
+        <div class="settings-subgroup" role="group" aria-labelledby="batch-universe-group-label"
+             style="margin-bottom: 16px;">
+            <span class="settings-subgroup__label" id="batch-universe-group-label">Gene universe</span>
+            <div class="settings-options">
+                <label>
+                    <input type="radio" name="background_universe" value="measured" checked>
+                    All measured genes
+                </label>
+                <label>
+                    <input type="radio" name="background_universe" value="testable">
+                    Only genes with a p-value in this condition
+                </label>
+            </div>
+            <p style="font-size: 13px; color: #555; margin: 8px 0 0;">
+                DESeq2 and limma withhold an adjusted p-value from low-count genes.
+                Those genes were measured, they simply cannot be called significant.
+                Excluding them from the background too selects against the genes an
+                induced response is made of &mdash; low at baseline, strongly up on
+                treatment &mdash; so a gene set built from inducible genes is scored
+                against a universe that left them out.
+            </p>
+        </div>
+        <div class="settings-subgroup" role="group" aria-labelledby="batch-harmonisation-group-label"
+             style="margin-bottom: 24px;">
+            <span class="settings-subgroup__label" id="batch-harmonisation-group-label">Across conditions</span>
+            <div class="settings-options">
+                <label>
+                    <input type="radio" name="background_harmonisation" value="union" checked>
+                    Union &mdash; genes measured in any condition
+                </label>
+                <label>
+                    <input type="radio" name="background_harmonisation" value="intersection">
+                    Intersection &mdash; genes measured in every condition
+                </label>
+                <label>
+                    <input type="radio" name="background_harmonisation" value="per_condition">
+                    None &mdash; each condition keeps its own universe
+                </label>
+            </div>
+            <p style="font-size: 13px; color: #555; margin: 8px 0 0;">
+                Intersection reads as the conservative choice and is not. Each
+                condition's universe has already been shaped by that condition's own
+                filtering, so intersecting collapses the batch onto whichever condition
+                was filtered hardest &mdash; on a dose series the background can end up
+                equal to a single dose, with the rest contributing nothing. Choosing
+                <em>none</em> means enrichment values are not comparable between
+                conditions, because the background differs between them.
+            </p>
+        </div>
+        </div>
+
         <!-- Threshold controls -->
         <div id="batch-threshold-inputs">
         <p id="batch-threshold-gsea-note" style="display:none; font-size:14px; color:#29235C;
@@ -329,6 +395,15 @@
 
     /** Show the GSEA caveat on the threshold inputs when GSEA is selected. */
     function applyMethod() {
+        // #132 — the background settings do not apply to GSEA.
+        var bgNote = document.getElementById('batch-background-gsea-note');
+        var bgGroups = document.querySelectorAll(
+            '#batch-background-controls .settings-subgroup'
+        );
+        var isGsea = selectedMethod() === 'gsea';
+        if (bgNote) { bgNote.style.display = isGsea ? '' : 'none'; }
+        bgGroups.forEach(function (g) { g.style.display = isGsea ? 'none' : ''; });
+
         if (!note) return;
         note.style.display = (selectedMethod() === 'gsea') ? '' : 'none';
     }

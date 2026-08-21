@@ -10,9 +10,8 @@
   <div class="batch-progress">
     <p class="batch-progress__status">
       Status: <strong>{{ batch.status | capitalize }}</strong>
-      {% if batch.harmonised_gene_count %}
-      &mdash; Harmonised background: {{ batch.harmonised_gene_count }} genes
-      {% endif %}
+      {# Issue #132: name the rules, never the bare size. #}
+      &mdash; Background: {{ batch.background_description() }}
     </p>
 
     <div class="batch-progress__files">

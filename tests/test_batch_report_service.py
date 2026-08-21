@@ -33,6 +33,12 @@ _NETWORK = {
 }
 
 
+# Issue #132: the report renders the background through the model's
+# background_description(), so the stand-in carries it too — a bare gene count
+# is no longer something the report is willing to print on its own.
+_BACKGROUND_DESCRIPTION = '5,000 genes — every gene measured in any condition'
+
+
 def _batch():
     return SimpleNamespace(
         uuid='u', batch_name='Test Batch', aop_id='AOP:1', aop_label='Test AOP',
@@ -40,6 +46,8 @@ def _batch():
         harmonised_gene_count=5000, owner='Marvin', description='demo',
         completed_at=datetime(2026, 6, 19, 12, 0),
         id_column='gene', fc_column='logFC', pval_column='pval',
+        background_universe='measured', background_harmonisation='union',
+        background_description=lambda: _BACKGROUND_DESCRIPTION,
     )
 
 

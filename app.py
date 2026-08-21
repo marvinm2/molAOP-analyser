@@ -41,7 +41,7 @@ from exceptions import AOPAnalysisError, GeneIdMismatchError, format_error_respo
 from utils import cleanup_file, cleanup_old_uploads, validate_file_path
 from services.data_service import (
     load_and_validate_data, process_gene_expression, guess_id_type, load_aop_data,
-    compute_logfc_percentiles,
+    compute_logfc_percentiles, VALID_UNIVERSES,
 )
 from services.enrichment_service import (
     run_enrichment_analysis, build_ke_gene_mapping, run_enrichment,
@@ -57,6 +57,7 @@ from services.aop_discovery_service import get_aop_list
 from services.batch_service import (
     parse_cisplatin_filename, create_batch_upload_dir, cleanup_batch_upload_dir,
     get_cisplatin_demo_files, validate_batch_columns, harmonise_backgrounds, run_batch,
+    DEFAULT_BACKGROUND_UNIVERSE, DEFAULT_BACKGROUND_HARMONISATION, VALID_HARMONISATIONS,
 )
 from services.comparison_service import (
     build_comparison_matrix,
@@ -2360,7 +2361,9 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
                               logfc_threshold, pval_threshold, resources,
                               harmonised_genes, batch_name, owner, description,
                               min_confidence=DEFAULT_MIN_CONFIDENCE,
-                              method='ora'):
+                              method='ora',
+                              background_universe=DEFAULT_BACKGROUND_UNIVERSE,
+                              background_harmonisation=DEFAULT_BACKGROUND_HARMONISATION):
     """Create the BatchRecord + ConditionRecords and launch run_batch in a thread.
 
     Shared by the interactive batch wizard (/batch/analyze) and the one-click
@@ -2374,12 +2377,18 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
         aop_id: selected AOP ID (label resolved from Config.CASE_STUDY_AOPS).
         logfc_threshold/pval_threshold: significance thresholds.
         resources: gene-set resources (e.g. ['WikiPathways']).
-        harmonised_genes: intersection gene set from harmonise_backgrounds.
+        harmonised_genes: batch background from harmonise_backgrounds, or None
+            when the batch uses per-condition backgrounds (issue #132).
         batch_name/owner/description: batch metadata.
         min_confidence: issue #60 minimum KE-mapping confidence ('all',
             'medium' or 'high'); applied to every condition in the batch.
         method: issue #76 enrichment method ('ora' or 'gsea'); applied to
             every condition so the comparison matrix stays comparable.
+        background_universe: issue #132 per-condition gene-universe rule
+            ('measured' or 'testable').
+        background_harmonisation: issue #132 cross-condition rule ('union',
+            'intersection' or 'per_condition'). Recorded on the batch so the
+            background can always be read back with the rules that built it.
 
     Returns:
         The new BatchRecord primary key.
@@ -2414,8 +2423,18 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
             id_column=id_col,
             fc_column=fc_col,
             pval_column=pval_col,
-            harmonised_background=json.dumps(sorted(harmonised_genes)),
-            harmonised_gene_count=len(harmonised_genes),
+            # Issue #132: per-condition backgrounds store no gene list -- there
+            # is no single background to store. NULL count reads as "not
+            # harmonised" in the progress and summary templates.
+            harmonised_background=(
+                json.dumps(sorted(harmonised_genes))
+                if harmonised_genes is not None else None
+            ),
+            harmonised_gene_count=(
+                len(harmonised_genes) if harmonised_genes is not None else None
+            ),
+            background_universe=background_universe,  # Issue #132
+            background_harmonisation=background_harmonisation,  # Issue #132
             batch_name=batch_name,
             owner=owner,
             description=description,
@@ -2553,6 +2572,29 @@ def batch_analyze():
                      f"Got: {request.form.get('min_confidence')}."
         }), 400
 
+    # Issue #132: the two rules that define the enrichment background. Kept
+    # separate because they are separate decisions -- what counts as a gene in
+    # one condition, and how the conditions' universes combine -- and bundling
+    # them into one control would hide that the second can undo the first.
+    background_universe = (
+        request.form.get('background_universe') or DEFAULT_BACKGROUND_UNIVERSE
+    ).strip().lower()
+    if background_universe not in VALID_UNIVERSES:
+        return jsonify({
+            'error': "Gene universe must be 'measured' or 'testable'. "
+                     f"Got: {request.form.get('background_universe')}."
+        }), 400
+
+    background_harmonisation = (
+        request.form.get('background_harmonisation') or DEFAULT_BACKGROUND_HARMONISATION
+    ).strip().lower()
+    if background_harmonisation not in VALID_HARMONISATIONS:
+        return jsonify({
+            'error': "Cross-condition background must be one of 'union', "
+                     "'intersection', 'per_condition'. "
+                     f"Got: {request.form.get('background_harmonisation')}."
+        }), 400
+
     filenames = request.form.getlist('filenames[]')
     condition_labels = request.form.getlist('condition_labels[]')
     doses = request.form.getlist('doses[]')
@@ -2591,16 +2633,29 @@ def batch_analyze():
 
     # Harmonise backgrounds
     try:
-        harmonised_genes, per_file_counts = harmonise_backgrounds(file_infos)
+        harmonised_genes, per_file_counts = harmonise_backgrounds(
+            file_infos,
+            mode=background_harmonisation,
+            universe=background_universe,
+        )
     except Exception as exc:
         logger.error(f'batch_analyze: harmonisation failed: {exc}')
         return jsonify({'error': 'Failed to harmonise gene backgrounds'}), 500
 
-    harmonised_count = len(harmonised_genes)
+    # Issue #132: per-condition backgrounds produce no shared gene set, so the
+    # size warning below has nothing to measure -- each condition is tested
+    # against its own universe and none of them is "too small" relative to the
+    # others by construction.
+    harmonised_count = len(harmonised_genes) if harmonised_genes is not None else None
     warning_msg = None
-    if harmonised_count < Config.BATCH_MIN_HARMONISED_GENES:
+    if harmonised_count is not None and harmonised_count < Config.BATCH_MIN_HARMONISED_GENES:
+        shared_or_covered = (
+            'genes in the union across all files'
+            if background_harmonisation == 'union'
+            else 'genes shared across all files'
+        )
         warning_msg = (
-            f'Warning: only {harmonised_count} genes shared across all files '
+            f'Warning: only {harmonised_count} {shared_or_covered} '
             f'(recommended minimum: {Config.BATCH_MIN_HARMONISED_GENES}). '
             'Results may be unreliable.'
         )
@@ -2622,6 +2677,8 @@ def batch_analyze():
             pval_col=pval_col,
             aop_id=aop_id,
             method=method,  # Issue #76
+            background_universe=background_universe,  # Issue #132
+            background_harmonisation=background_harmonisation,  # Issue #132
             logfc_threshold=logfc_threshold,
             pval_threshold=pval_threshold,
             resources=resources,
@@ -2731,7 +2788,13 @@ def batch_demo():
         if not valid:
             logger.error(f'batch_demo: column validation failed: {err_msg}')
             return redirect('/demos')
-        harmonised_genes, _ = harmonise_backgrounds(file_infos)
+        # Issue #132: the demo runs on the same defaults as a new batch, so
+        # what it shows is what a first-time user gets.
+        harmonised_genes, _ = harmonise_backgrounds(
+            file_infos,
+            mode=DEFAULT_BACKGROUND_HARMONISATION,
+            universe=DEFAULT_BACKGROUND_UNIVERSE,
+        )
 
         _persist_and_launch_batch(
             batch_uuid=batch_uuid,

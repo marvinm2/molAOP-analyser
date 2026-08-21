@@ -278,3 +278,261 @@ class TestConditionDroppedRows:
 
         assert status == 'complete'
         assert dropped == 0
+
+
+class TestBackgroundUniverseAndHarmonisation:
+    """Issue #132: the two rules that together define the enrichment background.
+
+    The bug these tests pin down is not that the intersection is small. It is
+    that each condition's universe has already been shaped by that condition's
+    own filtering, so intersecting collapses the batch onto whichever condition
+    was filtered hardest — and on a real four-dose DESeq2 batch the background
+    can equal one contrast exactly, with the other three contributing nothing.
+    """
+
+    def _write(self, path, genes, pvals):
+        pd.DataFrame({
+            'Gene': genes,
+            'logFC': [1.0] * len(genes),
+            'padj': pvals,
+        }).to_csv(path, index=False)
+        return str(path)
+
+    def _infos(self, *paths):
+        return [
+            {'filepath': p, 'id_col': 'Gene', 'fc_col': 'logFC', 'pval_col': 'padj'}
+            for p in paths
+        ]
+
+    def test_union_keeps_a_gene_missing_from_one_condition(self, tmp_path):
+        f1 = self._write(tmp_path / 'a.csv', ['BRCA1', 'TP53', 'EGFR'], [0.01] * 3)
+        f2 = self._write(tmp_path / 'b.csv', ['BRCA1', 'TP53'], [0.01] * 2)
+        harmonised, _ = harmonise_backgrounds(self._infos(f1, f2), mode='union')
+        assert harmonised == {'BRCA1', 'TP53', 'EGFR'}
+
+    def test_intersection_is_the_default_and_unchanged(self, tmp_path):
+        f1 = self._write(tmp_path / 'a.csv', ['BRCA1', 'TP53', 'EGFR'], [0.01] * 3)
+        f2 = self._write(tmp_path / 'b.csv', ['BRCA1', 'TP53'], [0.01] * 2)
+        harmonised, _ = harmonise_backgrounds(self._infos(f1, f2))
+        assert harmonised == {'BRCA1', 'TP53'}
+
+    def test_per_condition_returns_none_not_empty(self, tmp_path):
+        """None means 'apply no filter'; an empty set would filter everything."""
+        f1 = self._write(tmp_path / 'a.csv', ['BRCA1'], [0.01])
+        f2 = self._write(tmp_path / 'b.csv', ['MYC'], [0.01])
+        harmonised, per_file = harmonise_backgrounds(
+            self._infos(f1, f2), mode='per_condition'
+        )
+        assert harmonised is None
+        assert per_file[f1] == 1 and per_file[f2] == 1
+
+    def test_unknown_mode_is_rejected(self, tmp_path):
+        f1 = self._write(tmp_path / 'a.csv', ['BRCA1'], [0.01])
+        with pytest.raises(ValueError, match='Unknown harmonisation mode'):
+            harmonise_backgrounds(self._infos(f1), mode='average')
+
+    def test_measured_universe_keeps_genes_with_no_adjusted_pvalue(self, tmp_path):
+        """The HMOX1 case: strongly induced, filtered out of its own background.
+
+        Under 'testable' the gene is absent from the universe entirely and can
+        never be counted as a hit for any gene set. Under 'measured' it is in
+        the background as a non-significant gene, which is what it is.
+        """
+        f1 = self._write(tmp_path / 'a.csv', ['BRCA1', 'HMOX1'], [0.01, None])
+        testable, _ = harmonise_backgrounds(self._infos(f1), universe='testable')
+        measured, _ = harmonise_backgrounds(self._infos(f1), universe='measured')
+        assert testable == {'BRCA1'}
+        assert measured == {'BRCA1', 'HMOX1'}
+
+    def test_intersection_collapses_onto_the_worst_filtered_condition(self, tmp_path):
+        """The observed failure, in miniature.
+
+        Three conditions are testable on progressively fewer genes. Under
+        'testable' + 'intersection' the batch background equals the smallest
+        condition exactly — the other two contribute nothing at all. Switching
+        the universe rule alone fixes it, because the genes were only missing
+        for want of an adjusted p-value.
+        """
+        genes = ['A', 'B', 'C', 'D']
+        f1 = self._write(tmp_path / 'd25.csv', genes, [0.01, 0.01, 0.01, 0.01])
+        f2 = self._write(tmp_path / 'd50.csv', genes, [0.01, None, None, None])
+        f3 = self._write(tmp_path / 'd75.csv', genes, [0.01, 0.01, None, None])
+        infos = self._infos(f1, f2, f3)
+
+        legacy, per_file = harmonise_backgrounds(
+            infos, mode='intersection', universe='testable'
+        )
+        assert legacy == {'A'}
+        assert min(per_file.values()) == 1  # the background is the worst file
+
+        fixed, _ = harmonise_backgrounds(
+            infos, mode='union', universe='measured'
+        )
+        assert fixed == set(genes)
+
+
+class TestHarmonisationIsOraOnly:
+    """Issue #132: GSEA has no 2x2 table and no background.
+
+    Restricting a ranked list to the genes shared with the other conditions
+    removes ranking information without matching anything, so the harmonised
+    filter applies to ORA alone.
+    """
+
+    def _setup(self, tmp_path, monkeypatch, temp_database, method):
+        from datetime import datetime, timedelta, timezone
+
+        from config import Config
+        from database import BatchRecord, ConditionRecord
+        from services import batch_service
+
+        upload_root = tmp_path / 'uploads'
+        (upload_root / 'batch-132').mkdir(parents=True)
+        monkeypatch.setattr(Config, 'UPLOAD_FOLDER', str(upload_root))
+        # 80 genes, the first 20 significant. Large enough to clear the KE
+        # minimum-size floor and gseapy's own set-size limits, so a failure
+        # here is about harmonisation and not about set sizes.
+        genes = [f'G{i}' for i in range(1, 81)]
+        pd.DataFrame({
+            'Gene': genes,
+            'logFC': [2.0] * 20 + [0.1] * 60,
+            'pval': [0.001] * 20 + [0.6] * 60,
+        }).to_csv(upload_root / 'batch-132' / 'cond.tsv', sep='\t', index=False)
+
+        session = temp_database.get_session()
+        batch = BatchRecord(
+            uuid='batch-132', status='running', aop_id='AOP:1', method=method,
+            logfc_threshold=1.0, pval_cutoff=0.05,
+            id_column='Gene', fc_column='logFC', pval_column='pval',
+            expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
+        )
+        session.add(batch)
+        session.flush()
+        cond = ConditionRecord(
+            batch_id=batch.id, position=0, filename='cond.tsv',
+            condition_label='Cond', status='pending',
+        )
+        session.add(cond)
+        session.commit()
+        return batch_service, session, batch, cond
+
+    def _run(self, batch_service, session, batch, cond, harmonised_genes):
+        batch_service._run_condition(
+            cond, batch,
+            harmonised_genes=harmonised_genes,
+            # A proper subset of the 80 measured genes — a gene set equal to
+            # the whole ranked list is degenerate for GSEA.
+            reference_sets={'KE:115': {f'G{i}' for i in range(1, 31)}},
+            ke_list={'KE:115'},
+            edges=pd.DataFrame(columns=['Source_KE', 'Target_KE', 'KER_ID', 'AOP_ID']),
+            ke_type_map={'KE:115': 'MIE'},
+            ke_title_map={'KE:115': 'Event 115'},
+            db_session=session,
+        )
+        session.refresh(cond)
+        return cond
+
+    def test_ora_is_restricted_to_the_harmonised_background(self, tmp_path, monkeypatch, temp_database):
+        bs, session, batch, cond = self._setup(tmp_path, monkeypatch, temp_database, 'ora')
+        try:
+            cond = self._run(bs, session, batch, cond, {f'G{i}' for i in range(1, 41)})
+            assert cond.gene_count == 40
+        finally:
+            session.close()
+
+    def test_gsea_sees_every_gene_regardless_of_harmonisation(self, tmp_path, monkeypatch, temp_database):
+        bs, session, batch, cond = self._setup(tmp_path, monkeypatch, temp_database, 'gsea')
+        try:
+            cond = self._run(bs, session, batch, cond, {f'G{i}' for i in range(1, 41)})
+            assert cond.gene_count == 80
+        finally:
+            session.close()
+
+    def test_per_condition_background_applies_no_filter(self, tmp_path, monkeypatch, temp_database):
+        """None means 'no filter'; an empty set would have removed everything."""
+        bs, session, batch, cond = self._setup(tmp_path, monkeypatch, temp_database, 'ora')
+        try:
+            cond = self._run(bs, session, batch, cond, None)
+            assert cond.gene_count == 80
+        finally:
+            session.close()
+
+
+class TestBackgroundRulePersistence:
+    """Issue #132: the rules reach the BatchRecord, so results stay readable.
+
+    A background size is not interpretable on its own — 4,086 genes means
+    something different under each rule — so the rules are stored with the
+    batch rather than inferred later from the gene count.
+    """
+
+    @pytest.fixture
+    def batch_app(self, temp_database, monkeypatch):
+        import app as app_module
+
+        monkeypatch.setattr(app_module, 'db_manager', temp_database)
+        monkeypatch.setattr(app_module, 'run_batch', lambda *a, **k: None)
+        return app_module
+
+    @staticmethod
+    def _launch(app_module, **overrides):
+        kwargs = dict(
+            batch_uuid='bg-rules-uuid',
+            filenames=['a.csv'],
+            condition_labels=['A'],
+            doses=[''],
+            timepoints=[''],
+            id_col='Gene',
+            fc_col='logFC',
+            pval_col='pval',
+            aop_id='AOP:1',
+            logfc_threshold=0.0,
+            pval_threshold=0.05,
+            resources=['WikiPathways'],
+            harmonised_genes={'BRCA1'},
+            batch_name='bg batch',
+            owner='',
+            description='',
+        )
+        kwargs.update(overrides)
+        return app_module._persist_and_launch_batch(**kwargs)
+
+    def _batch(self, temp_database):
+        from database import BatchRecord
+
+        session = temp_database.get_session()
+        try:
+            return session.query(BatchRecord).filter_by(uuid='bg-rules-uuid').one()
+        finally:
+            session.close()
+
+    def test_rules_are_stored_on_the_batch(self, batch_app, temp_database):
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock', [])):
+            self._launch(
+                batch_app,
+                background_universe='testable',
+                background_harmonisation='intersection',
+            )
+        batch = self._batch(temp_database)
+        assert batch.background_universe == 'testable'
+        assert batch.background_harmonisation == 'intersection'
+
+    def test_defaults_are_measured_and_union(self, batch_app, temp_database):
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock', [])):
+            self._launch(batch_app)
+        batch = self._batch(temp_database)
+        assert batch.background_universe == 'measured'
+        assert batch.background_harmonisation == 'union'
+
+    def test_per_condition_stores_no_gene_list(self, batch_app, temp_database):
+        """There is no single background, so storing one would misrepresent it."""
+        with patch.object(batch_app, 'load_cached_reference_sets', return_value=({}, 'mock', [])):
+            self._launch(
+                batch_app,
+                harmonised_genes=None,
+                background_harmonisation='per_condition',
+            )
+        batch = self._batch(temp_database)
+        assert batch.harmonised_background is None
+        assert batch.harmonised_gene_count is None
+        assert 'per condition' in batch.background_description()
