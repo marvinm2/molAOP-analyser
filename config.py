@@ -20,6 +20,12 @@ import zoneinfo
 # so a release that forgets to bump it fails the build.
 __version__ = "6.0.0"
 
+# The application root, so bundled reference data resolves the same whatever
+# directory the process was started from. Relative 'data/...' paths only worked
+# because the image's WORKDIR happens to be /app.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+
 
 def get_build_ref() -> str:
     """Identify the running build, not just its released version.
@@ -79,6 +85,8 @@ def resolve_secret_key():
 
 
 class Config:
+    DATA_DIR = DATA_DIR
+
     # File upload settings
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50 MB for form data (reports)
@@ -135,12 +143,14 @@ class Config:
 
     # Required data files
     REQUIRED_DATA_FILES = [
-        'data/aop_ke_map.csv',
-        'data/aop_ker_edges.csv', 
-        'data/KE-WP.csv',
-        'data/edges_wpid_to_gene.csv',
-        'data/node_attributes.csv',
-        'data/ke_metadata.csv'
+        os.path.join(DATA_DIR, name) for name in (
+            'aop_ke_map.csv',
+            'aop_ker_edges.csv',
+            'KE-WP.csv',
+            'edges_wpid_to_gene.csv',
+            'node_attributes.csv',
+            'ke_metadata.csv',
+        )
     ]
     
     # Demo datasets
@@ -336,6 +346,11 @@ class Config:
         else '/tmp/molaop_cache'
     )
     CACHE_TTL = 3600  # 1 hour
+    # Lifetime of a reference-set entry built from the bundled CSVs because the
+    # Builder was unreachable. Kept short so a Builder blip (e.g. the analyser
+    # restarting a few seconds before it) does not pin an hour of analyses to
+    # the bundled files; the next request after expiry retries the Builder.
+    FALLBACK_CACHE_TTL = int(os.environ.get('FALLBACK_CACHE_TTL', '300'))
 
     # Database location. Defaults to a file in the working directory, which in
     # a container is ephemeral — the deployed service overrides this to point

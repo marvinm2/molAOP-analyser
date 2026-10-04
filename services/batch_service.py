@@ -117,7 +117,7 @@ def get_cisplatin_demo_files() -> List[Dict]:
         for dose in Config.CISPLATIN_DOSES:
             filename = f'CSP_{timepoint}_{dose}.csv'
             relative_path = f'Cisplatin_Kidney/{filename}'
-            data_path = os.path.join('data', relative_path)
+            data_path = os.path.join(Config.DATA_DIR, relative_path)
             if os.path.isfile(data_path):
                 files.append({
                     'path': relative_path,

@@ -1,6 +1,9 @@
 import logging
+import os
 
 import pandas as pd
+
+from config import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -187,9 +190,9 @@ def filter_ke_wp_df_by_confidence(ke_wp_df, min_confidence=DEFAULT_MIN_CONFIDENC
     return filtered
 
 
-def load_reference_sets(ke_wp_path='data/KE-WP.csv',
-                        wp_gene_path='data/edges_wpid_to_gene.csv',
-                        node_path='data/node_attributes.csv',
+def load_reference_sets(ke_wp_path=os.path.join(DATA_DIR, 'KE-WP.csv'),
+                        wp_gene_path=os.path.join(DATA_DIR, 'edges_wpid_to_gene.csv'),
+                        node_path=os.path.join(DATA_DIR, 'node_attributes.csv'),
                         ke_wp_df=None,
                         min_confidence=DEFAULT_MIN_CONFIDENCE,
                         wp_gene_map=None,

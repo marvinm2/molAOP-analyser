@@ -30,6 +30,7 @@ unmapped AOPs follow sorted by aop_id.
 """
 
 import logging
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Set
@@ -482,7 +483,7 @@ def build_aop_list(config) -> List[Dict]:
             if entry.get("source") == "csv":
                 try:
                     import pandas as pd
-                    df = pd.read_csv("data/aop_ke_map.csv")
+                    df = pd.read_csv(os.path.join(Config.DATA_DIR, "aop_ke_map.csv"))
                     ke_count = int(df[df["AOP_ID"] == aop_id]["KE_ID"].dropna().nunique())
                 except Exception as exc:
                     logger.warning("Could not count KEs for CSV AOP %s: %s", aop_id, exc)

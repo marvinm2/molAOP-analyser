@@ -5,6 +5,7 @@ Provides paginated fetching with retry logic, KE ID normalisation,
 and integration with the local reference set loading pipeline.
 """
 import logging
+import os
 import re
 
 import pandas as pd
@@ -12,6 +13,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from config import DATA_DIR
 from helpers import (
     DEFAULT_MIN_CONFIDENCE,
     VALID_MIN_CONFIDENCE,
@@ -176,7 +178,7 @@ def fetch_ke_wp_records(config, min_confidence=DEFAULT_MIN_CONFIDENCE):
     return filter_records_by_confidence(records, min_confidence)
 
 
-def load_ke_wp_records_csv(csv_path="data/KE-WP.csv"):
+def load_ke_wp_records_csv(csv_path=os.path.join(DATA_DIR, "KE-WP.csv")):
     """Load KE-WP mapping records from the local CSV fallback file.
 
     Reads the two-column CSV at ``csv_path`` and returns the rows as a list of
@@ -188,7 +190,7 @@ def load_ke_wp_records_csv(csv_path="data/KE-WP.csv"):
     Parameters
     ----------
     csv_path : str
-        Path to the CSV file (default: ``"data/KE-WP.csv"``).
+        Path to the CSV file (default: ``KE-WP.csv`` in ``config.DATA_DIR``).
 
     Returns
     -------

@@ -597,7 +597,7 @@ def preview():
     elif demo_filename:
         # Security: resolve path and verify it stays within data/
         from pathlib import Path
-        data_dir = Path('data').resolve()
+        data_dir = Path(Config.DATA_DIR).resolve()
         requested = (data_dir / demo_filename).resolve()
         if not str(requested).startswith(str(data_dir)) or not requested.is_file():
             return "Invalid demo file path", 400
@@ -1103,10 +1103,10 @@ def analyze():
                 logger.warning(
                     "fetch_ke_wp_records failed, falling back to CSV: %s", picker_exc
                 )
-                raw_ke_wp_records = load_ke_wp_records_csv('data/KE-WP.csv')
+                raw_ke_wp_records = load_ke_wp_records_csv()
                 wp_title_map = {}
         else:
-            raw_ke_wp_records = load_ke_wp_records_csv('data/KE-WP.csv')
+            raw_ke_wp_records = load_ke_wp_records_csv()
             wp_title_map = {}
 
         wp_picker_data = build_wp_picker_data(
@@ -1613,25 +1613,36 @@ def _confidence_cache_key(base_key, min_confidence):
 _CACHE_FILL_TIMES = {}
 
 
-def _record_cache_fill_time(cache_key, expire_at):
+def _cache_ttl_for_source(source):
+    """The TTL a reference-set entry from ``source`` is written with.
+
+    Live Builder entries keep ``Config.CACHE_TTL``; the bundled-CSV fallback
+    is written with the shorter ``Config.FALLBACK_CACHE_TTL``.
+    """
+    return Config.FALLBACK_CACHE_TTL if source == "csv" else Config.CACHE_TTL
+
+
+def _record_cache_fill_time(cache_key, expire_at, source):
     """Note when a cache entry was written, from its expiry (#106).
 
-    diskcache stores an expiry per entry and every reference-set entry is
-    written with the same ``Config.CACHE_TTL``, so the fill time is the expiry
-    minus that TTL. The one assumption: change CACHE_TTL while an entry is warm
-    and that entry's reported age is off by the difference until it expires — a
-    timestamp stale by that much still beats the "no age at all" it replaces.
+    diskcache stores an expiry per entry, and each entry is written with the
+    TTL for its source (see ``_cache_ttl_for_source``), so the fill time is the
+    expiry minus that TTL. The one assumption: change a TTL while an entry is
+    warm and that entry's reported age is off by the difference until it
+    expires — a timestamp stale by that much still beats the "no age at all"
+    it replaces.
 
     Args:
         cache_key: the threshold-scoped key the entry was read from.
         expire_at: epoch seconds from ``cache.get(..., expire_time=True)``, or
             None for an entry written without an expiry.
+        source: the entry's original source ('api' or 'csv').
     """
     if not expire_at:
         _CACHE_FILL_TIMES.pop(cache_key, None)
         return
     filled_at = datetime.datetime.fromtimestamp(
-        expire_at - Config.CACHE_TTL, tz=datetime.timezone.utc
+        expire_at - _cache_ttl_for_source(source), tz=datetime.timezone.utc
     )
     _CACHE_FILL_TIMES[cache_key] = filled_at.strftime('%Y-%m-%d %H:%M UTC')
 
@@ -1684,7 +1695,6 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
     # say how old the cached gene sets are, not merely that they were cached.
     cached, expire_at = _reference_cache.get(cache_key, expire_time=True)
     if cached is not None:
-        _record_cache_fill_time(cache_key, expire_at)
         # Entries written before #79 are 2-tuples and before #81 3-tuples;
         # treat them as "nothing known to be unresolved" rather than
         # invalidating a warm cache on deploy.
@@ -1696,6 +1706,7 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
         else:
             reference_sets, original_source = cached
             unresolved = []
+        _record_cache_fill_time(cache_key, expire_at, original_source)
         # An old entry pickled a plain dict; rewrap so the attribute-carrying
         # contract holds for every caller regardless of cache age.
         reference_sets = ReferenceSets(
@@ -1732,22 +1743,24 @@ def _load_wikipathways_reference_sets(min_confidence=DEFAULT_MIN_CONFIDENCE):
     # min_confidence is a documented no-op here (#60 graceful degradation).
     unresolved = []
     reference_sets = load_reference_sets(
-        ke_wp_path='data/KE-WP.csv',
-        wp_gene_path='data/edges_wpid_to_gene.csv',
-        node_path='data/node_attributes.csv',
+        ke_wp_path=os.path.join(Config.DATA_DIR, 'KE-WP.csv'),
+        wp_gene_path=os.path.join(Config.DATA_DIR, 'edges_wpid_to_gene.csv'),
+        node_path=os.path.join(Config.DATA_DIR, 'node_attributes.csv'),
         min_confidence=min_confidence,
         unresolved_out=unresolved,
     )
     unresolved_ke = unresolved_ke_pathways_for(reference_sets)
     unresolved = sorted(set(unresolved))
+    # A short TTL: this entry stands in for a Builder that was briefly
+    # unreachable, and should not outlive the outage by an hour.
     _reference_cache.set(
         cache_key,
         (dict(reference_sets), "csv", unresolved, unresolved_ke),
-        expire=Config.CACHE_TTL,
+        expire=Config.FALLBACK_CACHE_TTL,
     )
     logger.info(
         f"Loaded {len(reference_sets)} WikiPathways KE sets from local CSV files, "
-        f"cached for {Config.CACHE_TTL}s"
+        f"cached for {Config.FALLBACK_CACHE_TTL}s"
     )
     return reference_sets, "csv", unresolved, unresolved_ke
 
@@ -1776,8 +1789,8 @@ def _load_gmt_resource_reference_sets(resource, min_confidence=DEFAULT_MIN_CONFI
     # Issue #106: the expiry gives the cache fill time for the provenance line.
     cached, expire_at = _reference_cache.get(cache_key, expire_time=True)
     if cached is not None:
-        _record_cache_fill_time(cache_key, expire_at)
         reference_sets, original_source = cached
+        _record_cache_fill_time(cache_key, expire_at, original_source)
         logger.info(
             f"Loaded {len(reference_sets)} {resource} KE sets from disk cache"
         )
@@ -2322,7 +2335,7 @@ def batch_upload():
 
     # Copy demo files from data/ to batch dir
     from pathlib import Path
-    data_dir = Path('data').resolve()
+    data_dir = Path(Config.DATA_DIR).resolve()
     for rel_path in demo_paths:
         requested = (data_dir / rel_path).resolve()
         if not str(requested).startswith(str(data_dir)) or not requested.is_file():
@@ -2765,7 +2778,7 @@ def batch_demo():
     try:
         from pathlib import Path
         import shutil
-        data_dir = Path('data').resolve()
+        data_dir = Path(Config.DATA_DIR).resolve()
         batch_uuid, batch_dir = create_batch_upload_dir(Config.UPLOAD_FOLDER)
 
         filenames = []

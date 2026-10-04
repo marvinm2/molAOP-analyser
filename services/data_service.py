@@ -1,6 +1,7 @@
 """
 Data processing service for gene expression data and reference sets.
 """
+import os
 import pandas as pd
 import numpy as np
 import logging
@@ -383,13 +384,13 @@ def _load_aop_data_csv(aop_id: str) -> Tuple[Set[str], pd.DataFrame, Dict[str, s
     Returns:
         Tuple of (ke_list, edges_df, ke_type_map, ke_title_map)
     """
-    aop_ke_map = pd.read_csv('data/aop_ke_map.csv')
+    aop_ke_map = pd.read_csv(os.path.join(Config.DATA_DIR, 'aop_ke_map.csv'))
     ke_list = set(aop_ke_map[aop_ke_map['AOP_ID'] == aop_id]['KE_ID'].dropna())
 
-    aop_ker_df = pd.read_csv('data/aop_ker_edges.csv')
+    aop_ker_df = pd.read_csv(os.path.join(Config.DATA_DIR, 'aop_ker_edges.csv'))
     edges = aop_ker_df[aop_ker_df['AOP_ID'] == aop_id]
 
-    ke_metadata_df = pd.read_csv("data/ke_metadata.csv")
+    ke_metadata_df = pd.read_csv(os.path.join(Config.DATA_DIR, "ke_metadata.csv"))
     ke_type_map = dict(zip(ke_metadata_df["KE_ID"], ke_metadata_df["Type"]))
     ke_title_map = dict(zip(ke_metadata_df["KE_ID"], ke_metadata_df["Title"]))
 

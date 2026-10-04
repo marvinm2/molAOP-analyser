@@ -8,6 +8,18 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Builder outage no longer pins an hour of analyses to the bundled files.** WikiPathways
+  gene sets built from the bundled CSVs because the Builder was unreachable are now cached for
+  `FALLBACK_CACHE_TTL` (default 300 s, env-overridable) instead of the full one-hour
+  `CACHE_TTL`, so the next request after a short outage goes back to the Builder. Live Builder
+  entries keep `CACHE_TTL`, and the reported cache age is derived from the TTL matching each
+  entry's source.
+- **Reference data no longer depends on the working directory.** Bundled `data/` files are
+  resolved from the application root (`config.DATA_DIR`) rather than relative to the cwd, so
+  launching the app from anywhere other than its own directory still finds them.
+
 ## [6.0.0] - 2026-08-21
 
 ### Changed
