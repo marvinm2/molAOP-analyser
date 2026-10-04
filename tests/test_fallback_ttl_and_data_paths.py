@@ -97,6 +97,10 @@ class TestCacheAgeUsesTheEntrysTTL:
 
     FILLED = dt.datetime(2026, 10, 4, 8, 30, tzinfo=dt.timezone.utc)
 
+    @pytest.fixture(autouse=True)
+    def _now_is_one_minute_after_filling(self, monkeypatch):
+        monkeypatch.setattr(app, "_clock", lambda: self.FILLED.timestamp() + 60)
+
     def _load_cached(self, monkeypatch, source, ttl):
         key = app._confidence_cache_key(app.REFERENCE_CACHE_KEY, "all")
         cache = _RecordingCache(
@@ -106,6 +110,24 @@ class TestCacheAgeUsesTheEntrysTTL:
         monkeypatch.setattr(app, "_reference_cache", cache)
         app._load_wikipathways_reference_sets("all")
         return app._cache_fill_time("WikiPathways", "all")
+
+    def test_csv_entry_written_before_the_fallback_ttl_existed(self, monkeypatch):
+        """A csv entry cached with the old full TTL must not be dated 55 min late."""
+        assert self._load_cached(
+            monkeypatch, "csv", Config.CACHE_TTL
+        ) == "2026-10-04 08:30 UTC"
+
+    def test_gmt_entry_age_is_derived_from_the_live_ttl(self, monkeypatch):
+        key = app._confidence_cache_key(
+            app._GMT_RESOURCE_CACHE_KEYS["GO_BP"], "all")
+        cache = _RecordingCache(
+            {key: ({"KE:1": {"A"}}, "api")},
+            {key: self.FILLED.timestamp() + Config.CACHE_TTL},
+        )
+        monkeypatch.setattr(app, "_reference_cache", cache)
+        _, source = app._load_gmt_resource_reference_sets("GO_BP", "all")
+        assert source == "cache(api)"
+        assert app._cache_fill_time("GO_BP", "all") == "2026-10-04 08:30 UTC"
 
     def test_csv_entry_age_is_derived_from_the_fallback_ttl(self, monkeypatch):
         assert self._load_cached(

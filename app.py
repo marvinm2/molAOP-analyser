@@ -599,7 +599,7 @@ def preview():
         from pathlib import Path
         data_dir = Path(Config.DATA_DIR).resolve()
         requested = (data_dir / demo_filename).resolve()
-        if not str(requested).startswith(str(data_dir)) or not requested.is_file():
+        if not requested.is_relative_to(data_dir) or not requested.is_file():
             return "Invalid demo file path", 400
 
         filename = requested.name
@@ -1612,6 +1612,9 @@ def _confidence_cache_key(base_key, min_confidence):
 # cached payload shapes (already carrying compatibility history from #79/#81).
 _CACHE_FILL_TIMES = {}
 
+# Wall clock for cache-age checks; a seam so tests can fix "now".
+_clock = time.time
+
 
 def _cache_ttl_for_source(source):
     """The TTL a reference-set entry from ``source`` is written with.
@@ -1627,10 +1630,13 @@ def _record_cache_fill_time(cache_key, expire_at, source):
 
     diskcache stores an expiry per entry, and each entry is written with the
     TTL for its source (see ``_cache_ttl_for_source``), so the fill time is the
-    expiry minus that TTL. The one assumption: change a TTL while an entry is
-    warm and that entry's reported age is off by the difference until it
-    expires — a timestamp stale by that much still beats the "no age at all"
-    it replaces.
+    expiry minus that TTL. An entry with more lifetime left than its source's
+    TTL cannot have been written with that TTL: it predates the shorter
+    fallback TTL (csv entries used to get ``Config.CACHE_TTL``), so it is dated
+    with the longest TTL in use instead of being given a fill time in the
+    future. Other TTL changes made while an entry is warm still skew its age by
+    the difference until it expires — a timestamp stale by that much still
+    beats the "no age at all" it replaces.
 
     Args:
         cache_key: the threshold-scoped key the entry was read from.
@@ -1641,8 +1647,11 @@ def _record_cache_fill_time(cache_key, expire_at, source):
     if not expire_at:
         _CACHE_FILL_TIMES.pop(cache_key, None)
         return
+    ttl = _cache_ttl_for_source(source)
+    if expire_at - _clock() > ttl:
+        ttl = max(ttl, Config.CACHE_TTL)
     filled_at = datetime.datetime.fromtimestamp(
-        expire_at - _cache_ttl_for_source(source), tz=datetime.timezone.utc
+        expire_at - ttl, tz=datetime.timezone.utc
     )
     _CACHE_FILL_TIMES[cache_key] = filled_at.strftime('%Y-%m-%d %H:%M UTC')
 
@@ -2338,7 +2347,7 @@ def batch_upload():
     data_dir = Path(Config.DATA_DIR).resolve()
     for rel_path in demo_paths:
         requested = (data_dir / rel_path).resolve()
-        if not str(requested).startswith(str(data_dir)) or not requested.is_file():
+        if not requested.is_relative_to(data_dir) or not requested.is_file():
             return jsonify({'error': 'Invalid demo file path'}), 400
         safe_name = secure_filename(requested.name)
         dest = os.path.join(batch_dir, safe_name)
@@ -2785,7 +2794,7 @@ def batch_demo():
         for demo_file in DEMO_FILES:
             requested = (data_dir / demo_file).resolve()
             # Path-safety: must resolve inside data/ and exist.
-            if not str(requested).startswith(str(data_dir)) or not requested.is_file():
+            if not requested.is_relative_to(data_dir) or not requested.is_file():
                 logger.error(f'batch_demo: demo file unavailable: {demo_file}')
                 return redirect('/demos')
             safe_name = secure_filename(requested.name)
