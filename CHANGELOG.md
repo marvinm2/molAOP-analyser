@@ -32,13 +32,17 @@ via `ghcr.io/marvinm2/molaop-analyser`.
   reported as excluded — "no genes shared across the selected sources" — in the accounting
   line, the network and both reports, rather than as unmapped. N must lie between 1 and the
   number of selected sources; with one source every mode is the same set and is recorded as
-  union. If a resource fails to load, the combination counts only the ones that did, and the
-  results page says so.
+  union, and a resource listed twice in a request counts once. If a resource fails to load,
+  the combination counts only the ones that did, and the results page says so. A Key Event
+  whose mapping is unresolved in one source but has genes in another is reported under the
+  combination ("no genes shared"), not as an unresolved mapping.
 
   The choice is stored on experiments and batches (new nullable `source_combination` column,
   added by the usual idempotent migration) and shown on the provenance line and in the single
   and batch reports. **Runs and batches recorded before this read back as union**, which is
   what they ran with. A union run produces exactly the gene sets and results it did before.
+  Shared result links do not show the combination yet; they already omit the resource list
+  and the minimum confidence, and all three will be added together.
 
 ## [6.0.0] - 2026-08-21
 

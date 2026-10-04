@@ -3,8 +3,9 @@
 Until #123 the per-KE gene sets of every selected resource were always unioned.
 The user can now ask for the intersection (a gene counts only if every selected
 source has it) or for "at least N sources". Union stays the default, and a
-union run must produce exactly what it produced before the option existed —
-the golden tests below rebuild the pre-#123 merge inline and compare against it.
+union run must produce exactly what it produced before the option existed.
+TestFrozenMainGolden pins union output generated once from origin/main; the
+other golden tests rebuild the pre-#123 merge inline and compare against it.
 """
 
 from unittest.mock import patch
@@ -218,14 +219,77 @@ class TestLoaderHonoursTheMode:
         assert sets["KE:1"] == {f"G{i}" for i in range(10, 25)}
         assert no_shared_genes_kes_for(sets) == {"KE:2", "KE:3", "KE:4"}
 
-    def test_mode_switch_never_serves_another_modes_sets(self):
-        """Per-resource caches are mode-independent; the combination is not
-        cached, so alternating modes can never hand back the wrong sets."""
-        a, _, _ = _load(ALL, source_combination="intersection")
-        b, _, _ = _load(ALL, source_combination="union")
-        c, _, _ = _load(ALL, source_combination="intersection")
+    def test_mode_switch_never_serves_another_modes_sets(self, monkeypatch):
+        """The real per-resource cache path runs; only the HTTP fetch is mocked.
+
+        The per-resource cache entries are keyed by resource and confidence,
+        not by mode, and the combination is applied after they are read. So
+        alternating modes is served from one warm cache — fetched once per
+        resource — and still never hands back another mode's sets.
+        """
+        store = {}
+
+        class _Cache:
+            def get(self, key, expire_time=False):
+                return (store.get(key), None) if expire_time else store.get(key)
+
+            def set(self, key, value, expire=None):
+                store[key] = value
+
+        monkeypatch.setattr(app, "_reference_cache", _Cache())
+        gmt_fetch = patch.object(
+            app,
+            "fetch_gmt_reference_sets",
+            side_effect=lambda cfg, resource, min_confidence="all": {
+                k: set(v) for k, v in SOURCES[resource].items()
+            },
+        )
+        wp_fetch = patch.object(
+            app,
+            "fetch_reference_sets_from_api",
+            side_effect=lambda cfg, min_confidence="all": (
+                ReferenceSets({k: set(v) for k, v in WP.items()}),
+                [],
+            ),
+        )
+        with wp_fetch as wp_mock, gmt_fetch as gmt_mock:
+            a, _, res_a = app.load_cached_reference_sets(
+                ALL, source_combination="intersection"
+            )
+            b, _, res_b = app.load_cached_reference_sets(
+                ALL, source_combination="union"
+            )
+            c, _, _ = app.load_cached_reference_sets(
+                ALL, source_combination="at_least_2"
+            )
+            d, _, _ = app.load_cached_reference_sets(
+                ALL, source_combination="intersection"
+            )
+        assert wp_mock.call_count == 1
+        assert gmt_mock.call_count == 2  # GO_BP and Reactome, once each
+        assert [e["source"] for e in res_a] == ["api", "api", "api"]
+        assert [e["source"] for e in res_b] == ["cache(api)"] * 3
         assert dict(b) == _legacy_union([WP, GO, REACTOME])
-        assert dict(a) == dict(c) != dict(b)
+        assert dict(c) == combine_source_sets([WP, GO, REACTOME], "at_least_2")[0]
+        assert dict(a) == dict(d)
+        assert dict(a) == combine_source_sets([WP, GO, REACTOME], "intersection")[0]
+        assert no_shared_genes_kes_for(a) == {"KE:2", "KE:3", "KE:4"}
+        assert no_shared_genes_kes_for(b) == set()
+        # The cached per-resource entries were not altered by the combinations.
+        assert all(":minconf=all" in key for key in store)
+        for key, value in store.items():
+            sets = value[0]
+            if "KE:2" in sets:  # the WikiPathways entry
+                assert sets["KE:2"] == WP["KE:2"]
+
+    def test_duplicate_resources_count_once(self):
+        """A resource listed twice is one source, not an intersection of two."""
+        sets, _, resolution = _load(
+            ["WikiPathways", "WikiPathways"], source_combination="intersection"
+        )
+        assert [e["resource"] for e in resolution] == ["WikiPathways"]
+        assert dict(sets) == _legacy_union([WP])
+        assert no_shared_genes_kes_for(sets) == set()
 
     def test_invalid_spec_falls_back_to_union(self):
         sets, _, _ = _load(ALL, source_combination="bogus")
@@ -280,6 +344,111 @@ class TestEnrichmentGolden:
         )
         pd.testing.assert_frame_equal(actual, expected)
         assert get_ke_summary(actual) == get_ke_summary(expected)
+
+
+# Mixed-case and whitespace-padded genes: the union merge on main never
+# normalised gene IDs, so a union run must hand them back exactly as given.
+# Sending union through the counting path (which strips and upper-cases) would
+# change these sets — that is what this fixture is for.
+_MIXED_WP = {
+    "KE:1": {"g1", " G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10"},
+    "KE:2": {"G20", "G21", "G22", "G23", "G24", "G25"},
+    "KE:5": set(),
+}
+_MIXED_GO = {
+    "KE:1": {"G2", "G3", "G11", "G12", "G13"},
+    "KE:3": {"G30", "G31", "G32", "G33", "G34", "G35", "G1"},
+}
+_MIXED_REACTOME = {"KE:1": {"g1", "G14"}, "KE:3": {"G36"}}
+
+# Generated once from origin/main (057a025, before #123) by running
+# load_cached_reference_sets on the fixtures above, then run_enrichment('ora').
+# Frozen so the comparison is against main, not against this branch's own code.
+_MAIN_UNION_SETS = {
+    "KE:1": {
+        " G2", "G10", "G11", "G12", "G13", "G14", "G2", "G3", "G4", "G5",
+        "G6", "G7", "G8", "G9", "g1",
+    },
+    "KE:2": {"G20", "G21", "G22", "G23", "G24", "G25"},
+    "KE:3": {"G1", "G30", "G31", "G32", "G33", "G34", "G35", "G36"},
+    "KE:5": set(),
+}
+_MAIN_ORA = [
+    {"KE": "KE:1", "p_value": 4.064361346929285e-10, "FDR": 1.2193084040787857e-09,
+     "num_overlap": 12, "odds_ratio": "NA"},
+    {"KE": "KE:2", "p_value": 1.0, "FDR": 1.0, "num_overlap": 0, "odds_ratio": 0.0},
+    {"KE": "KE:3", "p_value": 1.0, "FDR": 1.0, "num_overlap": 0, "odds_ratio": 0.0},
+]
+_MAIN_SUMMARY = {
+    "total_kes": 5, "tested": 3, "excluded_no_mapping": 1,
+    "excluded_unresolved_mapping": 1, "excluded_too_few_genes": 0,
+    "excluded_too_many_genes": 0, "excluded_error": 0, "min_ke_genes": 5,
+    "max_ke_genes": None, "nes_undiagnosed_kes": 0, "unresolved_pathways": [],
+    "unresolved_pathways_by_ke": {},
+    "excluded_reasons": {"KE:X": "no_mapping", "KE:5": "unresolved_mapping"},
+}
+
+
+class TestFrozenMainGolden:
+    """Union output pinned to what origin/main produced before #123."""
+
+    @staticmethod
+    def _load_mixed(**kwargs):
+        sources = {"GO_BP": _MIXED_GO, "Reactome": _MIXED_REACTOME}
+        with (
+            patch.object(
+                app,
+                "_load_wikipathways_reference_sets",
+                return_value=(_MIXED_WP, "api", [], {}),
+            ),
+            patch.object(
+                app,
+                "_load_gmt_resource_reference_sets",
+                side_effect=lambda r, min_confidence="all": (sources[r], "api"),
+            ),
+        ):
+            return app.load_cached_reference_sets(ALL, **kwargs)
+
+    @pytest.mark.parametrize("kwargs", [{}, {"source_combination": "union"}])
+    def test_sets_match_main_exactly(self, kwargs):
+        sets, _, _ = self._load_mixed(**kwargs)
+        assert dict(sets) == _MAIN_UNION_SETS
+        assert no_shared_genes_kes_for(sets) == set()
+
+    def test_ora_matches_main(self):
+        sets, _, _ = self._load_mixed(source_combination="union")
+        genes = ["g1", " G2"] + [f"G{i}" for i in range(3, 60)]
+        df = pd.DataFrame(
+            {
+                "ID": genes,
+                "log2FC": [2.0 - i * 0.05 for i in range(len(genes))],
+                "pval": [1e-5 if i < 15 else 0.4 for i in range(len(genes))],
+                "significant": [i < 15 for i in range(len(genes))],
+            }
+        )
+        kes = {"KE:1", "KE:2", "KE:3", "KE:5", "KE:X"}
+        result = run_enrichment(
+            "ora",
+            df,
+            sets,
+            kes,
+            {k: k for k in kes},
+            no_shared_genes_kes=no_shared_genes_kes_for(sets),
+        )
+        rows = result[["KE", "p_value", "FDR", "num_overlap", "odds_ratio"]].to_dict(
+            "records"
+        )
+        assert len(rows) == len(_MAIN_ORA)
+        for got, want in zip(rows, _MAIN_ORA):
+            assert got["KE"] == want["KE"]
+            assert got["num_overlap"] == want["num_overlap"]
+            assert got["odds_ratio"] == want["odds_ratio"]
+            assert got["p_value"] == pytest.approx(want["p_value"], rel=1e-12)
+            assert got["FDR"] == pytest.approx(want["FDR"], rel=1e-12)
+        summary = get_ke_summary(result)
+        # The one difference from main: a new key, always 0 under union.
+        assert summary.pop("excluded_no_shared_genes") == 0
+        assert summary == _MAIN_SUMMARY
 
 
 class TestExclusionReporting:
@@ -444,7 +613,7 @@ class TestSingleRoute:
         return form
 
     @staticmethod
-    def _post(client, form):
+    def _post(client, form, sets=None, ke_list=None, enrich_error=None):
         processed_df = pd.DataFrame(
             {
                 "ID": ["BRCA1", "TP53"],
@@ -475,7 +644,14 @@ class TestSingleRoute:
             {"resource": r, "status": "loaded", "source": "api", "ke_count": 1}
             for r in ALL
         ]
-        sets = ReferenceSets({"KE:115": {"BRCA1"}}, no_shared_genes_kes={"KE:9"})
+        if sets is None:
+            sets = ReferenceSets({"KE:115": {"BRCA1"}}, no_shared_genes_kes={"KE:9"})
+        ke_list = ke_list or {"KE:115"}
+        enrich_kwargs = (
+            {"side_effect": enrich_error}
+            if enrich_error is not None
+            else {"return_value": enrichment_df}
+        )
         with (
             patch("app.load_and_validate_data", return_value=processed_df),
             patch(
@@ -485,13 +661,13 @@ class TestSingleRoute:
             patch(
                 "app.load_aop_data",
                 return_value=(
-                    {"KE:115"},
+                    ke_list,
                     edges_df,
-                    {"KE:115": "KE"},
-                    {"KE:115": "Test KE"},
+                    {ke: "KE" for ke in ke_list},
+                    {ke: "Test KE" for ke in ke_list},
                 ),
             ),
-            patch("app.run_enrichment", return_value=enrichment_df) as enrich,
+            patch("app.run_enrichment", **enrich_kwargs) as enrich,
             patch(
                 "app.build_cytoscape_network", return_value={"nodes": [], "edges": []}
             ),
@@ -563,6 +739,233 @@ class TestSingleRoute:
         )
 
 
+    def test_duplicate_resources_count_once(self, authenticated_client):
+        """A crafted POST listing one resource twice is a single-source run."""
+        response, loader, _ = self._post(
+            authenticated_client,
+            self._form(
+                resources=["WikiPathways", "WikiPathways"],
+                source_combination="intersection",
+            ),
+        )
+        assert response.status_code == 200
+        assert loader.call_args.args[0] == ["WikiPathways"]
+        assert loader.call_args.kwargs["source_combination"] == "union"
+
+    def test_duplicates_cannot_satisfy_min_n(self, authenticated_client):
+        response, loader, _ = self._post(
+            authenticated_client,
+            self._form(
+                resources=["GO_BP", "GO_BP", "Reactome"],
+                source_combination="at_least",
+                source_min_n="3",
+            ),
+        )
+        assert response.status_code == 400
+        loader.assert_not_called()
+
+    def test_choice_is_stored_on_the_experiment(
+        self, authenticated_client, temp_database, monkeypatch
+    ):
+        """Through the route, into a real database — not just the DB method."""
+        from database import ExperimentRecord
+
+        monkeypatch.setattr(app, "db_manager", temp_database)
+        response, _, _ = self._post(
+            authenticated_client,
+            self._form(source_combination="at_least", source_min_n="2"),
+        )
+        assert response.status_code == 200
+        session = temp_database.get_session()
+        try:
+            record = session.query(ExperimentRecord).one()
+            assert record.source_combination == "at_least_2"
+        finally:
+            session.close()
+
+    def test_every_ke_emptied_by_the_combination_is_a_400(self, authenticated_client):
+        sets = ReferenceSets({}, no_shared_genes_kes={"KE:115", "KE:116"})
+        response, _, _ = self._post(
+            authenticated_client,
+            self._form(source_combination="intersection"),
+            sets=sets,
+            ke_list={"KE:115", "KE:116"},
+            enrich_error=ValueError("nothing to test"),
+        )
+        assert response.status_code == 400
+        body = response.data.decode()
+        assert source_combination_label("intersection") in body
+        assert "2 of them have no genes shared" in body
+
+    def test_partial_emptying_does_not_blame_the_combination(
+        self, authenticated_client
+    ):
+        """One KE emptied, another kept genes and failed for another reason:
+        the combination is not the whole story, so it is not named as it."""
+        sets = ReferenceSets({"KE:116": {"BRCA1"}}, no_shared_genes_kes={"KE:115"})
+        response, _, _ = self._post(
+            authenticated_client,
+            self._form(source_combination="intersection"),
+            sets=sets,
+            ke_list={"KE:115", "KE:116"},
+            enrich_error=ValueError("nothing to test"),
+        )
+        assert "no genes shared" not in response.data.decode()
+
+
+class TestReportWiring:
+    """The choice reaches the single and batch reports, stated once."""
+
+    _RESOLUTION = [
+        {"resource": r, "status": "loaded", "source": "api", "ke_count": 3}
+        for r in ("WikiPathways", "GO_BP")
+    ]
+
+    _FORM = {
+        "format": "html",
+        "filename": "test.csv",
+        "gene_count": "100",
+        "significant_genes": "10",
+        "aop_id": "AOP:1",
+        "aop_label": "Test AOP",
+        "logfc_threshold": "1.0",
+        "pval_cutoff": "0.05",
+        "id_column": "gene",
+        "fc_column": "logFC",
+        "pval_column": "adj.P.Val",
+        "id_type": "HGNC",
+        "enrichment_results": "[]",
+        "selected_resources": "WikiPathways, GO_BP",
+    }
+
+    def _report(self, client, **extra):
+        import json
+
+        form = dict(self._FORM, resource_resolution=json.dumps(self._RESOLUTION))
+        form.update(extra)
+        response = client.post("/generate_report", data=form)
+        assert response.status_code == 200, response.data[:200]
+        return response.data.decode()
+
+    def test_posted_choice_is_in_the_report(self, flask_client):
+        html = self._report(flask_client, source_combination="intersection")
+        assert source_combination_label("intersection") in html
+
+    def test_absent_choice_reports_union(self, flask_client):
+        html = self._report(flask_client)
+        assert source_combination_label("union") in html
+
+    def test_combination_is_stated_once(self, flask_client):
+        """Its own row, not also appended to the provenance line."""
+        html = self._report(flask_client, source_combination="intersection")
+        assert html.count(source_combination_label("intersection")) == 1
+        assert "combined per Key Event" not in html
+
+    @staticmethod
+    def _batch(**kwargs):
+        from database import BatchRecord
+
+        import json
+
+        return BatchRecord(
+            aop_id="AOP:1",
+            logfc_threshold=1.0,
+            pval_cutoff=0.05,
+            selected_resources="WikiPathways, GO_BP",
+            resource_resolution=json.dumps(TestReportWiring._RESOLUTION),
+            **kwargs,
+        )
+
+    def test_batch_meta_rows_carry_the_batch_value(self):
+        from services.batch_report_service import _batch_meta_rows
+
+        rows = dict(_batch_meta_rows(self._batch(source_combination="at_least_2"), [], {}))
+        assert rows["Source Combination"] == source_combination_label("at_least_2")
+        assert "combined" not in rows["Gene Set Provenance (used)"]
+
+    def test_batch_meta_rows_legacy_batch_reads_union(self):
+        from services.batch_report_service import _batch_meta_rows
+
+        rows = dict(_batch_meta_rows(self._batch(), [], {}))
+        assert rows["Source Combination"] == source_combination_label("union")
+
+    def test_condition_report_data_carries_the_batch_value(self):
+        from types import SimpleNamespace
+
+        from services.batch_report_service import _condition_report_data
+
+        cond = SimpleNamespace(
+            condition_label="C0", filename="c0.tsv", gene_count=20, significant_genes=6
+        )
+        rd = _condition_report_data(
+            self._batch(source_combination="intersection"), cond, []
+        )
+        assert rd.source_combination == "intersection"
+
+
+class TestBatchConditionPage:
+    """The batch condition page states the batch's combination."""
+
+    def test_provenance_line_names_the_combination(
+        self, flask_client, temp_database, monkeypatch
+    ):
+        from database import BatchRecord
+        from tests.test_batch_condition_results import _seed
+
+        monkeypatch.setattr(app, "db_manager", temp_database)
+        uuid = _seed(temp_database)
+        session = temp_database.get_session()
+        try:
+            batch = session.query(BatchRecord).filter_by(uuid=uuid).one()
+            batch.source_combination = "at_least_2"
+            session.commit()
+        finally:
+            session.close()
+        html = flask_client.get(f"/batch/{uuid}/condition/0").get_data(as_text=True)
+        assert source_combination_label("at_least_2") in html
+        assert 'name="source_combination" value="at_least_2"' in html
+
+
+class TestPreviewKeepsTheChoice:
+    """/preview re-renders the form with the posted combination selected."""
+
+    def test_choice_survives_a_rerender(self, flask_client, tmp_path):
+        import os
+
+        from config import Config
+
+        name = "combo_preview_test.csv"
+        path = os.path.join(Config.UPLOAD_FOLDER, name)
+        os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+        rows = ["gene,logFC,padj"] + [
+            f"G{i},{1.5 - i * 0.1:.2f},0.0{i % 9 + 1}" for i in range(20)
+        ]
+        with open(path, "w") as fh:
+            fh.write("\n".join(rows) + "\n")
+        try:
+            response = flask_client.post(
+                "/preview",
+                data={
+                    "filename": name,
+                    "columns_confirmed": "true",
+                    "id_column": "gene",
+                    "fc_column": "logFC",
+                    "pval_column": "padj",
+                    "resources": ["WikiPathways", "GO_BP", "Reactome"],
+                    "source_combination": "at_least",
+                    "source_min_n": "2",
+                },
+            )
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+        assert response.status_code == 200, response.data[:200]
+        html = response.data.decode()
+        assert '<option value="at_least" selected>' in html
+        assert 'id="source-combination-group" hidden' not in html
+        assert 'name="source_min_n"' in html and 'value="2"' in html
+
+
 class TestBatchRoute:
     """Batch parity: same parsing, stored on the batch, applied to the load."""
 
@@ -612,6 +1015,17 @@ class TestBatchRoute:
         )
         assert response.status_code == 400
         launcher.assert_not_called()
+
+    def test_duplicate_resources_count_once(self, flask_client):
+        response, launcher = self._post(
+            flask_client,
+            self._form(
+                resources=["WikiPathways", "WikiPathways"],
+                source_combination="intersection",
+            ),
+        )
+        assert response.status_code == 200
+        assert launcher.call_args.kwargs["source_combination"] == "union"
 
     def test_stored_and_applied(self, temp_database, monkeypatch):
         import app as app_module

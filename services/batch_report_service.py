@@ -359,10 +359,10 @@ def _resolution_text(batch) -> str:
     """
     try:
         from app import describe_resource_resolution, _parse_resource_resolution
+        # Issue #123: the combination is stated once, in its own meta row
+        # ('Source Combination'), so it is not appended to this line too.
         return describe_resource_resolution(
-            _parse_resource_resolution(getattr(batch, 'resource_resolution', None)),
-            # Issue #123: NULL (batches before #123) reads as union.
-            getattr(batch, 'source_combination', None) or 'union',
+            _parse_resource_resolution(getattr(batch, 'resource_resolution', None))
         )
     except Exception as exc:  # pragma: no cover — provenance must never break a report
         logger.warning("Could not describe resource resolution: %s", exc)

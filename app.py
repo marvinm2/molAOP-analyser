@@ -769,7 +769,7 @@ def preview():
         method=request.form.get('method', 'ora'),
         # Issue #55: preserve the gene-set resource selection across HTMX re-renders
         # (e.g. "Update Plot"). Defaults to WikiPathways before any choice is made.
-        selected_resources=[r for r in request.form.getlist('resources') if r in VALID_RESOURCES] or list(DEFAULT_RESOURCES),
+        selected_resources=_selected_resources(request.form.getlist('resources')) or list(DEFAULT_RESOURCES),
         # Issue #60: preserve the minimum mapping-confidence choice across HTMX
         # re-renders. Unknown values fall back to the default ('all').
         min_confidence=(
@@ -850,7 +850,7 @@ def analyze():
 
         # Issue #55: gene-set resource selection. Unknown values are ignored and
         # an empty selection falls back to WikiPathways (backward compatible).
-        resources = [r for r in request.form.getlist('resources') if r in VALID_RESOURCES]
+        resources = _selected_resources(request.form.getlist('resources'))
         if not resources:
             resources = list(DEFAULT_RESOURCES)
 
@@ -994,9 +994,15 @@ def analyze():
                     column=id_col,
                 )
             # Issue #123: every mapped Key Event lost its genes to the source
-            # combination. Name the cause instead of "check your input data".
+            # combination. Name the cause instead of "check your input data" —
+            # but only when the combination is the whole story. If some Key
+            # Event kept genes and still failed (too few overlapping, say),
+            # switching to union may not help, so the generic path applies.
             emptied = no_shared_genes_kes & set(ke_list)
-            if emptied:
+            kept_genes = {
+                ke for ke in ke_list if current_reference_sets.get(ke)
+            }
+            if emptied and not kept_genes:
                 return (
                     f"None of this AOP's Key Events could be tested. Under "
                     f"'{source_combination_label(source_combination)}', "
@@ -1511,9 +1517,9 @@ def generate_report():
             # Issue #68: what the run actually used, posted back by the results
             # page for the same reason as the threshold above — the report must
             # be right even when the session has been lost.
-            resource_resolution_text=describe_resource_resolution(
-                report_resolution, report_combination
-            ),
+            # Issue #123: the combination has its own report row, so it is not
+            # repeated at the end of this line.
+            resource_resolution_text=describe_resource_resolution(report_resolution),
             resource_warnings=resource_resolution_warnings(
                 report_resolution,
                 request.form.get('min_confidence') or (
@@ -1646,6 +1652,18 @@ def _confidence_was_applicable(resource, source):
 
 # Templates render the provenance line from the same map the log lines use.
 app.jinja_env.globals['resource_source_labels'] = RESOURCE_SOURCE_LABELS
+
+
+def _selected_resources(values):
+    """Known resource keys from a form selection, de-duplicated in order.
+
+    Issue #123: a source combination counts the selected sources, so a
+    hand-crafted request listing one resource twice must count it once —
+    otherwise ``resources=WikiPathways&resources=WikiPathways`` would validate
+    as two sources and an "intersection" of a source with itself would be
+    recorded for what is really a single-source run.
+    """
+    return list(dict.fromkeys(r for r in (values or ()) if r in VALID_RESOURCES))
 
 
 def _confidence_cache_key(base_key, min_confidence):
@@ -1995,7 +2013,7 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
         Reactome was skipped, or where WikiPathways fell back to the bundled
         CSVs, used to be indistinguishable from one where everything resolved.
     """
-    selected = [r for r in resources if r in VALID_RESOURCES]
+    selected = _selected_resources(resources)
     if not selected:
         selected = list(DEFAULT_RESOURCES)
 
@@ -2711,7 +2729,7 @@ def batch_analyze():
         pval_threshold = Config.PVAL_CUTOFF
 
     # Issue #55: gene-set resource selection (unknown values ignored; empty -> WikiPathways).
-    resources = [r for r in request.form.getlist('resources') if r in VALID_RESOURCES]
+    resources = _selected_resources(request.form.getlist('resources'))
     if not resources:
         resources = list(DEFAULT_RESOURCES)
 

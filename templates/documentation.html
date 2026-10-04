@@ -305,7 +305,9 @@ CYP3A4         3.21             0.00001   0.0001
             selected resource places it there) and <strong>at least N sources</strong>. These
             give smaller, cross-source-supported gene sets. A Key Event whose resources share no
             gene under the chosen combination is not tested and is listed as excluded for that
-            reason. The choice is shown on the results page's provenance line and in the reports.
+            reason. This reason takes precedence: a Key Event whose mapping in one resource could
+            not be resolved to genes, but which has genes in another, is reported as having no
+            shared genes rather than as an unresolved mapping. The choice is shown on the results page's provenance line and in the reports.
         </p>
         <div class="info-box">
             <strong>Coverage is uneven.</strong> WikiPathways maps far more Key Events than the
