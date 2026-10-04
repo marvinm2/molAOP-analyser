@@ -606,6 +606,14 @@ document.getElementById('btn-analyze').addEventListener('click', function() {
     document.querySelectorAll('.batch-resource:checked').forEach(function(cb) {
         payload.append('resources', cb.value);
     });
+    // Issue #123: how the selected sources combine per Key Event. Sent only
+    // when the control is showing (more than one resource), so a one-resource
+    // batch is plain union whatever the hidden select still holds.
+    const comboGroupEl = document.getElementById('batch-source-combination-group');
+    if (comboGroupEl && !comboGroupEl.hidden) {
+        payload.append('source_combination', document.getElementById('batch-source-combination').value);
+        payload.append('source_min_n', document.getElementById('batch-source-min-n').value);
+    }
     // Issue #60: minimum KE-mapping confidence, applied to every condition.
     const minConfidenceEl = document.getElementById('batch-min-confidence');
     payload.append('min_confidence', minConfidenceEl ? minConfidenceEl.value : 'all');
@@ -809,5 +817,26 @@ document.getElementById('btn-cancel-batch').addEventListener('click', function()
     document.addEventListener('click', function(e) {
         if (!e.target.closest('.typeahead-wrapper')) suggestions.hidden = true;
     });
+})();
+
+// Issue #123: show the source-combination control only when more than one
+// resource is ticked, and the N input only for "at least N sources".
+(function() {
+    const group = document.getElementById('batch-source-combination-group');
+    const select = document.getElementById('batch-source-combination');
+    const minN = document.getElementById('batch-source-min-n');
+    const boxes = document.querySelectorAll('.batch-resource');
+    if (!group || !select || !minN) return;
+
+    function refresh() {
+        const ticked = Array.from(boxes).filter(function(cb) { return cb.checked; }).length;
+        group.hidden = ticked < 2;
+        minN.hidden = select.value !== 'at_least';
+        minN.max = String(Math.max(ticked, 1));
+    }
+
+    boxes.forEach(function(cb) { cb.addEventListener('change', refresh); });
+    select.addEventListener('change', refresh);
+    refresh();
 })();
 </script>

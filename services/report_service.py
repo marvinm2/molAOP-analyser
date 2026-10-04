@@ -66,7 +66,7 @@ except ImportError:
 
 from config import Config, ExperimentMetadata
 from services.image_render import render_figure_png
-from helpers import MIN_CONFIDENCE_LABELS  # Issue #60: confidence threshold labels
+from helpers import MIN_CONFIDENCE_LABELS, source_combination_label  # Issues #60, #123
 from services.enrichment_service import REPRESENTATION_LABELS  # Issue #70
 
 logger = logging.getLogger(__name__)
@@ -232,6 +232,12 @@ class ReportData:
     # constructions remain compatible.
     min_confidence: str = 'all'
 
+    # Issue #123: how the selected resources were combined per Key Event
+    # ('union'/'intersection'/'at_least_<N>'). Defaulted to union, the only
+    # behaviour before #123, so existing ReportData(...) constructions remain
+    # compatible.
+    source_combination: str = 'union'
+
     # Issue #68: how each requested resource actually resolved — the source it
     # came from, and whether it was skipped. Defaulted to empty so existing
     # ReportData(...) constructions remain compatible; when empty the report
@@ -264,6 +270,11 @@ class ReportData:
     def min_confidence_label(self) -> str:
         """Human-readable label for the minimum KE-mapping confidence (#60)."""
         return MIN_CONFIDENCE_LABELS.get(self.min_confidence or 'all', str(self.min_confidence))
+
+    @property
+    def source_combination_label(self) -> str:
+        """Human-readable label for the source combination (#123)."""
+        return source_combination_label(self.source_combination)
 
     @property
     def ke_summary_text(self) -> str:
@@ -526,6 +537,10 @@ class ReportGenerator:
                     <label>Gene Set Provenance (used):</label>
                     <span>{report_data.resource_resolution_text}</span>
                 </div>''' if report_data.resource_resolution_text else ''}
+                <div class="param-item">
+                    <label>Source Combination:</label>
+                    <span>{report_data.source_combination_label}</span>
+                </div>
                 <div class="param-item">
                     <label>Minimum Mapping Confidence:</label>
                     <span>{report_data.min_confidence_label}</span>
@@ -1251,6 +1266,7 @@ class ReportGenerator:
             ['Gene Set Resources (requested)', report_data.selected_resources],
             # Issue #68: what actually resolved, per resource.
             ['Gene Set Provenance (used)', report_data.resource_resolution_text or 'not recorded'],
+            ['Source Combination', report_data.source_combination_label],  # Issue #123
             ['Minimum Mapping Confidence', report_data.min_confidence_label],  # Issue #60
             ['Filename', report_data.filename],
             ['Total Genes', f"{report_data.gene_count:,}"],

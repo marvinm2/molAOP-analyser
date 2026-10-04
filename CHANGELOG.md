@@ -19,6 +19,26 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 - **Reference data no longer depends on the working directory.** Bundled `data/` files are
   resolved from the application root (`config.DATA_DIR`) rather than relative to the cwd, so
   launching the app from anywhere other than its own directory still finds them.
+### Added
+
+- **How the selected sources combine per Key Event is now a choice** (#123). With more than
+  one of WikiPathways, GO BP and Reactome selected, the single and batch forms offer
+  **union** (default, and the only behaviour until now: a gene counts if any source has it),
+  **intersection** (every selected source must have it) and **at least N sources**. The
+  combination is applied once the per-resource gene sets are loaded, so ORA and GSEA both
+  honour it, and it composes with the minimum mapping confidence.
+
+  A Key Event that has genes but whose sources share none under the chosen combination is
+  reported as excluded — "no genes shared across the selected sources" — in the accounting
+  line, the network and both reports, rather than as unmapped. N must lie between 1 and the
+  number of selected sources; with one source every mode is the same set and is recorded as
+  union. If a resource fails to load, the combination counts only the ones that did, and the
+  results page says so.
+
+  The choice is stored on experiments and batches (new nullable `source_combination` column,
+  added by the usual idempotent migration) and shown on the provenance line and in the single
+  and batch reports. **Runs and batches recorded before this read back as union**, which is
+  what they ran with. A union run produces exactly the gene sets and results it did before.
 
 ## [6.0.0] - 2026-08-21
 

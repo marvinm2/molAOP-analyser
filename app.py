@@ -24,10 +24,16 @@ from config import Config, ExperimentMetadata, __version__, get_build_ref
 from validation import validate_form_data, validate_file_upload, log_validation_error
 from helpers import (
     DEFAULT_MIN_CONFIDENCE,
+    DEFAULT_SOURCE_COMBINATION,
     MIN_CONFIDENCE_LABELS,
     VALID_MIN_CONFIDENCE,
     ReferenceSets,
+    combine_source_sets,
     load_reference_sets,
+    no_shared_genes_kes_for,
+    normalise_source_combination,
+    parse_source_combination,
+    source_combination_label,
     unresolved_ke_pathways_for,
 )
 from cache_manager import cache, cached_data_loader, get_reference_cache
@@ -771,6 +777,12 @@ def preview():
             if request.form.get('min_confidence', '').strip().lower() in VALID_MIN_CONFIDENCE
             else DEFAULT_MIN_CONFIDENCE
         ),
+        # Issue #123: preserve the source-combination choice the same way. A
+        # value that would not validate re-renders as the default.
+        source_combination=(
+            request.form.get('source_combination') or DEFAULT_SOURCE_COMBINATION
+        ).strip().lower(),
+        source_min_n=(request.form.get('source_min_n') or '2').strip(),
         # Preserve the chosen AOP and the recommended/all filter mode across HTMX
         # re-renders, the same way resources (#55) and min_confidence (#60) are.
         # Without this the picker re-rendered with no value, and the
@@ -852,6 +864,18 @@ def analyze():
                 400,
             )
 
+        # Issue #123: how the selected sources combine per Key Event. Validated
+        # against the selection before any expensive computation; blank is
+        # union (current behaviour), and any mode over one source is union.
+        try:
+            source_combination = parse_source_combination(
+                request.form.get('source_combination'),
+                request.form.get('source_min_n'),
+                len(resources),
+            )
+        except ValueError as exc:
+            return f"Invalid source combination: {exc}", 400
+
         method = form_data['method']
         
         # Extract validated parameters
@@ -911,7 +935,8 @@ def analyze():
         
         # Get cached reference sets and run enrichment analysis
         current_reference_sets, data_source, resource_resolution = load_cached_reference_sets(
-            resources, min_confidence=min_confidence
+            resources, min_confidence=min_confidence,
+            source_combination=source_combination,
         )
         # Issue #108: the resolution above covers the whole reference universe.
         # Narrow its unresolved-pathway accounting to this AOP's Key Events
@@ -925,6 +950,8 @@ def analyze():
         # the enrichment backend — without it the run reports a live, curated
         # mapping as a curation gap.
         unresolved_ke_pathways = unresolved_ke_pathways_for(current_reference_sets)
+        # Issue #123: likewise for a Key Event the source combination emptied.
+        no_shared_genes_kes = no_shared_genes_kes_for(current_reference_sets)
 
         # Pre-build gene_logfc_map so the enrichment service can derive the
         # observed Direction column ("N↑ / M↓") for each KE alongside the
@@ -948,6 +975,7 @@ def analyze():
                 df_processed, current_reference_sets, ke_list, ke_title_map,
                 gene_logfc_map=gene_logfc_map if method == 'ora' else None,
                 unresolved_ke_pathways=unresolved_ke_pathways,
+                no_shared_genes_kes=no_shared_genes_kes,
             )
         except ValueError:
             # Issue #69: with the wrong ID column nothing overlaps, every KE is
@@ -964,6 +992,18 @@ def analyze():
                     matched=background_overlap['matched'],
                     total=background_overlap['total'],
                     column=id_col,
+                )
+            # Issue #123: every mapped Key Event lost its genes to the source
+            # combination. Name the cause instead of "check your input data".
+            emptied = no_shared_genes_kes & set(ke_list)
+            if emptied:
+                return (
+                    f"None of this AOP's Key Events could be tested. Under "
+                    f"'{source_combination_label(source_combination)}', "
+                    f"{len(emptied)} of them have no genes shared across the "
+                    f"selected sources. Combine the sources by union, or require "
+                    f"fewer of them.",
+                    400,
                 )
             raise
 
@@ -1165,10 +1205,16 @@ def analyze():
         # indistinguishable from one that resolved cleanly.
         stored_metadata['resource_resolution'] = resource_resolution
         stored_metadata['resource_resolution_text'] = describe_resource_resolution(
-            resource_resolution
+            resource_resolution, source_combination
         )
         stored_metadata['resource_warnings'] = resource_resolution_warnings(
-            resource_resolution, min_confidence
+            resource_resolution, min_confidence, source_combination
+        )
+        # Issue #123: how the sources were combined per Key Event — it decides
+        # what the gene sets are, so it travels with the provenance.
+        stored_metadata['source_combination'] = source_combination
+        stored_metadata['source_combination_text'] = describe_source_combination(
+            source_combination, resource_resolution
         )
         # Issue #60: record the mapping-confidence threshold used, for the
         # results page, shared results and the report (FAIR provenance).
@@ -1189,6 +1235,7 @@ def analyze():
                     'pval_column': pval_col,
                     'selected_resources': ", ".join(resources),
                     'min_confidence': min_confidence,  # Issue #60
+                    'source_combination': source_combination,  # Issue #123
                     # Issue #68: the resolved-per-resource record travels with
                     # the experiment so a stored run can still be audited.
                     'resource_resolution': json.dumps(resource_resolution),
@@ -1422,6 +1469,13 @@ def generate_report():
             )
         report_resources = report_resources or 'Not recorded'
 
+        # Issue #123: the source combination, posted explicitly for the same
+        # reason as the confidence threshold; NULL/absent reads as union.
+        posted_combination = request.form.get('source_combination')
+        if not posted_combination and isinstance(metadata, dict):
+            posted_combination = metadata.get('source_combination')
+        report_combination = normalise_source_combination(posted_combination)
+
         report_data = ReportData(
             metadata=metadata,
             filename=request.form.get('filename', metadata.get('filename', 'unknown')),
@@ -1450,18 +1504,23 @@ def generate_report():
             software_versions=get_software_versions(),
             method=request.form.get('method') or metadata.get('method', 'ora'),  # Phase 14: forward method to report (Plan 04 consumption)
             selected_resources=report_resources,  # #55 / #74: forward resources to report
+            # Issue #123: posted by the results page; NULL/absent reads as union.
+            source_combination=report_combination,
             min_confidence=request.form.get('min_confidence') or metadata.get('min_confidence', DEFAULT_MIN_CONFIDENCE),  # #60: forward confidence threshold to report
             ke_summary=ke_summary,  # Issue #65: tested/excluded KE accounting
             # Issue #68: what the run actually used, posted back by the results
             # page for the same reason as the threshold above — the report must
             # be right even when the session has been lost.
-            resource_resolution_text=describe_resource_resolution(report_resolution),
+            resource_resolution_text=describe_resource_resolution(
+                report_resolution, report_combination
+            ),
             resource_warnings=resource_resolution_warnings(
                 report_resolution,
                 request.form.get('min_confidence') or (
                     metadata.get('min_confidence', DEFAULT_MIN_CONFIDENCE)
                     if isinstance(metadata, dict) else DEFAULT_MIN_CONFIDENCE
                 ),
+                report_combination,
             ),
         )
         
@@ -1868,11 +1927,13 @@ def _store_batch_resource_resolution(batch_id, resolution):
 
 
 def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
-                               min_confidence=DEFAULT_MIN_CONFIDENCE):
+                               min_confidence=DEFAULT_MIN_CONFIDENCE,
+                               source_combination=DEFAULT_SOURCE_COMBINATION):
     """Load and merge KE->gene reference sets for the selected resources.
 
     Each resource is loaded (and disk-cached) independently, then the per-KE
-    gene sets are unioned across the selection. WikiPathways always resolves
+    gene sets are combined across the selection — unioned by default, or by
+    the requested ``source_combination`` (issue #123). WikiPathways always resolves
     (Builder API with a local CSV fallback); GO_BP/Reactome are skipped with a
     warning if the Builder GMT export is unavailable, so a partial outage
     degrades gracefully rather than failing the analysis.
@@ -1885,12 +1946,22 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
             (default, current behaviour), 'medium' (Medium+High) or 'high'.
             Unknown values fall back to 'all'. Shared by the single and batch
             flows so both stay consistent by construction.
+        source_combination: issue #123 canonical spec from
+            ``helpers.parse_source_combination`` — 'union' (default, the only
+            behaviour before #123), 'intersection' or 'at_least_<N>'. Unknown
+            values fall back to union. The combination is applied after the
+            per-resource cache reads and is never itself cached, so the cache
+            keys need no mode suffix: a per-resource entry is the same set
+            whatever the mode, and no cache can serve one mode's combined sets
+            to another.
 
     Returns:
         tuple: (merged reference sets, data_source string, resolution list).
 
         The merged sets are a ``helpers.ReferenceSets`` — a dict of KE_ID ->
-        gene set that additionally carries ``.unresolved_ke_pathways``, the
+        gene set that additionally carries ``.no_shared_genes_kes`` (issue
+        #123: Key Events the combination emptied; read with
+        ``helpers.no_shared_genes_kes_for()``) and ``.unresolved_ke_pathways``, the
         union across resources of KE_ID -> pathway IDs that are curated and
         mapped but that no source could resolve to genes (issue #81). Read it
         with ``helpers.unresolved_ke_pathways_for()`` and hand it to the
@@ -1930,8 +2001,11 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
 
     if min_confidence not in VALID_MIN_CONFIDENCE:
         min_confidence = DEFAULT_MIN_CONFIDENCE
+    source_combination = normalise_source_combination(source_combination)
 
-    merged = {}
+    # Issue #123: collected per resource and combined once every resource has
+    # loaded, because intersection and "at least N" need all of them at once.
+    per_resource_sets = []
     # Issue #81: KE -> unresolvable pathway IDs, unioned across resources. This
     # rides on the merged mapping (helpers.ReferenceSets) so it survives every
     # hand-off between here and the enrichment backends, including the batch
@@ -1966,9 +2040,7 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
                 'error': str(exc),
             })
             continue
-        # Build fresh sets so cached resource sets are never mutated.
-        for ke_id, genes in sets.items():
-            merged.setdefault(ke_id, set()).update(genes)
+        per_resource_sets.append(sets)
         for ke_id, pathways in (unresolved_ke or {}).items():
             merged_unresolved_ke.setdefault(ke_id, set()).update(pathways)
         loaded.append(f"{resource}:{source}")
@@ -1999,6 +2071,10 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
             'error': None,
         })
 
+    # Builds fresh sets so cached resource sets are never mutated. Union is the
+    # pre-#123 merge exactly; the other modes count only resources that loaded.
+    merged, no_shared = combine_source_sets(per_resource_sets, source_combination)
+
     if not loaded:
         data_source = "none"
     elif wp_source is not None:
@@ -2008,12 +2084,17 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
 
     logger.info(
         "Merged %d KE sets across resources [%s] (data_source=%s, min_confidence=%s, "
-        "%d KE(s) with unresolvable mappings)",
+        "source_combination=%s, %d KE(s) with unresolvable mappings, %d KE(s) with "
+        "no genes shared across sources)",
         len(merged), ", ".join(loaded) or "-", data_source, min_confidence,
-        len(merged_unresolved_ke),
+        source_combination, len(merged_unresolved_ke), len(no_shared),
     )
     return (
-        ReferenceSets(merged, unresolved_ke_pathways=merged_unresolved_ke),
+        ReferenceSets(
+            merged,
+            unresolved_ke_pathways=merged_unresolved_ke,
+            no_shared_genes_kes=no_shared,
+        ),
         data_source,
         resolution,
     )
@@ -2071,11 +2152,16 @@ def scope_resolution_to_aop(resolution, ke_ids):
     return scoped
 
 
-def describe_resource_resolution(resolution):
+def describe_resource_resolution(resolution, source_combination=None):
     """One-line summary of how each requested resource actually resolved (#68).
 
     Args:
         resolution: list produced by ``load_cached_reference_sets``.
+        source_combination: issue #123 spec the run combined its sources with.
+            When given and more than one resource loaded, the line ends with
+            how they were combined, because that decides what the gene sets
+            are. None (callers that predate #123) leaves the line as it was;
+            a stored NULL is read as union by ``normalise_source_combination``.
 
     Returns:
         str: e.g. ``"WikiPathways (Builder API, cached 2026-07-22 09:14 UTC);
@@ -2102,10 +2188,35 @@ def describe_resource_resolution(resolution):
         if cached_at:
             label = f"{label} {cached_at}"
         parts.append(f"{name} ({label})")
-    return '; '.join(parts)
+    text = '; '.join(parts)
+    loaded = sum(1 for e in resolution if e.get('status') == 'loaded')
+    if source_combination is not None and loaded > 1:
+        text += (
+            f"; combined per Key Event by "
+            f"{source_combination_label(source_combination).lower()}"
+        )
+    return text
 
 
-def resource_resolution_warnings(resolution, min_confidence=DEFAULT_MIN_CONFIDENCE):
+def describe_source_combination(source_combination, resolution):
+    """Label for the results-page provenance line, or '' when moot (#123).
+
+    Args:
+        source_combination: stored spec (NULL reads as union).
+        resolution: the run's per-resource resolution list.
+
+    Returns:
+        str: the label when more than one resource loaded; '' otherwise, since
+        a single source is the same set under every mode.
+    """
+    loaded = sum(1 for e in (resolution or []) if e.get('status') == 'loaded')
+    if loaded < 2:
+        return ''
+    return source_combination_label(source_combination)
+
+
+def resource_resolution_warnings(resolution, min_confidence=DEFAULT_MIN_CONFIDENCE,
+                                 source_combination=DEFAULT_SOURCE_COMBINATION):
     """Warnings a reader needs to interpret the run correctly (#67, #68).
 
     These are the differences between what the user asked for and what the
@@ -2116,6 +2227,9 @@ def resource_resolution_warnings(resolution, min_confidence=DEFAULT_MIN_CONFIDEN
         resolution: list produced by ``load_cached_reference_sets``.
         min_confidence: the requested threshold; 'all' filters nothing, so the
             confidence-applicability warning is suppressed for it.
+        source_combination: issue #123 spec. Under anything but union a skipped
+            resource changes the combination itself — intersection over two
+            sources is a looser filter than over three — so it is said aloud.
 
     Returns:
         list[str]: zero or more sentences, ready to render.
@@ -2130,6 +2244,15 @@ def resource_resolution_warnings(resolution, min_confidence=DEFAULT_MIN_CONFIDEN
             f"{', '.join(skipped)} could not be loaded and was left out of this "
             f"analysis. Fewer Key Events were testable than your selection implies."
         )
+        spec = normalise_source_combination(source_combination)
+        if spec != DEFAULT_SOURCE_COMBINATION:
+            loaded = [e['resource'] for e in resolution if e.get('status') == 'loaded']
+            warnings.append(
+                f"The {source_combination_label(spec).lower()} combination was "
+                f"applied across the {len(loaded)} resource(s) that loaded "
+                f"({', '.join(loaded) or 'none'}), without {', '.join(skipped)}, so "
+                f"its gene sets differ from what the full selection would give."
+            )
 
     from_csv = [
         e['resource'] for e in resolution
@@ -2385,7 +2508,8 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
                               min_confidence=DEFAULT_MIN_CONFIDENCE,
                               method='ora',
                               background_universe=DEFAULT_BACKGROUND_UNIVERSE,
-                              background_harmonisation=DEFAULT_BACKGROUND_HARMONISATION):
+                              background_harmonisation=DEFAULT_BACKGROUND_HARMONISATION,
+                              source_combination=DEFAULT_SOURCE_COMBINATION):
     """Create the BatchRecord + ConditionRecords and launch run_batch in a thread.
 
     Shared by the interactive batch wizard (/batch/analyze) and the one-click
@@ -2411,6 +2535,9 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
         background_harmonisation: issue #132 cross-condition rule ('union',
             'intersection' or 'per_condition'). Recorded on the batch so the
             background can always be read back with the rules that built it.
+        source_combination: issue #123 canonical spec ('union', 'intersection'
+            or 'at_least_<N>') for combining the resources per Key Event;
+            applied to every condition in the batch.
 
     Returns:
         The new BatchRecord primary key.
@@ -2442,6 +2569,7 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
             pval_cutoff=pval_threshold,
             selected_resources=", ".join(resources),
             min_confidence=min_confidence,  # Issue #60
+            source_combination=source_combination,  # Issue #123
             id_column=id_col,
             fc_column=fc_col,
             pval_column=pval_col,
@@ -2494,7 +2622,8 @@ def _persist_and_launch_batch(*, batch_uuid, filenames, condition_labels, doses,
 
     # Launch analysis in a background thread (returns immediately to caller).
     current_reference_sets, _, resource_resolution = load_cached_reference_sets(
-        resources, min_confidence=min_confidence
+        resources, min_confidence=min_confidence,
+        source_combination=source_combination,
     )
     # Issue #108: scope the unresolved-pathway accounting to the batch's AOP
     # before storing it — every condition page and the batch report read this
@@ -2593,6 +2722,17 @@ def batch_analyze():
             'error': "Minimum mapping confidence must be one of 'all', 'medium', 'high'. "
                      f"Got: {request.form.get('min_confidence')}."
         }), 400
+
+    # Issue #123: how the selected sources combine per Key Event, applied to
+    # every condition. Same parsing and validation as the single flow.
+    try:
+        source_combination = parse_source_combination(
+            request.form.get('source_combination'),
+            request.form.get('source_min_n'),
+            len(resources),
+        )
+    except ValueError as exc:
+        return jsonify({'error': f'Invalid source combination: {exc}'}), 400
 
     # Issue #132: the two rules that define the enrichment background. Kept
     # separate because they are separate decisions -- what counts as a gene in
@@ -2705,6 +2845,7 @@ def batch_analyze():
             pval_threshold=pval_threshold,
             resources=resources,
             min_confidence=min_confidence,
+            source_combination=source_combination,  # Issue #123
             harmonised_genes=harmonised_genes,
             batch_name=batch_name,
             owner=owner,
@@ -2866,12 +3007,16 @@ def batch_summary(batch_uuid_str):
         )
         # Issue #68: what the batch's gene-set resources actually resolved to.
         resolution = _parse_resource_resolution(batch.resource_resolution)
+        # Issue #123: NULL (batches before #123) reads as union.
+        combination = batch.effective_source_combination()
         return render_template(
             'batch_summary.html', batch=batch, conditions=conditions,
             resource_resolution=resolution,
-            resource_resolution_text=describe_resource_resolution(resolution),
+            resource_resolution_text=describe_resource_resolution(
+                resolution, combination
+            ),
             resource_warnings=resource_resolution_warnings(
-                resolution, batch.min_confidence or DEFAULT_MIN_CONFIDENCE
+                resolution, batch.min_confidence or DEFAULT_MIN_CONFIDENCE, combination
             ),
         )
     finally:
@@ -2924,6 +3069,8 @@ def batch_condition_results(batch_uuid_str, position):
         # exactly as the batch summary page does.
         resolution = _parse_resource_resolution(batch.resource_resolution)
         batch_min_confidence = batch.min_confidence or DEFAULT_MIN_CONFIDENCE
+        # Issue #123: NULL (batches before #123) reads as union.
+        batch_combination = batch.effective_source_combination()
 
         # Issue #74: batch runs were ORA-only when this route was written, so
         # it hardcoded the method. Read it from the batch instead — and tolerate
@@ -2945,7 +3092,11 @@ def batch_condition_results(batch_uuid_str, position):
             'selected_resources': batch.selected_resources or '',
             'resource_resolution': resolution,
             'resource_warnings': resource_resolution_warnings(
-                resolution, batch_min_confidence
+                resolution, batch_min_confidence, batch_combination
+            ),
+            'source_combination': batch_combination,
+            'source_combination_text': describe_source_combination(
+                batch_combination, resolution
             ),
             # Issue #60/#74: the confidence threshold decides which mappings
             # became gene sets, so the header and the exported report have to

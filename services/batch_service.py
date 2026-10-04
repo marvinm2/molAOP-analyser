@@ -412,10 +412,13 @@ def _run_condition(
     # run_batch is handed only the gene sets, which is precisely why the map
     # travels on them. Both backends accept the hint, so the exclusion
     # accounting reads identically whichever method the batch used.
-    from helpers import unresolved_ke_pathways_for
+    # Issue #123: the Key Events emptied by the batch's source combination ride
+    # on the same mapping, for the same reason.
+    from helpers import no_shared_genes_kes_for, unresolved_ke_pathways_for
     enrichment_results = run_enrichment(
         method, df_filtered, reference_sets, ke_list, ke_title_map,
         unresolved_ke_pathways=unresolved_ke_pathways_for(reference_sets),
+        no_shared_genes_kes=no_shared_genes_kes_for(reference_sets),
     )
 
     # Build Cytoscape network. The tested/excluded KE accounting (issue #65)

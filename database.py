@@ -49,6 +49,10 @@ class ExperimentRecord(Base):
     # Issue #60: minimum KE-mapping confidence used for enrichment
     # ('all'/'medium'/'high'). NULL for pre-#60 rows (coerced to 'all' on read).
     min_confidence = Column(String(20))
+    # Issue #123: how the selected resources were combined per Key Event
+    # ('union'/'intersection'/'at_least_<N>'). NULL for pre-#123 rows, which
+    # were all unioned and are read back as 'union'.
+    source_combination = Column(String(30))
     # Issue #68: how each requested resource actually RESOLVED (JSON list of
     # per-resource dicts: source, status, ke_count, confidence_applied). The
     # column above records the request; this one records the outcome, which is
@@ -87,6 +91,8 @@ class ExperimentRecord(Base):
             # invented default from a recorded one.
             'selected_resources': self.selected_resources or None,
             'min_confidence': self.min_confidence or 'all',  # coerce NULL (pre-#60 rows)
+            # Issue #123: coerce NULL (pre-#123 rows, all unioned) to 'union'.
+            'source_combination': self.source_combination or 'union',
             'enrichment_results': json.loads(self.enrichment_results) if self.enrichment_results else None,
             'gene_count': self.gene_count,
             'significant_genes': self.significant_genes,
@@ -215,6 +221,10 @@ class BatchRecord(Base):
     # Issue #60: minimum KE-mapping confidence applied to every condition
     # ('all'/'medium'/'high'). NULL for pre-#60 rows (read as 'all').
     min_confidence = Column(String(20))
+    # Issue #123: source combination applied to every condition (see
+    # ExperimentRecord.source_combination). NULL for pre-#123 rows (read as
+    # 'union' by effective_source_combination()).
+    source_combination = Column(String(30))
     # Issue #68: per-resource resolution shared by every condition in the batch
     # (JSON, see ExperimentRecord.resource_resolution). NULL for pre-#68 rows.
     resource_resolution = Column(Text)
@@ -269,6 +279,17 @@ class BatchRecord(Base):
             ``'ora'`` or ``'gsea'``.
         """
         return self.method or 'ora'
+
+    def effective_source_combination(self) -> str:
+        """Return how this batch combined its resources per Key Event (#123).
+
+        Coerces NULL — every batch created before the column existed — to
+        ``'union'``, which is what those batches ran with.
+
+        Returns:
+            ``'union'``, ``'intersection'`` or ``'at_least_<N>'``.
+        """
+        return self.source_combination or 'union'
 
     def effective_background_universe(self) -> str:
         """Return the gene-universe rule this batch was run with.
@@ -511,6 +532,35 @@ def _ensure_min_confidence_column(engine) -> None:
                 )
 
 
+def _ensure_source_combination_column(engine) -> None:
+    """Idempotent PRAGMA-then-ALTER migration for 'source_combination' (#123).
+
+    Adds ``source_combination TEXT`` to the ``experiments`` and ``batches``
+    tables when absent. Safe to run on every startup — the PRAGMA check makes
+    the ALTER a no-op on databases that already have the column. Existing rows
+    keep NULL, which is read back as ``'union'`` (the pre-#123 behaviour).
+
+    Security note: the table names and column literal are module-internal
+    constants — no user-supplied input is interpolated into the SQL statements.
+
+    Args:
+        engine: SQLAlchemy engine bound to the target database.
+    """
+    for table in ('experiments', 'batches'):
+        with engine.connect() as conn:
+            result = conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_cols = {row[1] for row in result}
+            if 'source_combination' not in existing_cols:
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN source_combination TEXT")
+                )
+                conn.commit()
+                logger.info(
+                    f"Added 'source_combination' column to '{table}' table "
+                    f"(#123 migration)"
+                )
+
+
 def _ensure_background_rule_columns(engine) -> None:
     """Idempotent PRAGMA-then-ALTER migration for the background rules (#132).
 
@@ -675,6 +725,10 @@ class DatabaseManager:
             # pre-existing databases that lack it (#60). No-op on fresh databases.
             _ensure_min_confidence_column(self.engine)
 
+            # Idempotent additive migration: add 'source_combination' column to
+            # experiments and batches (#123). No-op on fresh databases.
+            _ensure_source_combination_column(self.engine)
+
             # Idempotent additive migration: add 'id_match_fraction' to
             # batch_conditions (#69). No-op on fresh databases.
             _ensure_id_match_fraction_column(self.engine)
@@ -748,6 +802,8 @@ class DatabaseManager:
                 record.pval_column = analysis_params.get('pval_column')
                 record.selected_resources = analysis_params.get('selected_resources')
                 record.min_confidence = analysis_params.get('min_confidence')  # #60
+                # Issue #123
+                record.source_combination = analysis_params.get('source_combination')
                 record.resource_resolution = analysis_params.get('resource_resolution')  # #68
                 record.analysis_timestamp = datetime.now(timezone.utc).replace(tzinfo=None)
             

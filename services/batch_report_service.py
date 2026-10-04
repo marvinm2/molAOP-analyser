@@ -34,7 +34,7 @@ from services.enrichment_service import format_ke_summary
 from services.gsea_service import NES_BEYOND_RESOLUTION
 from services.network_service import ke_accounting_from_network
 from config import Config
-from helpers import MIN_CONFIDENCE_LABELS
+from helpers import MIN_CONFIDENCE_LABELS, source_combination_label
 
 logger = logging.getLogger(__name__)
 
@@ -360,7 +360,9 @@ def _resolution_text(batch) -> str:
     try:
         from app import describe_resource_resolution, _parse_resource_resolution
         return describe_resource_resolution(
-            _parse_resource_resolution(getattr(batch, 'resource_resolution', None))
+            _parse_resource_resolution(getattr(batch, 'resource_resolution', None)),
+            # Issue #123: NULL (batches before #123) reads as union.
+            getattr(batch, 'source_combination', None) or 'union',
         )
     except Exception as exc:  # pragma: no cover — provenance must never break a report
         logger.warning("Could not describe resource resolution: %s", exc)
@@ -382,6 +384,7 @@ def _batch_resource_warnings(batch) -> List[str]:
         return resource_resolution_warnings(
             _parse_resource_resolution(getattr(batch, 'resource_resolution', None)),
             getattr(batch, 'min_confidence', None) or 'all',
+            getattr(batch, 'source_combination', None) or 'union',  # Issue #123
         )
     except Exception as exc:  # pragma: no cover
         logger.warning("Could not build resource warnings: %s", exc)
@@ -402,6 +405,9 @@ def _batch_meta_rows(batch, conditions, comparison_data) -> List[tuple]:
         # Issue #68: what the resources actually resolved to. The requested list
         # cannot show a resource that was skipped or served from bundled files.
         ('Gene Set Provenance (used)', _resolution_text(batch) or 'not recorded'),
+        # Issue #123: how the resources were combined per Key Event.
+        ('Source Combination',
+         source_combination_label(getattr(batch, 'source_combination', None))),
         # Issue #60: the mapping-confidence threshold the gene sets were built at.
         ('Min. Mapping Confidence',
          MIN_CONFIDENCE_LABELS.get(getattr(batch, 'min_confidence', None) or 'all', 'All mappings')),
@@ -614,6 +620,8 @@ def _condition_report_data(batch, cond, enrichment: List[Dict]) -> ReportData:
         method=batch_method(batch),
         selected_resources=batch.selected_resources or 'WikiPathways',
         min_confidence=getattr(batch, 'min_confidence', None) or 'all',  # Issue #60
+        # Issue #123
+        source_combination=getattr(batch, 'source_combination', None) or 'union',
     )
 
 

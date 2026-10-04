@@ -4,7 +4,7 @@ Gene set enrichment analysis service.
 import math
 import pandas as pd
 import logging
-from typing import Dict, Set, List, Any, Tuple, Optional
+from typing import Dict, Set, List, Any, Iterable, Tuple, Optional
 from scipy.stats import fisher_exact
 from statsmodels.stats.multitest import multipletests
 
@@ -42,6 +42,12 @@ EXCLUDED_TOO_FEW_GENES = 'too_few_genes'
 # never sets this.
 EXCLUDED_TOO_MANY_GENES = 'too_many_genes'
 EXCLUDED_ERROR = 'error'
+# Issue #123 — the Key Event has genes, but its selected sources did not share
+# enough of them to survive the requested source combination (intersection, or
+# "at least N sources"). Never set under union. Distinct from ``no_mapping``
+# because the curation exists and the fix is a different combination choice,
+# not a new mapping in the Builder.
+EXCLUDED_NO_SHARED_GENES = 'no_shared_genes'
 
 
 def normalise_unresolved_ke_pathways(
@@ -145,6 +151,11 @@ def format_ke_summary(summary: Optional[Dict[str, Any]]) -> str:
         clauses.append(
             f"{unresolved} excluded (mapped, but no genes could be resolved"
             f"{_format_unresolved_pathways(summary.get('unresolved_pathways'))})"
+        )
+    no_shared = summary.get('excluded_no_shared_genes', 0)
+    if no_shared:
+        clauses.append(
+            f"{no_shared} excluded (no genes shared across the selected sources)"
         )
     errored = summary.get('excluded_error', 0)
     if errored:
@@ -297,6 +308,7 @@ def run_enrichment_analysis(
     min_ke_genes: int = Config.MIN_KE_GENES,
     fdr_cutoff: float = Config.SIGNIFICANCE_FDR_CUTOFF,
     unresolved_ke_pathways: Optional[Dict[str, Any]] = None,
+    no_shared_genes_kes: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """
     Run Fisher's exact test enrichment analysis for Key Events.
@@ -331,6 +343,12 @@ def run_enrichment_analysis(
             the reader the curation is incomplete when in fact the mapping
             exists and this tool's reference data is stale.
 
+        no_shared_genes_kes: Optional KE IDs whose combined gene set came out
+            empty because their selected sources share no gene under the
+            requested source combination (issue #123; see
+            ``helpers.no_shared_genes_kes_for``). Reported as
+            ``no_shared_genes`` rather than as unmapped.
+
         fdr_cutoff: BH-adjusted cutoff used to fill the ``Representation``
             column (issue #70). Both tails are always computed; this only
             decides where the pre-rendered ``enriched`` / ``depleted`` / ``ns``
@@ -354,6 +372,7 @@ def run_enrichment_analysis(
                 'excluded_unresolved_mapping': 1,  # mapped, zero genes resolved
                 'excluded_too_few_genes': 3,  # overlap below min_ke_genes
                 'excluded_error': 0,          # contingency / Fisher failure
+                'excluded_no_shared_genes': 0,  # #123: sources share no gene
                 'min_ke_genes': 5,
                 'unresolved_pathways': ['WP5477'],
                 'unresolved_pathways_by_ke': {'KE:1115': ['WP5477']},
@@ -397,13 +416,19 @@ def run_enrichment_analysis(
     # distinguishable from "assessed and not enriched" downstream.
     # Issue #81 — and so that "not curated" is distinguishable from "curated,
     # but this tool could not resolve the mapping to genes".
+    # Issue #123 — and so that a Key Event emptied by an intersection (or
+    # "at least N sources") reads as that, not as uncurated. Checked first: the
+    # KE had genes, and the combination is why none are left.
     unresolved_map = normalise_unresolved_ke_pathways(unresolved_ke_pathways)
+    no_shared = set(no_shared_genes_kes or ())
     unresolved_named: Dict[str, List[str]] = {}
     excluded_reasons: Dict[str, str] = {}
     for ke in ke_list:
         if ke in filtered_reference_sets:
             continue
-        if unresolved_map.get(ke):
+        if ke in no_shared:
+            excluded_reasons[ke] = EXCLUDED_NO_SHARED_GENES
+        elif unresolved_map.get(ke):
             excluded_reasons[ke] = EXCLUDED_UNRESOLVED_MAPPING
             unresolved_named[ke] = unresolved_map[ke]
         else:
@@ -608,6 +633,10 @@ def _build_ke_summary(
             1 for r in reasons if r == EXCLUDED_TOO_MANY_GENES
         ),
         'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
+        # Issue #123 — absent (0) on every union run, which keeps the clause out.
+        'excluded_no_shared_genes': sum(
+            1 for r in reasons if r == EXCLUDED_NO_SHARED_GENES
+        ),
         'min_ke_genes': min_ke_genes,
         'max_ke_genes': max_ke_genes,
         # Issue #117 — tested Key Events whose permutation null could not be
@@ -715,7 +744,7 @@ def run_enrichment(
             For GSEA: ``gene_logfc_map`` is suppressed by the caller (D-14).
             ``unresolved_ke_pathways`` (issue #81) is accepted by both
             backends, so the exclusion accounting reads identically whichever
-            method was used.
+            method was used; so is ``no_shared_genes_kes`` (issue #123).
 
     Returns:
         pd.DataFrame from the chosen backend, sorted by FDR ascending.

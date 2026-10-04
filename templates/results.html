@@ -182,6 +182,11 @@
                                than guess a time. #}{% if entry.cached_at %} {{ entry.cached_at }}{% endif %}</span>
                             ({{ entry.ke_count }} KEs){% endif %}</span>{% if not loop.last %}; {% endif %}
                 {% endfor %}
+                {# Issue #123: how the sources were combined per Key Event. Empty
+                   when only one resource loaded, where every mode is the same set. #}
+                {% if metadata.get('source_combination_text') %}
+                    &mdash; combined per Key Event by <strong>{{ metadata.get('source_combination_text') }}</strong>
+                {% endif %}
             </p>
             {% endif %}
         </div>
@@ -750,6 +755,8 @@
             {# Issue #60: carry the confidence threshold explicitly so the report
                is correct even if the session has been lost. #}
             <input type="hidden" name="min_confidence" value="{{ metadata.get('min_confidence', 'all') }}">
+            {# Issue #123: the source combination, carried for the same reason. #}
+            <input type="hidden" name="source_combination" value="{{ metadata.get('source_combination', 'union') }}">
             {# Issue #74: the requested resource list, posted explicitly for the
                same reason. Without it the report fell back to the session, so a
                PDF exported from a batch condition page reported the resources of

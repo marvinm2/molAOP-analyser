@@ -449,7 +449,8 @@
         <div class="settings-subgroup" role="group" aria-labelledby="resources-group-label">
             <span class="settings-subgroup__label" id="resources-group-label">Gene set resources</span>
             <p class="settings-subgroup__hint" style="margin: 0 0 8px;">
-                Genes are pooled across the selected resources.
+                Genes are pooled across the selected resources unless you choose
+                otherwise below.
             </p>
             {% set sel_resources = selected_resources or ['WikiPathways'] %}
             <div class="settings-options">
@@ -468,6 +469,24 @@
                            {% if 'Reactome' in sel_resources %}checked{% endif %}>
                     Reactome
                 </label>
+            </div>
+            {# Issue #123: how the selected sources combine per Key Event. Only
+               meaningful with more than one source, so it is hidden otherwise;
+               the script below toggles it as boxes are ticked. #}
+            {% set sel_combo = source_combination or 'union' %}
+            <div id="source-combination-group" {% if sel_resources | length < 2 %}hidden{% endif %}
+                 style="margin-top: 8px;">
+                <label for="source_combination" style="font-size: 14px;">Combine sources per Key Event:</label>
+                <select name="source_combination" id="source_combination"
+                        style="padding: 6px; font-size: 14px; max-width: 320px;">
+                    <option value="union" {% if sel_combo == 'union' %}selected{% endif %}>Union &mdash; gene in any source (default)</option>
+                    <option value="intersection" {% if sel_combo == 'intersection' %}selected{% endif %}>Intersection &mdash; gene in every source</option>
+                    <option value="at_least" {% if sel_combo == 'at_least' %}selected{% endif %}>At least N sources</option>
+                </select>
+                <input type="number" name="source_min_n" id="source_min_n" min="1" max="3" step="1"
+                       value="{{ source_min_n or 2 }}" aria-label="Minimum number of sources"
+                       style="width: 60px; padding: 6px;"
+                       {% if sel_combo != 'at_least' %}hidden{% endif %}>
             </div>
         </div>
 

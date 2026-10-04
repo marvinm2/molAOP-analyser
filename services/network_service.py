@@ -11,6 +11,7 @@ from config import Config
 from services.enrichment_service import (
     EXCLUDED_ERROR,
     EXCLUDED_NO_MAPPING,
+    EXCLUDED_NO_SHARED_GENES,
     EXCLUDED_TOO_FEW_GENES,
     EXCLUDED_TOO_MANY_GENES,
     EXCLUDED_UNRESOLVED_MAPPING,
@@ -196,12 +197,13 @@ def build_cytoscape_network(
             # `no-genes`; every other gene-set-less KE keeps the muted styling
             # it had before #81, including one excluded with reason 'error'.
             classes.append("unresolved-mapping")
-        elif excluded_reason == EXCLUDED_NO_MAPPING or (
+        elif excluded_reason in (EXCLUDED_NO_MAPPING, EXCLUDED_NO_SHARED_GENES) or (
             reference_sets is not None and not has_gene_set
         ):
-            # No usable gene set. An explicit 'no_mapping' says so; otherwise
-            # the KE simply has nothing in the reference sets, which is what
-            # this class has always meant.
+            # No usable gene set. An explicit 'no_mapping' says so, as does
+            # 'no_shared_genes' (issue #123: the source combination left none);
+            # otherwise the KE simply has nothing in the reference sets, which
+            # is what this class has always meant.
             classes.append("no-genes")
 
         # D-10: build node payload with method-aware fields.
@@ -328,6 +330,10 @@ def ke_accounting_from_network(network_json: Any) -> Optional[Dict[str, Any]]:
                 1 for r in reasons if r == EXCLUDED_TOO_MANY_GENES
             ),
             'excluded_error': sum(1 for r in reasons if r == EXCLUDED_ERROR),
+            # Issue #123 — zero for union runs and networks stored before it.
+            'excluded_no_shared_genes': sum(
+                1 for r in reasons if r == EXCLUDED_NO_SHARED_GENES
+            ),
             'min_ke_genes': Config.MIN_KE_GENES,
             'max_ke_genes': Config.GSEA_MAX_KE_GENES,
             # Issue #81 — the pathway IDs behind those exclusions, recovered

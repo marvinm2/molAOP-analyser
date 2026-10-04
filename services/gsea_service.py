@@ -11,7 +11,7 @@ import math
 import logging
 import threading
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,7 @@ import gseapy as gp
 from config import Config
 from services.enrichment_service import (
     EXCLUDED_NO_MAPPING,
+    EXCLUDED_NO_SHARED_GENES,
     EXCLUDED_TOO_FEW_GENES,
     EXCLUDED_TOO_MANY_GENES,
     EXCLUDED_UNRESOLVED_MAPPING,
@@ -627,6 +628,7 @@ def run_gsea_analysis(
     permutation_num: int = 1000,
     seed: int = 42,
     unresolved_ke_pathways: Optional[Dict[str, Any]] = None,
+    no_shared_genes_kes: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Run GSEA (prerank) enrichment analysis for Key Events.
 
@@ -659,6 +661,8 @@ def run_gsea_analysis(
             to that KE but could not be resolved to genes (issue #81). Same
             meaning and effect as in ``run_enrichment_analysis`` — ORA and
             GSEA report exclusions with one vocabulary.
+        no_shared_genes_kes: Optional KE IDs emptied by the source combination
+            (issue #123). Same meaning as in ``run_enrichment_analysis``.
 
     Returns:
         pd.DataFrame sorted by FDR ascending with columns:
@@ -824,11 +828,16 @@ def run_gsea_analysis(
     # mapping, a KE whose mapping resolved to no genes, and a KE whose gene set
     # is known but under-measured in this dataset (zero measured genes included
     # — that is a coverage fact about the upload, not a curation gap).
+    # Issue #123 — and a KE emptied by the source combination, checked first
+    # exactly as the Fisher backend does.
     unresolved_map = normalise_unresolved_ke_pathways(unresolved_ke_pathways)
+    no_shared = set(no_shared_genes_kes or ())
     unresolved_named = {}
     excluded_reasons = {}
     for ke in set(ke_list) - set(reference_sets.keys()):
-        if unresolved_map.get(ke):
+        if ke in no_shared:
+            excluded_reasons[ke] = EXCLUDED_NO_SHARED_GENES
+        elif unresolved_map.get(ke):
             excluded_reasons[ke] = EXCLUDED_UNRESOLVED_MAPPING
             unresolved_named[ke] = unresolved_map[ke]
         else:

@@ -295,6 +295,46 @@
     syncMinConfidence();
 })();
 
+// IIFE: the source-combination control (#123). Shown only when more than one
+// resource is ticked, with the N input only for "at least N"; its values are
+// mirrored onto #volcanoForm like the controls above so /preview echoes them.
+(function () {
+    const volcanoForm = document.getElementById('volcanoForm');
+    const group = document.getElementById('source-combination-group');
+    const select = document.getElementById('source_combination');
+    const minN = document.getElementById('source_min_n');
+    const checkboxes = document.querySelectorAll('input[name="resources"]');
+    if (!group || !select || !minN) return;
+
+    function refresh() {
+        const ticked = Array.from(checkboxes).filter(cb => cb.checked).length;
+        // A hidden control is also disabled, so it is not submitted: with one
+        // source the server records plain union rather than validating an N
+        // the user can no longer see.
+        group.hidden = ticked < 2;
+        select.disabled = group.hidden;
+        minN.hidden = select.value !== 'at_least';
+        minN.disabled = group.hidden || minN.hidden;
+        minN.max = String(Math.max(ticked, 1));
+        if (!volcanoForm) return;
+        volcanoForm.querySelectorAll('input[data-source-combination-mirror]').forEach(el => el.remove());
+        if (group.hidden) return;
+        [['source_combination', select.value], ['source_min_n', minN.value]].forEach(([name, value]) => {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = name;
+            hidden.value = value;
+            hidden.setAttribute('data-source-combination-mirror', '');
+            volcanoForm.appendChild(hidden);
+        });
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', refresh));
+    select.addEventListener('change', refresh);
+    minN.addEventListener('input', refresh);
+    refresh();
+})();
+
 // Globals exposed for inline onclick handlers in _single_analysis.html.
 function setThreshold(value) {
     document.getElementById('logfc_threshold').value = value;

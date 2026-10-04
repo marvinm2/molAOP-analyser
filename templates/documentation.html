@@ -294,11 +294,18 @@ CYP3A4         3.21             0.00001   0.0001
                 coverage; a small number of Key Events carry a Reactome mapping.</li>
         </ul>
         <p>
-            Selecting more than one resource takes the <strong>union</strong> per Key Event: a
-            gene counts towards a Key Event if any selected resource places it there. This
-            increases coverage and, because it enlarges gene sets, generally makes enrichment
-            easier to detect &mdash; so a result obtained from three resources is not directly
-            comparable with one obtained from a single resource.
+            Selecting more than one resource takes the <strong>union</strong> per Key Event by
+            default: a gene counts towards a Key Event if any selected resource places it there.
+            This increases coverage and, because it enlarges gene sets, generally makes
+            enrichment easier to detect &mdash; so a result obtained from three resources is not
+            directly comparable with one obtained from a single resource.
+        </p>
+        <p>
+            The form also offers <strong>intersection</strong> (a gene counts only if every
+            selected resource places it there) and <strong>at least N sources</strong>. These
+            give smaller, cross-source-supported gene sets. A Key Event whose resources share no
+            gene under the chosen combination is not tested and is listed as excluded for that
+            reason. The choice is shown on the results page's provenance line and in the reports.
         </p>
         <div class="info-box">
             <strong>Coverage is uneven.</strong> WikiPathways maps far more Key Events than the

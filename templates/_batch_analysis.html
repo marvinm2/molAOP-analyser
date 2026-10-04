@@ -303,7 +303,8 @@
         <h3>Gene Set Resources</h3>
         <p style="font-size: 14px; color: #555; margin-bottom: 12px;">
             Curated KE gene-set resources to enrich against. Genes are pooled across the
-            selected resources. Applied equally to all conditions.
+            selected resources unless you choose otherwise below. Applied equally to all
+            conditions.
         </p>
         <div style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 24px;">
             <label style="font-size: 14px; color: #29235C;">
@@ -318,6 +319,18 @@
                 <input type="checkbox" class="batch-resource" value="Reactome">
                 Reactome
             </label>
+        </div>
+        {# Issue #123: how the selected sources combine per Key Event. Hidden
+           until more than one resource is ticked (see the batch scripts). #}
+        <div id="batch-source-combination-group" hidden style="margin: -12px 0 24px;">
+            <label for="batch-source-combination" style="font-size: 14px; color: #29235C;">Combine sources per Key Event:</label>
+            <select id="batch-source-combination" style="padding: 6px; font-size: 14px; max-width: 320px;">
+                <option value="union" selected>Union &mdash; gene in any source (default)</option>
+                <option value="intersection">Intersection &mdash; gene in every source</option>
+                <option value="at_least">At least N sources</option>
+            </select>
+            <input type="number" id="batch-source-min-n" min="1" max="3" step="1" value="2"
+                   aria-label="Minimum number of sources" style="width: 60px; padding: 6px;" hidden>
         </div>
 
         <h3>Minimum Mapping Confidence</h3>
