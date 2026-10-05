@@ -8,8 +8,16 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ## [Unreleased]
 
+## [6.1.0] - 2026-10-05
+
 ### Fixed
 
+- **The reference cache no longer uses SQLite WAL mode (#134).** diskcache defaults to WAL, and
+  in production the cache directory sits on a GlusterFS mount, where WAL's shared-memory index
+  (the `-shm` file) is not safe; SQLite documents this, and another service's WAL database on
+  the same mount was corrupted in August 2026. The cache now opens with
+  `sqlite_journal_mode='delete'`. Opening the existing shards that way converted them in
+  place with their entries kept, so no cached reference data was lost.
 - **An intersection run blamed the user's gene column (#123).** When the source combination
   emptied every Key Event of the selected AOP, the gene-ID sanity check measured the upload
   against the few genes the intersection left and reported "choose a gene symbol column
@@ -29,6 +37,7 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 - **Reference data no longer depends on the working directory.** Bundled `data/` files are
   resolved from the application root (`config.DATA_DIR`) rather than relative to the cwd, so
   launching the app from anywhere other than its own directory still finds them.
+
 ### Added
 
 - **How the selected sources combine per Key Event is now a choice** (#123). With more than
