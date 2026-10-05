@@ -154,6 +154,11 @@ def get_reference_cache(cache_dir: str = '/tmp/molaop_cache') -> diskcache.Fanou
     Uses FanoutCache with 8 shards to reduce SQLite write contention
     when multiple Gunicorn workers access the cache concurrently.
 
+    The shards use a rollback journal, not diskcache's default WAL. In
+    production CACHE_DIR is on GlusterFS, and WAL's shared-memory index (the
+    -shm file) is not safe on a network filesystem (#134). Passing the setting
+    also converts shards created earlier in WAL mode.
+
     Args:
         cache_dir: Directory path for the disk cache storage
 
@@ -164,4 +169,5 @@ def get_reference_cache(cache_dir: str = '/tmp/molaop_cache') -> diskcache.Fanou
         directory=cache_dir,
         timeout=60,  # SQLite lock timeout in seconds (not TTL)
         shards=8,
+        sqlite_journal_mode='delete',
     )
