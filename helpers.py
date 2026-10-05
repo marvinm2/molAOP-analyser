@@ -71,7 +71,7 @@ class ReferenceSets(dict):
     """
 
     def __init__(self, *args, unresolved_ke_pathways=None, no_shared_genes_kes=None,
-                 **kwargs):
+                 gene_universe=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.unresolved_ke_pathways = {
             str(ke): sorted(pathways)
@@ -79,6 +79,13 @@ class ReferenceSets(dict):
             if pathways
         }
         self.no_shared_genes_kes = {str(ke) for ke in (no_shared_genes_kes or ())}
+        # Every gene any loaded source lists, before a narrowing combination
+        # (#123). None means "the sets themselves are the universe", which is
+        # true under union. Read it through reference_gene_universe_for.
+        self.gene_universe = (
+            frozenset(str(g).strip().upper() for g in gene_universe)
+            if gene_universe is not None else None
+        )
 
 
 def unresolved_ke_pathways_for(reference_sets):
@@ -114,6 +121,28 @@ def no_shared_genes_kes_for(reference_sets):
         The KE IDs, or an empty set when the mapping carries none.
     """
     return set(getattr(reference_sets, 'no_shared_genes_kes', None) or ())
+
+
+def reference_gene_universe_for(reference_sets):
+    """Every gene the loaded sources list, whatever the source combination.
+
+    The #69 identifier check asks whether the upload holds gene symbols at all;
+    that does not depend on how the sources were combined. Under intersection
+    the combined sets can shrink to a handful of genes, so measuring against
+    them reports a correct gene-symbol column as the wrong identifier type.
+
+    Returns
+    -------
+    set[str]
+        Uppercase gene symbols.
+    """
+    universe = getattr(reference_sets, 'gene_universe', None)
+    if universe is not None:
+        return set(universe)
+    found = set()
+    for genes in reference_sets.values():
+        found.update(str(g).strip().upper() for g in genes)
+    return found
 
 
 def parse_source_combination(mode, min_n=None, n_sources=1):

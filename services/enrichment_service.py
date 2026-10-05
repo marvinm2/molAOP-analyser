@@ -9,6 +9,7 @@ from scipy.stats import fisher_exact
 from statsmodels.stats.multitest import multipletests
 
 from config import Config
+from helpers import reference_gene_universe_for
 
 logger = logging.getLogger(__name__)
 
@@ -233,9 +234,9 @@ def assess_background_overlap(
         :data:`MIN_BACKGROUND_OVERLAP_FRACTION`, meaning the caller should warn
         rather than present the result as normal.
     """
-    universe = set()
-    for genes in reference_sets.values():
-        universe.update(g.strip().upper() for g in genes)
+    # Issue #123: measured against every source's genes, not the combined sets,
+    # which a narrowing combination can shrink to almost nothing.
+    universe = reference_gene_universe_for(reference_sets)
 
     normalised = {str(g).strip().upper() for g in user_genes}
     matched = normalised & universe

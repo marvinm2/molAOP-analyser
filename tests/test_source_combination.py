@@ -613,15 +613,17 @@ class TestSingleRoute:
         return form
 
     @staticmethod
-    def _post(client, form, sets=None, ke_list=None, enrich_error=None):
-        processed_df = pd.DataFrame(
-            {
-                "ID": ["BRCA1", "TP53"],
-                "log2FC": [1.5, -0.8],
-                "pval": [0.001, 0.05],
-                "significant": [True, False],
-            }
-        )
+    def _post(client, form, sets=None, ke_list=None, enrich_error=None,
+              processed_df=None):
+        if processed_df is None:
+            processed_df = pd.DataFrame(
+                {
+                    "ID": ["BRCA1", "TP53"],
+                    "log2FC": [1.5, -0.8],
+                    "pval": [0.001, 0.05],
+                    "significant": [True, False],
+                }
+            )
         enrichment_df = pd.DataFrame(
             {
                 "Title": ["Test KE"],
@@ -1158,3 +1160,61 @@ class TestSingleFormControl:
         )
         assert 'id="source-combination-group" hidden' not in html
         assert '<option value="intersection" selected>' in html
+
+
+class TestIdCheckSeesEverySource:
+    """The #69 ID-type check must not be fooled by a narrowing combination.
+
+    In production an intersection run on AOP:DEMO emptied every Key Event; the
+    check then measured the upload against the 130 genes the intersection left
+    across all Key Events and told the user their gene-symbol column held the
+    wrong identifiers, hiding the real reason. Whether a column holds gene
+    symbols does not depend on how the sources are combined.
+    """
+
+    USER = {f"G{i}" for i in range(40, 80)}
+
+    def _union_universe(self):
+        return set().union(*_legacy_union([WP, GO, REACTOME]).values())
+
+    def test_intersection_keeps_the_union_universe(self):
+        from services.enrichment_service import assess_background_overlap
+
+        sets, _, _ = _load(ALL, source_combination="intersection")
+        overlap = assess_background_overlap(self.USER, sets)
+        assert overlap["universe_size"] == len(self._union_universe())
+        assert not overlap["is_suspect"]
+
+    def test_union_universe_is_unchanged(self):
+        from services.enrichment_service import assess_background_overlap
+
+        sets, _, _ = _load(ALL, source_combination="union")
+        overlap = assess_background_overlap(self.USER, sets)
+        assert overlap["universe_size"] == len(self._union_universe())
+
+    def test_all_emptied_names_the_combination_not_the_id_column(
+        self, authenticated_client
+    ):
+        sets, _, _ = _load(ALL, source_combination="intersection")
+        # KE:2/3/4 lose every gene; the upload (BRCA1, TP53 in the route
+        # helper) is irrelevant here, so give it genes from the union instead.
+        processed = pd.DataFrame(
+            {
+                "ID": sorted(self.USER),
+                "log2FC": [1.0] * len(self.USER),
+                "pval": [0.001] * len(self.USER),
+                "significant": [True] * len(self.USER),
+            }
+        )
+        response, _, _ = TestSingleRoute._post(
+            authenticated_client,
+            TestSingleRoute._form(source_combination="intersection"),
+            sets=sets,
+            ke_list={"KE:2", "KE:3", "KE:4"},
+            enrich_error=ValueError("nothing to test"),
+            processed_df=processed,
+        )
+        body = response.data.decode()
+        assert response.status_code == 400
+        assert "no genes shared" in body
+        assert "gene symbol column" not in body

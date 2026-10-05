@@ -2112,6 +2112,12 @@ def load_cached_reference_sets(resources=DEFAULT_RESOURCES,
             merged,
             unresolved_ke_pathways=merged_unresolved_ke,
             no_shared_genes_kes=no_shared,
+            # Only a narrowing combination needs it; under union the merged
+            # sets already are every source's genes.
+            gene_universe=(
+                {g for sets in per_resource_sets for genes in sets.values() for g in genes}
+                if source_combination != DEFAULT_SOURCE_COMBINATION else None
+            ),
         ),
         data_source,
         resolution,
