@@ -10,6 +10,16 @@ via `ghcr.io/marvinm2/molaop-analyser`.
 
 ### Fixed
 
+- **An intersection run blamed the user's gene column (#123).** When the source combination
+  emptied every Key Event of the selected AOP, the gene-ID sanity check measured the upload
+  against the few genes the intersection left and reported "choose a gene symbol column
+  instead" for a correct symbol column. The check now measures against every loaded source's
+  genes whatever the combination, so the run reports the real reason: no genes shared across
+  the selected sources.
+- **Elements marked `hidden` were shown.** `main.css` sets `display: block` on selects, number
+  inputs and buttons, which beat the browser's own `[hidden]` rule: the "At least N" box showed
+  under union and intersection, and the upload drop zone showed its Remove button before any
+  file was chosen. A global `[hidden] { display: none !important; }` restores the intent.
 - **A Builder outage no longer pins an hour of analyses to the bundled files.** WikiPathways
   gene sets built from the bundled CSVs because the Builder was unreachable are now cached for
   `FALLBACK_CACHE_TTL` (default 300 s, env-overridable) instead of the full one-hour

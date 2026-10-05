@@ -464,6 +464,14 @@ input[type="text"], input[type="file"] {
     border-radius: 5px;
 }
 
+/* The `hidden` attribute must win over the display rules below: the browser's
+   own [hidden] rule has the lowest precedence, so `display: block` on select,
+   number inputs and buttons was showing elements the templates hide (the
+   "At least N" box under union, the drop zone's Remove button with no file). */
+[hidden] {
+    display: none !important;
+}
+
 select, input[type="number"], button {
     font-size: 16px;
     padding: 10px;
